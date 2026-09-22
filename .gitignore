@@ -1,0 +1,42 @@
+# ===========================
+# Build artefacts
+# ===========================
+node_modules/
+main.js
+*.log
+
+# ===========================
+# Editor / OS
+# ===========================
+.DS_Store
+.idea/
+.vscode/
+
+# ===========================
+# Test / coverage
+# ===========================
+coverage/
+.vitest-cache/
+
+# ===========================
+# Playwright (visual regression — baselines under test/visual/__snapshots__/ ARE committed)
+# ===========================
+playwright-report/
+test-results/
+test/visual/.harness/
+
+# ===========================
+# Real-Obsidian e2e (wdio-obsidian-service — the fixture vault under test/e2e/vault/ IS committed)
+# ===========================
+.obsidian-cache/
+wdio-logs/
+
+# ===========================
+# Dev vault runtime state
+# (the .dev/vault skeleton itself IS committed; only generated files inside it are ignored)
+# ===========================
+.dev/config/
+.dev/vault/.obsidian/workspace*
+.dev/vault/.obsidian/plugins/dm-screen/*
+!.dev/vault/.obsidian/plugins/dm-screen/.gitkeep
+.dev/vault/.obsidian/plugins/hot-reload/

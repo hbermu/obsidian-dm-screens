@@ -1,0 +1,19 @@
+# docker-compose.yml defines no build context today — every service runs a
+# prebuilt image with a bind mount, and a .dockerignore does not filter bind
+# mounts. This file exists so that if a `build:` stanza is ever added, the
+# context cannot pick up git history, local vault state, caches, or the
+# container-only node_modules.
+
+.git
+.github
+node_modules
+main.js
+.dev
+.obsidian-cache
+coverage
+playwright-report
+test-results
+wdio-logs
+docs/superpowers
+*.log
+.DS_Store

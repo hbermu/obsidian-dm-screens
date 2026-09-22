@@ -1,0 +1,2160 @@
+/* DM Screen Plugin - Obsidian Styles */
+
+/* ─── DM Control Panel ─── */
+
+.dm-control-panel {
+  padding: 12px;
+  /* Drive responsive rules off the panel's own width, not the window's.
+     Side panels in Obsidian can be narrow even when the window is wide. */
+  container-type: inline-size;
+  container-name: dm-panel;
+}
+
+.dm-section {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dm-section h3 {
+  margin-bottom: 8px;
+  font-size: 0.95em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.dm-server-status {
+  margin-bottom: 8px;
+}
+
+.dm-status-on {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.dm-status-off {
+  color: #f44336;
+  font-weight: bold;
+}
+
+.dm-status-detail {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.dm-client-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dm-client-resolution {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dm-client-resolution:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dm-client-resolution-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.dm-server-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+.dm-server-url-link {
+  font-size: 0.85em;
+  color: var(--text-accent);
+  word-break: break-all;
+}
+
+.dm-copy-url-btn {
+  font-size: 0.75em;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+.dm-mode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.dm-mode-row button {
+  flex: 1;
+}
+
+/* ─── Section header (title + action button) ─── */
+
+.dm-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.dm-section-header h3 {
+  margin: 0;
+}
+
+.dm-emit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  height: 22px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dm-emit-toggle .dm-emit-dot {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.dm-emit-toggle.dm-emit-active {
+  background: #4caf50;
+  color: white;
+  border-color: #4caf50;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+}
+
+.dm-emit-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.dm-emit-toggle:disabled:hover {
+  background: var(--background-secondary);
+}
+
+.dm-combat-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dm-combat-name {
+  flex: 1;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dm-tracker-scale-buttons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.dm-tracker-scale-buttons button {
+  width: 32px;
+  padding: 2px 6px;
+}
+
+/* ─── Initiative Tracker ─── */
+
+.dm-add-combatant {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.dm-add-combatant input {
+  padding: 4px 6px;
+  font-size: 0.85em;
+}
+
+.dm-initiative-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.dm-combatant-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+
+.dm-active-turn {
+  background: var(--background-modifier-success);
+  border-left: 3px solid var(--text-accent);
+}
+
+.dm-init-num {
+  font-weight: bold;
+  min-width: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.dm-combatant-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.dm-hp-input {
+  width: 50px;
+  padding: 2px 4px;
+  font-size: 0.85em;
+}
+
+.dm-hp-max {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.dm-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.8em;
+}
+
+.dm-remove-btn:hover {
+  color: #f44336;
+}
+
+.dm-turn-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.dm-turn-controls button {
+  flex: 1;
+  font-size: 0.85em;
+}
+
+/* ─── Initiative Tracker — Plugin Sync Mode ─── */
+
+.dm-tracker-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.dm-tracker-title-col h3 {
+  margin-bottom: 2px;
+}
+
+.dm-tracker-sync-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8em;
+}
+
+.dm-sync-indicator {
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.dm-round-badge {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dm-disconnect-btn {
+  font-size: 0.8em;
+  margin-bottom: 8px;
+}
+
+.dm-tracker-hint {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+.dm-empty-tracker {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 12px;
+}
+
+/* Combatant rows — plugin mode */
+
+.dm-combatant-wrapper {
+  margin-bottom: 2px;
+}
+
+.dm-combatant-hidden {
+  opacity: 0.45;
+}
+
+.dm-combatant-friendly {
+  border-left: 3px solid #4169E1;
+  padding-left: 5px;
+}
+
+.dm-pc-badge {
+  font-size: 0.7em;
+  color: #4169E1;
+  margin-left: 4px;
+}
+
+.dm-hidden-badge {
+  font-size: 0.7em;
+  color: #f44336;
+  margin-left: 4px;
+}
+
+.dm-status-badges,
+.dm-statuses {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: 6px;
+}
+
+.dm-status-badge {
+  font-size: 0.65em;
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.dm-status-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: #ff9800;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.dm-status-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.dm-status-exhaustion .dm-status-level {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  font-size: 0.55em;
+  font-weight: bold;
+  color: #fff;
+  background: #b71c1c;
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.dm-hp-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dm-hp-bar-inline {
+  width: 40px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dm-hp-fill-inline {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.dm-hp-text {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dm-ac-display {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dm-expand-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.7em;
+}
+
+.dm-expand-btn:hover {
+  color: var(--text-accent);
+}
+
+/* ─── Statblock Panel ─── */
+
+.dm-statblock-container {
+  margin: 4px 0 8px 28px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.dm-statblock-panel {
+  padding: 10px 12px;
+  font-size: 0.82em;
+  line-height: 1.5;
+  background: var(--background-secondary);
+}
+
+.dm-sb-header {
+  margin-bottom: 4px;
+}
+
+.dm-sb-name {
+  margin: 0 0 2px 0;
+  font-size: 1.1em;
+  color: var(--text-accent);
+}
+
+.dm-sb-subtitle {
+  font-size: 0.9em;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.dm-sb-divider {
+  border-top: 2px solid var(--text-accent);
+  opacity: 0.3;
+  margin: 6px 0;
+}
+
+.dm-sb-core {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dm-sb-stat {
+  color: var(--text-normal);
+}
+
+.dm-sb-stat strong {
+  color: var(--text-accent);
+}
+
+.dm-sb-abilities {
+  display: flex;
+  justify-content: space-between;
+  text-align: center;
+  gap: 4px;
+}
+
+.dm-sb-ability {
+  flex: 1;
+}
+
+.dm-sb-ability-label {
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--text-accent);
+}
+
+.dm-sb-ability-score {
+  font-size: 0.85em;
+  color: var(--text-normal);
+}
+
+.dm-sb-props {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dm-sb-prop {
+  color: var(--text-normal);
+}
+
+.dm-sb-prop strong {
+  color: var(--text-accent);
+}
+
+.dm-sb-action-section {
+  margin-top: 2px;
+}
+
+.dm-sb-section-title {
+  margin: 0 0 4px 0;
+  font-size: 1em;
+  color: var(--text-accent);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 2px;
+}
+
+.dm-sb-action {
+  margin-bottom: 4px;
+  color: var(--text-normal);
+}
+
+.dm-sb-action strong {
+  color: var(--text-normal);
+}
+
+.dm-statblock-not-found {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.85em;
+}
+
+/* ─── Encounter Battlemaps ─── */
+
+.dm-toggle-icon {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.dm-encounter-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0;
+  align-items: center;
+}
+
+.dm-encounter-search {
+  flex: 1;
+  font-size: 0.85em;
+  padding: 4px 8px;
+}
+
+.dm-encounter-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px 12px !important;
+}
+
+.dm-encounter-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dm-encounter-title-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.dm-encounter-title-area h3 {
+  margin: 0;
+  font-size: 0.95em;
+}
+
+.dm-encounter-count {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  padding: 1px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.dm-encounter-launch {
+  padding: 2px 12px !important;
+  font-size: 0.8em !important;
+  flex-shrink: 0;
+}
+
+.dm-encounter-field-label {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.dm-encounter-creatures {
+  margin-top: 6px;
+}
+
+.dm-creature-table {
+  width: 100%;
+  font-size: 0.8em;
+  border-collapse: collapse;
+}
+
+.dm-creature-table th {
+  text-align: left;
+  padding: 3px 6px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dm-creature-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dm-creature-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dm-creature-name-cell {
+  font-weight: 500;
+}
+
+.dm-creature-hidden {
+  opacity: 0.4;
+}
+
+.dm-creature-friendly td:first-child {
+  color: var(--text-accent);
+}
+
+.dm-encounter-map-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  flex-wrap: wrap;
+}
+
+.dm-encounter-name {
+  font-size: 0.85em;
+  font-weight: 600;
+  min-width: 100px;
+}
+
+.dm-encounter-map-input {
+  flex: 1;
+  min-width: 150px;
+  font-size: 0.8em;
+  padding: 3px 6px;
+}
+
+.dm-encounter-map-status {
+  font-size: 0.9em;
+  flex-shrink: 0;
+}
+
+/* ─── Image Layers ─── */
+
+.dm-layer-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dm-layer-preview {
+  position: relative;
+  width: 100%;
+  background: #1a1a2e;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  margin: 8px 0;
+  overflow: hidden;
+  outline: 2px dashed rgba(255,255,255,0.1);
+  outline-offset: -2px;
+}
+
+.dm-layer-rect {
+  position: absolute;
+  opacity: 0.85;
+  cursor: grab;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font-size: 0.6em;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.7);
+  user-select: none;
+}
+
+.dm-layer-rect-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 3px;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.dm-layer-rect-label {
+  position: relative;
+  z-index: 2;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.dm-layer-rect:hover {
+  opacity: 1;
+}
+
+.dm-layer-rect:hover .dm-layer-rect-frame {
+  border-width: 3px;
+}
+
+.dm-layer-rect:active {
+  cursor: grabbing;
+}
+
+.dm-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0;
+}
+
+.dm-layer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+
+.dm-layer-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dm-layer-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+}
+
+.dm-layer-mid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+.dm-layer-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dm-layer-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dm-layer-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+}
+
+.dm-layer-controls {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.dm-layer-position-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.dm-layer-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dm-layer-label {
+  flex: 1;
+  font-size: 0.82em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-layer-scale-slider {
+  width: 60px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.dm-layer-scale-label {
+  font-size: 0.7em;
+  color: var(--text-muted);
+  min-width: 32px;
+}
+
+.dm-layer-btn {
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 0.75em;
+  line-height: 1.2;
+  width: 24px;
+  text-align: center;
+}
+
+.dm-layer-btn:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
+.dm-layer-remove:hover {
+  color: #f44336;
+  border-color: #f44336;
+}
+
+.dm-layer-hidden {
+  opacity: 0.5;
+}
+
+.dm-layer-vis-toggle {
+  font-size: 0.8em !important;
+  padding: 3px 4px !important;
+  border: none !important;
+  width: 100%;
+}
+
+.dm-layer-vis-on {
+  opacity: 1;
+}
+
+.dm-layer-vis-off {
+  opacity: 0.4;
+}
+
+.dm-layer-left-bottom {
+  display: flex;
+  gap: 2px;
+}
+
+/* ─── Preview Pan/Zoom ─── */
+
+.dm-layer-preview {
+  overflow: hidden;
+}
+
+.dm-layer-preview-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+}
+
+.dm-player-viewport-rect {
+  position: absolute;
+  border-style: dashed;
+  border-color: rgba(0, 255, 0, 0.8);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 99999;
+}
+
+.dm-preview-bg {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dm-preview-bg > img,
+.dm-preview-bg > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dm-preview-zoom-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.dm-preview-zoom-controls input[type="range"] {
+  width: 90px;
+}
+
+.dm-preview-reset-btn {
+  font-size: 0.75em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.dm-preview-reset-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.dm-layer-fog-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-size: 100% 100%;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.dm-fog-draw-canvas-inline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  z-index: 10;
+  /* The fog canvas lives inside .dm-layer-rect-frame which is
+     pointer-events: none so layer drag clicks fall through to the
+     rect. The canvas itself MUST opt back in or it never sees the
+     drawing mousedown/mousemove. */
+  pointer-events: auto;
+}
+
+.dm-layer-rect.dm-fog-editing,
+.dm-layer-rect.dm-fog-editing:active {
+  cursor: crosshair;
+}
+
+.dm-layer-rect.dm-fog-editing .dm-layer-rect-frame {
+  border-color: #0f0 !important;
+  border-width: 2px !important;
+  border-style: solid !important;
+}
+
+.dm-fog-hint {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+/* ─── Per-Layer Fog of War ─── */
+
+.dm-fog-toggle {
+  padding: 2px 4px;
+}
+
+.dm-fog-toggle.dm-fog-active {
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
+}
+
+.dm-border-toggle {
+  padding: 2px 4px;
+  opacity: 0.5;
+}
+
+.dm-border-toggle.dm-border-active {
+  opacity: 1;
+  color: #c9aa71;
+}
+
+.dm-fog-editor {
+  margin: 4px 0 8px 0;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--text-accent);
+}
+
+.dm-fog-edit-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.dm-fog-edit-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dm-fog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.dm-fog-tool-label {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  min-width: 48px;
+}
+
+.dm-fog-tool-btn {
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-fog-tool-btn.dm-fog-tool-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.dm-fog-canvas-wrapper {
+  margin-top: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dm-fog-draw-canvas {
+  display: block;
+  cursor: crosshair;
+  width: 100%;
+}
+
+.dm-fog-edit-hint {
+  padding: 2px 0;
+}
+
+/* ─── Hydrus Source Modal ─── */
+
+.dm-hydrus-modal {
+  width: min(90vw, 1100px);
+  max-height: 85vh;
+}
+
+.dm-hydrus-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.dm-hydrus-banner {
+  background: var(--background-modifier-error-hover, #5a3a1a);
+  color: var(--text-warning, #f0c674);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+.dm-hydrus-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.dm-hydrus-controls input[type="search"] {
+  min-width: 240px;
+}
+
+.dm-hydrus-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 2px;
+  z-index: 50;
+  max-height: 150px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: none;
+}
+
+.dm-hydrus-suggest.is-open {
+  display: block;
+}
+
+.dm-hydrus-suggest-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.9em;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  user-select: none;
+}
+
+.dm-hydrus-suggest-item:hover,
+.dm-hydrus-suggest-item.is-active {
+  background: var(--background-modifier-hover);
+}
+
+.dm-hydrus-suggest-empty {
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-style: italic;
+}
+
+.dm-hydrus-source-toggle {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.dm-hydrus-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-left: 1em;
+}
+
+.dm-hydrus-filter-toggle label {
+  margin-right: 0.5em;
+  font-size: 0.85em;
+}
+
+.dm-hydrus-status {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.dm-hydrus-service-checks {
+  margin-bottom: 1em;
+  padding-left: 1em;
+}
+
+.dm-hydrus-service-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-bottom: 0.3em;
+}
+
+.dm-hydrus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.dm-hydrus-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--background-secondary);
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.dm-hydrus-tile:hover {
+  border-color: var(--interactive-accent);
+}
+
+.dm-hydrus-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.dm-hydrus-badge-local {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 0.65em;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.02em;
+}
+
+.dm-hydrus-mediakind-pill {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  font-size: 0.7em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(220, 38, 38, 0.85);
+  color: white;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
+.dm-hydrus-more {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 0 6px;
+  cursor: pointer;
+  font-size: 1em;
+  line-height: 1.2;
+}
+
+.dm-hydrus-tile-menu {
+  max-width: 360px;
+}
+
+.dm-hydrus-tile-menu .menu-item-title {
+  white-space: normal;
+}
+
+.dm-hydrus-tile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.dm-hydrus-tile-tag {
+  display: inline-block;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.dm-hydrus-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.dm-hydrus-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.dm-hydrus-pagination button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dm-hydrus-pagination .dm-hydrus-pageinfo {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+/* ─── Hydrus preview lightbox ─── */
+
+.dm-hydrus-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(2px);
+}
+
+.dm-hydrus-preview-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.dm-hydrus-preview-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.dm-hydrus-preview-media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-hydrus-preview-media img,
+.dm-hydrus-preview-media video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.dm-hydrus-preview-error {
+  color: var(--text-warning, #f0c674);
+  font-size: 0.9em;
+}
+
+.dm-hydrus-preview-tags {
+  flex-shrink: 0;
+  max-height: 20%;
+  overflow-y: auto;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.dm-hydrus-preview-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* ─── D&D Beyond Combat Tabs ─── */
+
+.dm-combat-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dm-combat-tabs button {
+  flex: 1;
+}
+
+.dm-tab,
+.dm-tab-active {
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+  border: none;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.dm-tab-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* ─── DDB Panel ─── */
+
+.dm-ddb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dm-ddb-message {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  padding: 8px 0;
+}
+
+.dm-ddb-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dm-ddb-hp-toggle,
+.dm-ddb-reveal-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+
+.dm-ddb-choose-btn {
+  white-space: nowrap;
+}
+
+.dm-ddb-encounter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--background-secondary);
+}
+
+.dm-ddb-encounter-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dm-ddb-encounter-name {
+  flex: 1;
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.dm-ddb-badge {
+  font-size: 0.7em;
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* ─── DDB Encounter Modal ─── */
+
+.dm-ddb-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 480px;
+}
+
+.dm-ddb-modal-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.dm-ddb-modal-search {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.dm-ddb-modal-status {
+  color: var(--text-muted);
+  font-size: 0.8em;
+}
+
+.dm-ddb-modal-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ─── DDB Player Preview (DM-side mirror of player initiative list) ─── */
+
+.dm-ddb-preview {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.dm-ddb-preview-header {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.dm-ddb-preview-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.85em;
+  padding: 6px 0;
+}
+
+.dm-ddb-preview-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dm-ddb-preview .init-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--background-primary);
+  font-size: 0.85em;
+}
+
+.dm-ddb-preview .init-entry.init-active {
+  background: rgba(201, 170, 113, 0.15);
+  border-left: 3px solid #c9aa71;
+  padding-left: 5px;
+}
+
+.dm-ddb-preview .init-entry.init-friendly {
+  border-left: 3px solid #4169E1;
+}
+
+.dm-ddb-preview .init-entry.init-friendly .init-name {
+  color: #7EB3FF;
+}
+
+.dm-ddb-preview .init-entry.init-hidden {
+  opacity: 0.4;
+}
+
+/* Heroic Inspiration mirror on the DM-side preview. Tighter inset blur than
+   the previous values (≤5 px even at the pulse peak) so the soft fade can't
+   leak past the row's rounded corners. The pulse is gated on the
+   `dm-inspired-pulse-on` class applied to `.dm-ddb-panel` by DmControlPanel
+   based on the local `ddbInspirationPulse` setting (no WS — it's local). */
+.dm-ddb-preview .init-entry.init-inspired {
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 200, 70, 0.65),
+    inset 0 0 4px rgba(255, 200, 70, 0.3);
+  border-radius: 4px;
+}
+
+@keyframes dm-inspired-pulse-dm {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 200, 70, 0.45),
+      inset 0 0 3px rgba(255, 200, 70, 0.2);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 200, 70, 0.9),
+      inset 0 0 5px rgba(255, 200, 70, 0.5);
+  }
+}
+
+.dm-ddb-panel.dm-inspired-pulse-on .dm-ddb-preview .init-entry.init-inspired {
+  animation: dm-inspired-pulse-dm 1.5s ease-in-out infinite;
+}
+
+.dm-ddb-preview .init-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-ddb-preview .init-pc-tag {
+  font-size: 0.7em;
+  background: rgba(65, 105, 225, 0.2);
+  color: #4169E1;
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.dm-ddb-preview .init-hp-text {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  min-width: 50px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.dm-ddb-preview .init-condition {
+  font-size: 0.75em;
+  font-weight: 600;
+  min-width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.dm-ddb-preview .init-condition-well { color: #4caf50; }
+.dm-ddb-preview .init-condition-hurt { color: #ff9800; }
+.dm-ddb-preview .init-condition-bloodied { color: #f44336; }
+.dm-ddb-preview .init-condition-down {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* DDB combat title is a link to the encounter */
+.dm-combat-name-link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.dm-combat-name-link:hover {
+  text-decoration: underline;
+  color: var(--text-accent);
+}
+
+/* ─── Responsive (narrow side panel) ───────────────────────────────
+   When the DM Control Panel is parked on a narrow side dock, rows
+   that normally fit horizontally collapse onto a second line so
+   nothing gets clipped or hidden by overflow.                       */
+
+@container dm-panel (max-width: 380px) {
+  /* Combat tabs stack so the D&D Beyond tab is fully visible. */
+  .dm-combat-tabs {
+    flex-direction: column;
+  }
+  .dm-combat-tabs button {
+    width: 100%;
+  }
+
+  /* Layer row: the 8/10-button right column drops below the
+     mid column (name + slider) instead of being clipped. */
+  .dm-layer-right-col {
+    flex-basis: 100%;
+    margin-top: 4px;
+  }
+  .dm-layer-right-col .dm-layer-controls,
+  .dm-layer-right-col .dm-layer-position-row {
+    justify-content: center;
+  }
+
+  /* DDB tab: Choose Encounter takes its own row, the two toggles
+     share the next row underneath. */
+  .dm-ddb-choose-btn {
+    flex-basis: 100%;
+  }
+  .dm-ddb-hp-toggle,
+  .dm-ddb-reveal-toggle {
+    flex: 1 0 auto;
+  }
+
+  /* DM preview rows: tighter footprint so HP + condition still fit
+     when a row also carries a status icon (e.g. exhaustion on a PC). */
+  .dm-ddb-preview .init-entry {
+    gap: 4px;
+  }
+  .dm-ddb-preview .init-hp-text {
+    min-width: 36px;
+  }
+  .dm-ddb-preview .init-condition {
+    min-width: 50px;
+  }
+}
+
+/* ──────────── Webhook settings & Send-to modal ──────────── */
+
+.dm-webhook-block {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--background-secondary);
+}
+.dm-webhook-block h4 {
+  margin: 0 0 8px;
+}
+.dm-webhook-extras {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.dm-webhook-extra-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0;
+}
+.dm-webhook-extra-field input[type="text"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.dm-webhook-extra-field button {
+  flex: 0 0 auto;
+}
+
+.dm-send-modal .modal-content,
+.dm-send-modal {
+  min-width: 360px;
+}
+.dm-send-modal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.dm-send-modal-row label {
+  font-weight: 600;
+  font-size: 0.85em;
+}
+.dm-send-modal-row select,
+.dm-send-modal-row textarea {
+  width: 100%;
+}
+.dm-send-modal-preview {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  background: var(--background-primary-alt);
+  border-radius: 4px;
+  padding: 8px;
+}
+.dm-send-modal-preview img {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+}
+.dm-send-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.dm-send-modal-empty {
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 8px 0;
+}
+
+
+/* ─── Map Screen section ────────────────────────────────────────────── */
+
+.dm-map-grid-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+
+.dm-map-grid-controls input[type="number"] {
+  width: 64px;
+}
+
+.dm-map-grid-controls input[type="range"] {
+  width: 80px;
+}
+
+.dm-hydrus-bar {
+  display: flex;
+  margin: 4px 0 10px;
+}
+
+.dm-hydrus-bar button {
+  width: 100%;
+}
+
+.dm-section-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.dm-section-toggle::before {
+  content: "▾ ";
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+.dm-section-collapsed .dm-section-toggle::before {
+  content: "▸ ";
+}
+
+/* The first child is the title (or the COMBAT header row, which keeps the
+   Live indicator visible); everything else folds away. */
+.dm-section-collapsed > *:not(:first-child) {
+  display: none;
+}
+
+.dm-map-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #111;
+  user-select: none;
+}
+
+.dm-map-preview-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  flex-shrink: 0;
+}
+
+.dm-map-zoom-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.dm-map-zoom-controls input[type="range"] {
+  width: 90px;
+}
+
+/* Lock lives on its own row below the zoom slider, pushed hard right.
+   Monochrome lucide icon tinted to the muted theme colour so it doesn't
+   clash with the map. No button chrome — force transparent across every
+   state so Obsidian's interactive-hover/active backgrounds can't leak in;
+   a drop-shadow on the icon itself makes it legible over the map. */
+.dm-map-lock-btn,
+.dm-map-lock-btn:hover,
+.dm-map-lock-btn:active,
+.dm-map-lock-btn:focus,
+.dm-map-lock-btn:focus-visible {
+  padding: 2px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  cursor: pointer;
+}
+
+.dm-map-lock-btn > svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+.dm-map-lock-btn:hover {
+  color: var(--text-normal);
+}
+
+.dm-map-view-locked .dm-map-lock-btn {
+  color: var(--text-normal);
+}
+
+.dm-map-view-locked .dm-map-viewport-rect {
+  pointer-events: none;
+  border-style: dashed;
+  cursor: default;
+}
+
+.dm-map-preview-stage > img,
+.dm-map-preview-stage > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.dm-map-viewport-rect {
+  position: absolute;
+  border: 2px solid #2ecc71;
+  background: rgba(46, 204, 113, 0.12);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+
+.dm-map-uncalibrated {
+  font-size: 0.85em;
+  color: var(--text-warning, #e0a030);
+  margin: 4px 0;
+}
+
+.dm-map-aoe-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.dm-map-aoe-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  transform: translate(-50%, -50%) scale(calc(1 / var(--dm-map-zoom, 1)));
+  cursor: move;
+  z-index: 5;
+}
+
+.dm-map-vision-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffd23f;
+  border: 2px dashed rgba(0, 0, 0, 0.7);
+  transform: translate(-50%, -50%) rotate(45deg) scale(calc(1 / var(--dm-map-zoom, 1)));
+  cursor: move;
+  z-index: 5;
+}
+
+.dm-map-aoe-rot-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  transform: translate(-50%, -50%) rotate(45deg) scale(calc(1 / var(--dm-map-zoom, 1)));
+  cursor: grab;
+  z-index: 5;
+}
+
+.dm-map-aoe-section {
+  margin-top: 8px;
+}
+
+.dm-map-aoe-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.dm-map-aoe-row input[type="color"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+
+.dm-map-aoe-row input[type="range"] {
+  width: 60px;
+}
+
+.dm-map-aoe-row input[type="number"] {
+  width: 56px;
+}
+
+.dm-map-aoe-label {
+  font-size: 0.85em;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Map fog modal ─────────────────────────────────────────────── */
+.dm-fog-modal {
+  width: 90vw;
+  max-width: 1400px;
+}
+.dm-fog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.dm-fog-toolbar button.dm-fog-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.dm-fog-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+.dm-fog-stage img,
+.dm-fog-stage video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.dm-fog-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.dm-fog-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.dm-explore-modal {
+  width: 96vw;
+  height: 96vh;
+  max-width: none;
+}
+.dm-explore-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+/* The content column fills the modal so the body can claim the leftover
+   height below the bar. */
+.dm-explore-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+/* Body is a row: the map stage grows to fill, the control sidebar sits at a
+   fixed width on the right. */
+.dm-explore-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 10px;
+}
+.dm-explore-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+/* The AoE/Vision control panel, reusing the DM panel's row layout. */
+.dm-explore-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.dm-explore-lock-btn.dm-fog-active,
+.dm-map-vision-bind.dm-fog-active {
+  color: var(--text-normal);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+.dm-map-vision-bind {
+  min-width: 28px;
+  padding: 2px 6px;
+}
+/* A locked viewport rect is a passive dashed outline — not draggable. */
+.dm-explore-markers .dm-map-viewport-rect.dm-explore-rect-locked {
+  pointer-events: none;
+  border-style: dashed;
+  cursor: default;
+}
+/* The rotated map box: sized to the map's aspect, centred, spun to the TV
+   orientation. Its children (media, overlay, markers) rotate solidly with it. */
+.dm-explore-inner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.dm-explore-inner > img,
+.dm-explore-inner > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+.dm-explore-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+/* Marker layer passes clicks to the overlay; only dots and the viewport rect
+   opt back in to pointer events. */
+.dm-explore-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dm-explore-markers .dm-map-aoe-dot,
+.dm-explore-markers .dm-map-aoe-rot-handle,
+.dm-explore-markers .dm-map-vision-dot,
+.dm-explore-markers .dm-map-viewport-rect {
+  pointer-events: auto;
+}
+/* Shift-held exploration focus: every marker goes pointer-transparent so clicks
+   pass through to the overlay's door/room gestures anywhere on the map. */
+.dm-explore-markers.dm-explore-focus,
+.dm-explore-markers.dm-explore-focus * {
+  pointer-events: none;
+}

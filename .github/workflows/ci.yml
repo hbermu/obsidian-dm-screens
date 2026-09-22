@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - 'release/v*'
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: make typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: make test-coverage
+      - name: Build coverage summary
+        if: always()
+        env:
+          # coverage/ is written by the root Docker container; the summary is
+          # written to RUNNER_TEMP (runner-owned) to avoid a permission clash.
+          SUMMARY: ${{ runner.temp }}/coverage-summary.md
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then exit 0; fi
+          {
+            echo "<!-- coverage-report -->"
+            echo "## Test coverage (vitest, src/**)"
+            echo ""
+            echo "| Metric | Covered | Total | % |"
+            echo "|---|---:|---:|---:|"
+            jq -r '.total | to_entries[] | select(.key == "lines" or .key == "statements" or .key == "functions" or .key == "branches") |
+              "| \(.key) | \(.value.covered) | \(.value.total) | \(.value.pct)% |"' coverage/coverage-summary.json
+            echo ""
+            echo "_Unit + integration (vitest) over \`src/**\`. The player/map browser bundles and the DM UI flows are additionally covered by the Playwright visual suite and the real-Obsidian e2e suite, which do not feed this metric._"
+          } > "$SUMMARY"
+          cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ runner.temp }}/coverage-summary.md
+        run: |
+          if [ ! -f "$SUMMARY" ]; then exit 0; fi
+          PR=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          CID=$(gh api "repos/$REPO/issues/$PR/comments" --jq '.[] | select(.body | startswith("<!-- coverage-report -->")) | .id' | head -1)
+          if [ -n "$CID" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$CID" -F body=@"$SUMMARY"
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -F body=@"$SUMMARY"
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: make build
+
+  visual:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: make test-visual
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: visual-diffs
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - versions: earliest/earliest
+            slug: earliest
+          - versions: latest/latest
+            slug: latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .obsidian-cache
+          key: obsidian-cache-${{ matrix.slug }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            obsidian-cache-${{ matrix.slug }}-
+      - run: make test-e2e
+        env:
+          OBSIDIAN_VERSIONS: ${{ matrix.versions }}
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-logs-${{ matrix.slug }}
+          path: wdio-logs/
+          retention-days: 7
+          if-no-files-found: ignore
