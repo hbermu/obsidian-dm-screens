@@ -1,0 +1,310 @@
+import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS, WEBHOOK_TEMPLATES, newWebhookId } from "../settings";
+import type { DmScreenSettings } from "../settings";
+
+describe("DEFAULT_SETTINGS", () => {
+  it("has expected server defaults", () => {
+    expect(DEFAULT_SETTINGS.serverPort).toBe(3000);
+    expect(DEFAULT_SETTINGS.autoStartServer).toBe(false);
+    expect(DEFAULT_SETTINGS.maxClients).toBe(10);
+  });
+
+  it("has expected fallback resolution defaults", () => {
+    expect(DEFAULT_SETTINGS.tvWidth).toBe(1920);
+    expect(DEFAULT_SETTINGS.tvHeight).toBe(1080);
+  });
+
+  it("has expected waiting-screen defaults", () => {
+    expect(DEFAULT_SETTINGS.waitingTitle).toBe("Player Screen");
+    expect(DEFAULT_SETTINGS.waitingSubtitle).toBe("Waiting for DM to push content...");
+  });
+
+  it("has expected hydrus defaults", () => {
+    expect(DEFAULT_SETTINGS.hydrusEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.hydrusApiUrl).toBe("");
+    expect(DEFAULT_SETTINGS.hydrusApiKey).toBe("");
+    expect(DEFAULT_SETTINGS.cacheBaseFolder).toBe(".dm-screen");
+    expect(DEFAULT_SETTINGS.hydrusCacheTtlDays).toBe(30);
+    expect(DEFAULT_SETTINGS.hydrusDefaultLoop).toBe(true);
+    expect(DEFAULT_SETTINGS.hydrusDefaultMuted).toBe(true);
+    expect(DEFAULT_SETTINGS.hydrusTagServices).toEqual([]);
+    expect(DEFAULT_SETTINGS.hydrusAvailableTagServices).toEqual([]);
+    expect(DEFAULT_SETTINGS.hydrusDefaultSearchTags).toBe("");
+  });
+
+  it("has expected DDB defaults", () => {
+    expect(DEFAULT_SETTINGS.ddbEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.ddbCobaltSession).toBe("");
+  });
+
+  it("has expected combat tracker scale default", () => {
+    expect(DEFAULT_SETTINGS.combatTrackerScale).toBe(1);
+  });
+
+  it("has expected debug default", () => {
+    expect(DEFAULT_SETTINGS.debugMode).toBe(false);
+  });
+
+  it("includes 3 default ignored tag patterns", () => {
+    expect(DEFAULT_SETTINGS.hydrusIgnoredTagPatterns).toHaveLength(3);
+    expect(DEFAULT_SETTINGS.hydrusIgnoredTagPatterns).toContain("rating:.*");
+  });
+
+  it("has empty persisted player screen state", () => {
+    expect(DEFAULT_SETTINGS.lastPlayerScreenWidth).toBe(0);
+    expect(DEFAULT_SETTINGS.lastPlayerScreenHeight).toBe(0);
+    expect(DEFAULT_SETTINGS.lastImageLayers).toBe("[]");
+    expect(DEFAULT_SETTINGS.lastBroadcastCache).toEqual({});
+  });
+});
+
+describe("Settings merge behavior", () => {
+  it("Object.assign preserves defaults for missing keys", () => {
+    const saved = { serverPort: 8080 } as Partial<DmScreenSettings>;
+    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
+    expect(merged.serverPort).toBe(8080);
+    expect(merged.autoStartServer).toBe(false);
+    expect(merged.tvWidth).toBe(1920);
+    expect(merged.cacheBaseFolder).toBe(".dm-screen");
+  });
+
+  it("Object.assign with null returns defaults", () => {
+    const merged = Object.assign({}, DEFAULT_SETTINGS, null);
+    expect(merged).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("Object.assign with undefined returns defaults", () => {
+    const merged = Object.assign({}, DEFAULT_SETTINGS, undefined);
+    expect(merged).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("preserves hydrusDefaultSearchTags default when missing from saved data", () => {
+    const saved = { hydrusEnabled: true } as Partial<DmScreenSettings>;
+    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
+    expect(merged.hydrusDefaultSearchTags).toBe("");
+  });
+
+  it("saved hydrusDefaultSearchTags overrides default", () => {
+    const saved = {
+      hydrusDefaultSearchTags: "tavern, night",
+    } as Partial<DmScreenSettings>;
+    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
+    expect(merged.hydrusDefaultSearchTags).toBe("tavern, night");
+  });
+});
+
+describe("Settings input validation logic", () => {
+  describe("port parsing", () => {
+    it("parseInt coerces valid port string", () => {
+      expect(parseInt("8080") || 3000).toBe(8080);
+    });
+
+    it("parseInt fallback for non-numeric string", () => {
+      expect(parseInt("abc") || 3000).toBe(3000);
+    });
+
+    it("parseInt fallback for empty string", () => {
+      expect(parseInt("") || 3000).toBe(3000);
+    });
+
+    it("parseInt handles zero (falsy) — falls back to default", () => {
+      expect(parseInt("0") || 3000).toBe(3000);
+    });
+  });
+
+  describe("cache TTL parsing", () => {
+    it("valid integer remains", () => {
+      const n = parseInt("14", 10);
+      expect(Number.isFinite(n) && n > 0 ? n : 30).toBe(14);
+    });
+
+    it("non-numeric falls back to 30", () => {
+      const n = parseInt("abc", 10);
+      expect(Number.isFinite(n) && n > 0 ? n : 30).toBe(30);
+    });
+
+    it("zero falls back to 30", () => {
+      const n = parseInt("0", 10);
+      expect(Number.isFinite(n) && n > 0 ? n : 30).toBe(30);
+    });
+
+    it("negative falls back to 30", () => {
+      const n = parseInt("-5", 10);
+      expect(Number.isFinite(n) && n > 0 ? n : 30).toBe(30);
+    });
+  });
+
+  describe("cache folder validation", () => {
+    it("rejects paths containing '..'", () => {
+      const value = "../etc/secret";
+      const normalized = value.trim().replace(/^\/+|\/+$/g, "");
+      expect(normalized.includes("..")).toBe(true);
+    });
+
+    it("accepts normal relative paths", () => {
+      const value = ".dm-screen";
+      const normalized = value.trim().replace(/^\/+|\/+$/g, "");
+      expect(normalized.includes("..")).toBe(false);
+      expect(normalized).toBe(".dm-screen");
+    });
+
+    it("strips leading and trailing slashes", () => {
+      const value = "/some/path/";
+      const normalized = value.trim().replace(/^\/+|\/+$/g, "");
+      expect(normalized).toBe("some/path");
+    });
+
+    it("empty input falls back to default", () => {
+      const value = "   ";
+      const normalized = value.trim().replace(/^\/+|\/+$/g, "");
+      expect(normalized || ".dm-screen").toBe(".dm-screen");
+    });
+  });
+
+  describe("API URL normalization", () => {
+    it("strips trailing slashes", () => {
+      const value = "http://hydrus.local:45869///";
+      expect(value.replace(/\/+$/, "")).toBe("http://hydrus.local:45869");
+    });
+
+    it("no-op when no trailing slash", () => {
+      const value = "http://hydrus.local:45869";
+      expect(value.replace(/\/+$/, "")).toBe("http://hydrus.local:45869");
+    });
+  });
+
+  describe("API key normalization", () => {
+    it("trims whitespace", () => {
+      expect("  abc123  ".trim()).toBe("abc123");
+    });
+  });
+
+  describe("ignored tag patterns parsing", () => {
+    it("splits by newline, trims, and filters empty", () => {
+      const value = "rating:.*\n\n  wd tagger \n";
+      const result = value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      expect(result).toEqual(["rating:.*", "wd tagger"]);
+    });
+
+    it("handles single line", () => {
+      const value = "pattern";
+      const result = value.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+      expect(result).toEqual(["pattern"]);
+    });
+
+    it("handles empty input", () => {
+      const value = "";
+      const result = value.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("tag service migration", () => {
+    it("migrates old single service to new array format", () => {
+      const available = [
+        { name: "A.I. Tags", key: "abc123", type: 0 },
+        { name: "My Tags", key: "def456", type: 5 },
+      ];
+      const oldService = "A.I. Tags";
+      const currentServices: string[] = [];
+
+      // Simulate migration logic
+      if (oldService && currentServices.length === 0) {
+        const match = available.find(s => s.name === oldService);
+        if (match) {
+          currentServices.push(match.key);
+        }
+      }
+
+      expect(currentServices).toEqual(["abc123"]);
+    });
+
+    it("skips migration when services already selected", () => {
+      const available = [{ name: "A.I. Tags", key: "abc123", type: 0 }];
+      const oldService = "A.I. Tags";
+      const currentServices = ["xyz789"];
+
+      if (oldService && currentServices.length === 0) {
+        const match = available.find(s => s.name === oldService);
+        if (match) currentServices.push(match.key);
+      }
+
+      expect(currentServices).toEqual(["xyz789"]); // not modified
+    });
+
+    it("handles migration when old service name not found in available", () => {
+      const available = [{ name: "Other Tags", key: "xyz", type: 0 }];
+      const oldService = "Deleted Service";
+      const currentServices: string[] = [];
+
+      if (oldService && currentServices.length === 0) {
+        const match = available.find(s => s.name === oldService);
+        if (match) currentServices.push(match.key);
+      }
+
+      expect(currentServices).toEqual([]);
+    });
+  });
+
+  describe("maxClients parsing", () => {
+    it("valid number is preserved", () => {
+      expect(parseInt("5") || 10).toBe(5);
+    });
+
+    it("invalid string falls back to 10", () => {
+      expect(parseInt("nope") || 10).toBe(10);
+    });
+  });
+});
+
+describe("newWebhookId", () => {
+  it("returns a non-empty unique id on each call", () => {
+    const a = newWebhookId();
+    const b = newWebhookId();
+    expect(a).toBeTruthy();
+    expect(a).not.toBe(b);
+  });
+
+  it("falls back to a wh- id when crypto.randomUUID is unavailable", () => {
+    vi.stubGlobal("crypto", {});
+    try {
+      expect(newWebhookId()).toMatch(/^wh-/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("WEBHOOK_TEMPLATES", () => {
+  it("exposes the Telegram, Discord, and Generic presets", () => {
+    expect(WEBHOOK_TEMPLATES.map((t) => t.label)).toEqual([
+      "Telegram bot",
+      "Discord webhook",
+      "Generic multipart",
+    ]);
+  });
+
+  it("each preset builds a config without an id and with image + caption fields", () => {
+    for (const tmpl of WEBHOOK_TEMPLATES) {
+      const cfg = tmpl.build();
+      expect(cfg).not.toHaveProperty("id");
+      expect(cfg.imageField).toBeTruthy();
+      expect(cfg.captionField).toBeTruthy();
+      expect(Array.isArray(cfg.extraFields)).toBe(true);
+    }
+  });
+
+  it("the Telegram preset carries the chat_id extra field", () => {
+    const telegram = WEBHOOK_TEMPLATES[0].build();
+    expect(telegram.url).toContain("api.telegram.org");
+    expect(telegram.extraFields).toEqual([{ key: "chat_id", value: "<CHAT_ID>" }]);
+  });
+
+  it("the Discord and Generic presets ship no extra fields", () => {
+    expect(WEBHOOK_TEMPLATES[1].build().extraFields).toEqual([]);
+    expect(WEBHOOK_TEMPLATES[2].build().extraFields).toEqual([]);
+  });
+});

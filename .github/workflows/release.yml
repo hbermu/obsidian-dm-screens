@@ -1,0 +1,346 @@
+name: release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  publish:
+    # The push trigger is the documented beta path (any non-main branch), and it
+    # needs contents: write to tag and release. The repository guard keeps that
+    # write out of a fork's hands, and the bot guard stops an automated branch
+    # push (Dependabot) from reaching the publish path at all. Neither is a live
+    # hole today — there are no forks, and `pull_request` (not
+    # `pull_request_target`) runs the base ref's workflow, so untrusted branch
+    # code never executes here — but the write permission is broad enough to be
+    # worth fencing.
+    if: >
+      github.repository == 'hbermu/obsidian-dm-screens' &&
+      ((github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+       (github.event_name == 'push' && github.event.sender.type != 'Bot'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && 'main' || github.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine bump from PR labels (merge path)
+        if: github.event_name == 'pull_request'
+        id: pr_bump
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          labels=$(echo "$LABELS" | jq -r '.[]')
+          if echo "$labels" | grep -qx "release:skip"; then
+            echo "type=skip" >> $GITHUB_OUTPUT
+          elif echo "$labels" | grep -qx "release:major"; then
+            echo "type=major" >> $GITHUB_OUTPUT
+          elif echo "$labels" | grep -qx "release:minor"; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+          else
+            echo "type=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip release when label says so
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type == 'skip'
+        run: |
+          echo "Release skipped (release:skip label on PR #${{ github.event.pull_request.number }})."
+          exit 0
+
+      # ────────────── Merge-to-main path: auto-bump and publish stable ──────────────
+
+      - name: Compute next stable version (from latest stable tag)
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        id: next
+        env:
+          BUMP: ${{ steps.pr_bump.outputs.type }}
+        run: |
+          # Latest stable version number across legacy v-prefixed and new bare
+          # tags. git's --sort=version:refname does NOT normalize the leading
+          # v (ASCII 'v' > '0', so every v0.x tag ranks above every bare tag),
+          # so we strip the prefix first, then sort -V numerically.
+          current=$(git tag --list '[0-9]*' --list 'v[0-9]*' \
+              | grep -vE -- '-beta\.[0-9]+$' | sed 's/^v//' | sort -V | tail -1)
+          if [ -z "$current" ]; then
+            current="0.0.0"
+          fi
+          IFS=. read -r MA MI PA <<< "$current"
+          case "$BUMP" in
+            major) MA=$((MA+1)); MI=0; PA=0 ;;
+            minor) MI=$((MI+1)); PA=0 ;;
+            patch) PA=$((PA+1)) ;;
+          esac
+          echo "version=$MA.$MI.$PA" >> $GITHUB_OUTPUT
+          echo "Bumping from $current ($BUMP) to $MA.$MI.$PA"
+
+      - name: Bump version in three files (working tree, not committed yet)
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          for f in package.json package-lock.json manifest.json; do
+            tmp=$(mktemp)
+            jq --arg v "$VERSION" '.version = $v' "$f" > "$tmp" && mv "$tmp" "$f"
+          done
+          tmp=$(mktemp)
+          jq --arg v "$VERSION" '.packages[""].version = $v' package-lock.json > "$tmp" && mv "$tmp" package-lock.json
+
+      - name: Update versions.json with new entry
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          MIN_APP=$(jq -r .minAppVersion manifest.json)
+          tmp=$(mktemp)
+          jq --arg v "$VERSION" --arg m "$MIN_APP" '. + {($v): $m}' versions.json > "$tmp" && mv "$tmp" versions.json
+
+      - name: Build artefacts (merge path)
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        run: make build
+
+      - name: Build tiered release notes
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.next.outputs.version }}
+          BUMP: ${{ steps.pr_bump.outputs.type }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          # Highest stable tag matching the given glob(s), returned as its
+          # ORIGINAL name (legacy tags keep their v prefix — these values are
+          # used verbatim as git refs in compare URLs). We can't sort by
+          # version:refname because it doesn't normalize the v prefix, so we
+          # sort on a v-stripped key and print the untouched name back.
+          latest_tag() {
+            git tag -l "$@" | grep -vE -- '-beta\.[0-9]+$' \
+              | awk '{k=$0; sub(/^v/,"",k); print k"\t"$0}' \
+              | sort -V | tail -1 | cut -f2
+          }
+
+          # Previous stable tag (any tier), used as the compare-link footer
+          # baseline for patch releases.
+          prev_tag=$(latest_tag '[0-9]*' 'v[0-9]*')
+
+          # Tier-specific previous tag, used as the aggregation window for
+          # minor (prev *.*.0) and major (prev *.0.0) releases.
+          case "$BUMP" in
+            major)
+              prev_window=$(latest_tag '[0-9]*.0.0' 'v[0-9]*.0.0')
+              ;;
+            minor)
+              prev_window=$(latest_tag '[0-9]*.*.0' 'v[0-9]*.*.0')
+              ;;
+            *)
+              prev_window="$prev_tag"
+              ;;
+          esac
+
+          cat_match() {
+            echo "$1" | jq -r --arg re "$2" \
+              '.[] | select(.title | test($re; "i")) | "- \(.title) (#\(.number))"'
+          }
+
+          case "$BUMP" in
+            patch)
+              # Single-PR patch: just this PR's title, no headings.
+              PR_TITLE=$(gh pr view "$PR_NUM" --json title --jq .title)
+              {
+                echo "- ${PR_TITLE} (#${PR_NUM})"
+                if [ -n "$prev_tag" ]; then
+                  echo ""
+                  echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev_tag}...${VERSION}"
+                fi
+              } > notes.md
+              ;;
+            minor)
+              # Aggregate every PR merged since the previous minor (*.*.0),
+              # categorized by conventional-commit type.
+              if [ -n "$prev_window" ]; then
+                since=$(git log -1 --format=%cI "$prev_window")
+              else
+                since="1970-01-01T00:00:00Z"
+              fi
+              prs=$(gh pr list --state merged --base main \
+                  --search "merged:>$since" \
+                  --json number,title --limit 200)
+              features=$(cat_match "$prs" '^(feat|feature)(\(|:)')
+              fixes=$(cat_match "$prs" '^(fix|hotfix)(\(|:)')
+              docs=$(cat_match "$prs" '^docs(\(|:)')
+              ci=$(cat_match "$prs" '^(ci|chore|build)(\(|:)')
+              other=$(cat_match "$prs" '^(refactor|test|perf|style|revert|release)(\(|:)')
+              {
+                [ -n "$features" ] && printf "### Features\n%s\n\n" "$features"
+                [ -n "$fixes" ]    && printf "### Fixes\n%s\n\n" "$fixes"
+                [ -n "$docs" ]     && printf "### Documentation\n%s\n\n" "$docs"
+                [ -n "$ci" ]       && printf "### Build & CI\n%s\n\n" "$ci"
+                [ -n "$other" ]    && printf "### Other\n%s\n\n" "$other"
+                if [ -n "$prev_window" ]; then
+                  echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev_window}...${VERSION}"
+                fi
+              } > notes.md
+              ;;
+            major)
+              # Summary from the PR body (strip the boilerplate '## Test plan'
+              # tail that Claude-generated PRs append) + bullet list of every
+              # minor (*.*.0) shipped since the previous major.
+              PR_BODY=$(gh pr view "$PR_NUM" --json body --jq .body)
+              SUMMARY=$(printf '%s\n' "$PR_BODY" | awk '/^## Test plan/{exit} {print}')
+              # Every minor (*.*.0) strictly above prev_window and below this
+              # release, sorted ascending. Compare numerically per-component —
+              # a string compare would order v0.10.0 below v0.9.0 — and match
+              # the v-stripped key while emitting the original tag name.
+              minors=$(git tag -l '[0-9]*.*.0' 'v[0-9]*.*.0' \
+                  | grep -vE -- '-beta\.[0-9]+$' \
+                  | awk '{k=$0; sub(/^v/,"",k); print k"\t"$0}' | sort -V \
+                  | awk -F'\t' -v lo="${prev_window#v}" -v hi="${VERSION#v}" '
+                      function vcmp(a,b,  x,y,i){split(a,x,".");split(b,y,".");
+                        for(i=1;i<=3;i++){if((x[i]+0)>(y[i]+0))return 1;
+                                          if((x[i]+0)<(y[i]+0))return -1}return 0}
+                      { if ($1!=hi && (lo=="" || vcmp($1,lo)>0)) print $2 }')
+              {
+                if [ -n "$SUMMARY" ]; then
+                  printf '%s\n\n' "$SUMMARY"
+                fi
+                if [ -n "$minors" ]; then
+                  echo "## Releases included"
+                  echo ""
+                  for tag in $minors; do
+                    echo "- [${tag}](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag})"
+                  done
+                  echo ""
+                fi
+                if [ -n "$prev_window" ]; then
+                  echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev_window}...${VERSION}"
+                fi
+              } > notes.md
+              ;;
+          esac
+          echo "::group::Generated notes"
+          cat notes.md
+          echo "::endgroup::"
+
+      - name: Tag the bumped commit (without touching main)
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --detach
+          git add package.json package-lock.json manifest.json versions.json
+          if ! git diff --cached --quiet; then
+            git commit -m "release: $VERSION"
+          fi
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+
+      - name: Publish stable release
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          gh release create "$VERSION" \
+              --title "$VERSION" \
+              --notes-file notes.md \
+              main.js manifest.json styles.css
+
+      - name: Clean up all beta releases and tags
+        if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          gh release list --limit 200 --json tagName --jq '.[] | .tagName' \
+            | while read -r tag; do
+                case "$tag" in
+                  *-beta.*) echo "Deleting prerelease $tag (stable $VERSION published)"
+                            gh release delete "$tag" --yes --cleanup-tag ;;
+                esac
+              done
+
+      # ────────────── Push-to-any-non-main-branch path: beta only ──────────────
+
+      - name: Read version from manifest.json (push path)
+        if: github.event_name == 'push'
+        id: ver
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if echo "$VERSION" | grep -qE -- '-beta\.[0-9]+$'; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip non-beta push (manifest has no -beta.N suffix)
+        if: github.event_name == 'push' && steps.ver.outputs.is_prerelease != 'true'
+        run: |
+          echo "manifest.json version '${{ steps.ver.outputs.version }}' has no -beta.N suffix on branch '${{ github.ref_name }}'; nothing to publish."
+
+      - name: Bail if prerelease tag already exists
+        if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true'
+        id: tag_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1 \
+             || git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "::notice::Tag $VERSION already exists on remote; nothing to publish."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bail if stable of this line was already published
+        if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true' && steps.tag_check.outputs.exists == 'false'
+        id: stable_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          BASE="${VERSION%-beta.*}"
+          if gh release view "$BASE" >/dev/null 2>&1 \
+             || gh release view "v$BASE" >/dev/null 2>&1; then
+            echo "stable_exists=true" >> $GITHUB_OUTPUT
+            echo "::notice::Stable release $BASE already exists; refusing to publish $VERSION."
+          else
+            echo "stable_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build prerelease artefacts
+        if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true' && steps.tag_check.outputs.exists == 'false' && steps.stable_check.outputs.stable_exists == 'false'
+        run: make build
+
+      - name: Create prerelease tag
+        if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true' && steps.tag_check.outputs.exists == 'false' && steps.stable_check.outputs.stable_exists == 'false'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+
+      - name: Publish prerelease
+        if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true' && steps.tag_check.outputs.exists == 'false' && steps.stable_check.outputs.stable_exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release create "$VERSION" \
+              --title "$VERSION" \
+              --generate-notes \
+              --prerelease \
+              main.js manifest.json styles.css
