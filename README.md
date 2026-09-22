@@ -200,3 +200,5 @@ The map is only here to show off the plugin. It isn't bundled with DM Screen, an
 ## License
 
 [MIT](LICENSE)
+
+<!-- continuous integration smoke marker -->
