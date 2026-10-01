@@ -40,3 +40,6 @@ wdio-logs/
 .dev/vault/.obsidian/plugins/dm-screen/*
 !.dev/vault/.obsidian/plugins/dm-screen/.gitkeep
 .dev/vault/.obsidian/plugins/hot-reload/
+
+# Crash dumps written by Node inside the Docker containers
+core
