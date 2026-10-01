@@ -73,3 +73,23 @@ export async function addMap(): Promise<void> {
   await (await panelButton("Add Map")).click();
   await panelButton("Stop Map").waitForExist();
 }
+
+// Obsidian up to 1.12 renders a modal's close control as .modal-close-button;
+// 1.13 replaced it with a .modal-header-button carrying the lucide "x" icon.
+// scope narrows to one modal (e.g. ".dm-fog-modal"); it must match .modal.
+export async function modalCloseButton(scope = ".modal") {
+  const legacy = browser.$(`${scope} .modal-close-button`);
+  if (await legacy.isExisting()) return legacy;
+  return browser.$(`${scope} .modal-header-button .lucide-x`).parentElement();
+}
+
+export async function closeModal(scope = ".modal"): Promise<void> {
+  await (await modalCloseButton(scope)).click();
+  await browser.$(scope).waitForExist({ reverse: true });
+}
+
+// afterEach safety net: a test that throws before closing its modal would
+// otherwise leave the backdrop intercepting the next test's clicks.
+export async function closeModalIfOpen(): Promise<void> {
+  if (await browser.$(".modal").isExisting()) await closeModal();
+}

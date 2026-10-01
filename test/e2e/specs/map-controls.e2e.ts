@@ -1,5 +1,14 @@
 import { browser, expect } from "@wdio/globals";
-import { DEFAULT_PORT, accessToken, addMap, openFixtureNote, openPanel, panelButton, startServer } from "../helpers/obsidian";
+import {
+  DEFAULT_PORT,
+  accessToken,
+  addMap,
+  closeModal,
+  openFixtureNote,
+  openPanel,
+  panelButton,
+  startServer,
+} from "../helpers/obsidian";
 import { httpGetRaw } from "../helpers/http";
 import { WsRecorder } from "../helpers/ws";
 
@@ -78,7 +87,7 @@ describe("map view, grid, calibration, and vault guard", function () {
     await checkbox.click();
     await rec.waitFor("map-calibration-overlay", { skip: seen, where: (m) => m.payload.show === true });
 
-    await browser.$(".modal-close-button").click();
+    await closeModal();
   });
 
   it("the /vault/ route rejects traversal and non-allowlisted paths", async function () {
