@@ -228,7 +228,7 @@ If the value contains `-beta.N` and you are **not** intentionally cutting a beta
 
 ```bash
 # Latest stable tag, for reference (supports both legacy v-prefixed and bare tags):
-git ls-remote --tags origin | grep -oP 'refs/tags/\Kv?[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -1
+git ls-remote --tags origin | grep -oE 'refs/tags/v?[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|.*/||; s|^v||' | sort -V | tail -1
 ```
 
 Edit `manifest.json`, `package.json`, `package-lock.json` (top-level `version` field — and the nested `packages[""].version`), commit as `chore(repo): bump version files to X.Y.Z` with `release:skip`, then push. The first push of every new branch should be from a manifest that matches "the version we'd ship if this branch were stable today" — never from a stale `-beta.N`.
