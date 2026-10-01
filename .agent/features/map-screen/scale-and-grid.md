@@ -5,9 +5,11 @@
 ## Source files
 
 - `src/map/transform.ts` — `mapScale`, `mapTranslation`, `clampPan`, `gridLinePositions`, `defaultMapState`, `DEFAULT_PX_PER_SQUARE`, `DEFAULT_GRID_CONFIG`
-- `src/map/map.ts` — `applyLayout()` applies transform and paints the grid canvas
+- `src/map/map.ts` — `applyLayout()` schedules `paintLayout()`, which applies the transform and paints the grid canvas
+- `src/map/canvas.ts` — `sizeCanvas`, `createRepaintScheduler`
 - `src/views/MapScreenPanel.ts` — mode toggle, grid controls, pan preview with viewport rectangle, shared preview thumbnail
-- `src/views/mapStage.ts` — `fitScale`, `finiteScale`, `sizeCanvas`, `createRepaintScheduler`
+- `src/views/mapStage.ts` — `fitScale`, `finiteScale`
+- `src/map/canvas.ts` — `sizeCanvas`, `createRepaintScheduler`, shared with the map client
 
 ## Settings used
 
@@ -34,7 +36,7 @@
 7. The grid overlay shall be drawn on a full-viewport canvas above the media: lines every `pxPerSquare × scale` screen pixels in both axes, phased so they align with the map lattice at `(gridOffsetX, gridOffsetY)` map pixels — the grid pans, scales, and rotates with the map in both modes (90°-multiple rotations keep the lattice axis-aligned; `gridAxisOffsets` routes each map axis to the correct screen axis with the correct sign).
 8. `gridLinePositions` shall return no lines when the screen-space pitch is ≤ 1 px (a solid fill, not a grid).
 9. Grid appearance shall come from `map-config`: `showGrid` (default off — gridded map variants already carry their grid), `gridColor` (default `#000000`), `gridOpacity` (default `0.35`), all editable from the DM grid controls and broadcast on change.
-10. The grid canvas shall be sized in device pixels (`viewport × devicePixelRatio`) so lines stay crisp on high-dpr screens.
+10. The grid canvas shall be sized in device pixels (`viewport × devicePixelRatio`) so lines stay crisp on high-dpr screens, and that size shall be assigned only when it actually changes (`sizeCanvas`). `applyLayout` runs on every `map-view` and `map-aoe-sync`, which arrive about twelve times a second during a pan drag; on a 4K screen an unguarded assignment discarded and re-uploaded a multi-megapixel texture each time. `setTransform` still runs on every paint, because a resize resets it. `applyLayout` itself is coalesced to at most one paint per animation frame (`createRepaintScheduler`), so a burst of messages inside one frame produces one layout. The fog canvas uses the same guard.
 11. Every exported function in `src/map/transform.ts` shall be total over non-finite input: `finiteOr(value, fallback)` coerces each numeric parameter that can arrive from a WebSocket payload, a saved screen profile, or a map config persisted by an earlier version, so `cssPixelsPerInch`, `mapScale`, `mapTranslation`, `clampPan` and `rotatePoint` always return finite numbers. A `NaN` reaching the stage's CSS transform blanks the map screen with nothing in the console, which is why the coercion lives at each entry point rather than in the callers.
 
 ## Broadcast / IPC
@@ -47,7 +49,8 @@
 ## Tests covering this
 
 - `src/__tests__/map-transform.test.ts` — fit/physical scale, 1-inch invariant (`140 × scale = ppi`), translation centering and pan-at-center, clamping, grid pitch/phase/degenerate cases, defaults, rotation (point mapping, rotated fit bbox, rotation-independent physical scale, centered rotated fit, grid axis routing)
-- `src/__tests__/map-stage.test.ts` — letterbox fit against either axis and its degenerate cases, the finite-scale guard, canvas sizing that reassigns only on change, repaint coalescing and cancellation
+- `src/__tests__/map-stage.test.ts` — letterbox fit against either axis and its degenerate cases, and the finite-scale guard
+- `src/__tests__/map-canvas.test.ts` — canvas sizing that reassigns only on change and never sizes to zero, repaint coalescing and cancellation
 - `src/__tests__/map-preview-thumb.test.ts` — the shared preview copy: videos and already-small maps keep their original, the 2048 cap preserves the aspect, one encode serves every preview, a late copy for a swapped-away map is dropped, `stopMap` revokes it
 - `src/__tests__/map-screen-panel-aoe.test.ts` — `trackDrag` releases the lock on mouseup, tears down a prior drag whose mouseup was missed without running its `onEnd`, and stops moving the torn-down drag
 - `src/__tests__/dm-control-render-guard.test.ts` — the drag lock: a background render defers while a drag is held, nested drags flush only on the last release, a repeated release does not double-flush, and a drag ending over a focused field keeps deferring

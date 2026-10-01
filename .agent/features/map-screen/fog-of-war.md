@@ -14,7 +14,8 @@
 - `src/views/MapScreenPanel.ts` — `fogDataUrl`, `broadcastFog`, `commitFog`; `walls`, `broadcastWalls`, `commitWalls`; `applyGridConfig`; sidecar loads in `setVaultMap`; restore in `restoreFromCache`; re-emit in `republish`; resets in `stopMap`; the Fog button and the Explore button; `aoes`, `broadcastAoes`, `openAddAoeMenu`, `addAoe`, `removeAoe`, `renderAoeSection`; `playerViewportMapSize`, `applyExplorePan`, `refreshPanel`, `viewLocked` getter/setter, `syncBoundVisions`; `visions`, `broadcastVisions`, `bakeVisions`, `renderVisionSection` (bind-to-view toggle), vision dots in `renderPanPreview`
 - `src/map/map.ts` — `showFog`, `recompositeFog`, fog/vision/walls clearing in `clearMap`
 - `src/map/vision.ts` — `eraseVision`, `eraseVisionWithWalls`
-- `src/views/mapStage.ts` — `fitScale` and `createRepaintScheduler`, shared with the DM pan preview
+- `src/views/mapStage.ts` — `fitScale`, shared with the DM pan preview
+- `src/map/canvas.ts` — `createRepaintScheduler`, shared with the DM pan preview and the map client
 - `src/map/types.ts` — `MapVision`, `MapWall` interfaces
 - `src/server.ts` — the `#map-fog` canvas element in the inline map page HTML
 - `src/settings.ts` — `mapFogTvOpacity`

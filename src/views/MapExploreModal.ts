@@ -8,7 +8,8 @@ import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
 import { rotatePoint } from "../map/transform";
 import { debug } from "../debug";
-import { createRepaintScheduler, fitScale } from "./mapStage";
+import { fitScale } from "./mapStage";
+import { createRepaintScheduler } from "../map/canvas";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's

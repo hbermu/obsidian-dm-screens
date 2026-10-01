@@ -3,6 +3,7 @@
 // 1-inch-per-square scale (or fit-to-screen) with an optional grid overlay.
 
 import { safePlayerUrl } from "../player/safeUrl";
+import { createRepaintScheduler, sizeCanvas } from "./canvas";
 import {
   cssPixelsPerInch,
   gridAxisOffsets,
@@ -25,6 +26,43 @@ interface MapMessage {
 
 const MAX_PAYLOAD_ARRAY = 200;
 
+const PERF_REPORT_INTERVAL_MS = 2000;
+
+// The map bundle cannot reach the plugin's Debug setting, so it reports through
+// console directly — the documented exception. Per-call logging would itself be
+// the bottleneck at the rate these run, so calls are accumulated and summarised
+// on an interval, and a quiet interval reports nothing.
+class PerfSampler {
+  private calls = 0;
+  private totalMs = 0;
+  private maxMs = 0;
+  private lastReport = 0;
+
+  constructor(private label: string, private context: () => string) {}
+
+  sample<T>(run: () => T): T {
+    const started = performance.now();
+    const result = run();
+    const elapsed = performance.now() - started;
+    this.calls++;
+    this.totalMs += elapsed;
+    if (elapsed > this.maxMs) this.maxMs = elapsed;
+    const now = performance.now();
+    if (this.lastReport === 0) this.lastReport = now;
+    if (now - this.lastReport >= PERF_REPORT_INTERVAL_MS) {
+      console.log(
+        `[Map Screen] ${this.label}: ${this.calls} calls in ${Math.round(now - this.lastReport)}ms,` +
+          ` avg ${(this.totalMs / this.calls).toFixed(1)}ms, max ${this.maxMs.toFixed(1)}ms — ${this.context()}`
+      );
+      this.calls = 0;
+      this.totalMs = 0;
+      this.maxMs = 0;
+      this.lastReport = now;
+    }
+    return result;
+  }
+}
+
 class MapScreen {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -40,6 +78,17 @@ class MapScreen {
   private fogOpacity = 1;
   private visions: MapVision[] = [];
   private walls: MapWall[] = [];
+  private layoutPainter = createRepaintScheduler(() =>
+    this.layoutPerf.sample(() => this.paintLayout())
+  );
+  private layoutPerf = new PerfSampler(
+    "applyLayout",
+    () => `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio || 1}, ${this.aoes.length} AoEs, grid ${this.config.showGrid ? "on" : "off"}`
+  );
+  private fogPerf = new PerfSampler(
+    "recompositeFog",
+    () => `${this.visions.length} visions, ${this.walls.length} walls`
+  );
 
   constructor() {
     this.connect();
@@ -301,6 +350,10 @@ class MapScreen {
   }
 
   private recompositeFog() {
+    this.fogPerf.sample(() => this.paintFog());
+  }
+
+  private paintFog() {
     const canvas = document.getElementById("map-fog") as HTMLCanvasElement;
     if (!this.fogImage) {
       const ctx = canvas.getContext("2d");
@@ -311,8 +364,7 @@ class MapScreen {
     const { w: nw } = this.naturalSize();
     const fw = this.fogImage.naturalWidth;
     const fh = this.fogImage.naturalHeight;
-    if (canvas.width !== fw) canvas.width = fw;
-    if (canvas.height !== fh) canvas.height = fh;
+    sizeCanvas(canvas, fw, fh);
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, fw, fh);
     ctx.drawImage(this.fogImage, 0, 0);
@@ -359,6 +411,10 @@ class MapScreen {
   }
 
   private applyLayout() {
+    this.layoutPainter.schedule();
+  }
+
+  private paintLayout() {
     const stage = document.getElementById("map-stage")!;
     const hint = document.getElementById("scale-hint")!;
     const canvas = document.getElementById("grid-overlay") as HTMLCanvasElement;
@@ -367,8 +423,12 @@ class MapScreen {
     const vh = window.innerHeight;
     const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = Math.round(vw * dpr);
-    canvas.height = Math.round(vh * dpr);
+    // Only the viewport changing warrants a reallocation. map-view and
+    // map-aoe-sync arrive about twelve times a second during a pan drag, and on
+    // a 4K screen each unguarded assignment threw away and re-uploaded a
+    // multi-megapixel texture. setTransform must still run every paint: it is
+    // reset by a resize, not by a repaint.
+    sizeCanvas(canvas, vw * dpr, vh * dpr);
     canvas.style.width = `${vw}px`;
     canvas.style.height = `${vh}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

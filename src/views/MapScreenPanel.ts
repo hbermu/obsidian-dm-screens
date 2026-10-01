@@ -19,7 +19,8 @@ import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, Stor
 import { renderAoe } from "../map/aoe";
 import { eraseVisionWithWalls } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
-import { createRepaintScheduler, finiteScale, fitScale, sizeCanvas } from "./mapStage";
+import { finiteScale, fitScale } from "./mapStage";
+import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
 import { buildJoinUrl } from "../auth";
