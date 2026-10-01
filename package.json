@@ -51,6 +51,7 @@
     "nanoid": "^3.3.18",
     "brace-expansion": "^2.1.4",
     "deepmerge-ts": "^8.0.0",
-    "diff": "^8.0.3"
+    "diff": "^8.0.3",
+    "moment": "^2.31.0"
   }
 }
