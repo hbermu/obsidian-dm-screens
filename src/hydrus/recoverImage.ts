@@ -15,7 +15,7 @@ export async function recoverVaultImage(
   const exists = await plugin.app.vault.adapter.exists(vaultPath);
   if (exists) return "ok";
 
-  const hash = hydrusHashFromVaultPath(vaultPath, plugin.settings.cacheBaseFolder || ".dm-screen");
+  const hash = hydrusHashFromVaultPath(vaultPath, plugin.settings.cacheBaseFolder);
   if (!hash) return "missing";
   if (!plugin.hydrusCache || !plugin.buildHydrusClient()) {
     return "missing";

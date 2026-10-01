@@ -135,7 +135,7 @@ describe("resolveSourceLabel", () => {
     expect(result.title).toBe(hash);
   });
 
-  it("should fall back to filename when cache lookup returns nothing", () => {
+  it("labels a Hydrus cache path Hydrus <hash8> when the cache has no entry", () => {
     const hash = "c".repeat(64);
     const mockCache = {
       getSync: vi.fn().mockReturnValue(undefined),
@@ -152,8 +152,8 @@ describe("resolveSourceLabel", () => {
     });
 
     expect(mockCache.getSync).toHaveBeenCalledWith(hash);
-    expect(result.label).toBe(`${hash}.png`);
-    expect(result.title).toBe(`${hash}.png`);
+    expect(result.label).toBe(`Hydrus ${hash.slice(0, 8)}`);
+    expect(result.title).toBe(hash);
   });
 
   it("should work with custom cache folder", () => {
@@ -185,8 +185,8 @@ describe("resolveSourceLabel", () => {
       url: `/vault/.dm-screen/hydrus/${hash}.png`,
     });
 
-    expect(result.label).toBe(`${hash}.png`);
-    expect(result.title).toBe(`${hash}.png`);
+    expect(result.label).toBe(`Hydrus ${hash.slice(0, 8)}`);
+    expect(result.title).toBe(hash);
   });
 
   it("should skip cache lookup when hydrusCache is null", () => {
@@ -201,7 +201,7 @@ describe("resolveSourceLabel", () => {
       plugin: mockPlugin,
     });
 
-    expect(result.label).toBe(`${hash}.png`);
-    expect(result.title).toBe(`${hash}.png`);
+    expect(result.label).toBe(`Hydrus ${hash.slice(0, 8)}`);
+    expect(result.title).toBe(hash);
   });
 });

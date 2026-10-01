@@ -36,25 +36,14 @@ export function resolveSourceLabel(input: SourceLabelInput): SourceLabel {
     };
   }
 
-  // 4a. Hydrus cache path without explicit hash: extract hash and lookup tags
-  if (plugin?.hydrusCache) {
-    const vaultPath = vaultPathFromUrl(url);
-    if (vaultPath) {
-      const hash = hydrusHashFromVaultPath(vaultPath, plugin.settings.cacheBaseFolder || ".dm-screen");
-      if (hash) {
-        const cached = plugin.hydrusCache.getSync(hash);
-        if (cached) {
-          const label = layerLabelFromTags(cached.knownTags, hash);
-          return {
-            label,
-            title: hash,
-          };
-        }
-      }
-    }
+  const vaultPath = vaultPathFromUrl(url);
+  const cachedHash = vaultPath ? hydrusHashFromVaultPath(vaultPath, plugin?.settings.cacheBaseFolder ?? "") : null;
+  if (cachedHash) {
+    const cachedTags = plugin?.hydrusCache?.getSync(cachedHash)?.knownTags ?? [];
+    return { label: layerLabelFromTags(cachedTags, cachedHash), title: cachedHash };
   }
 
-  // 4b. Otherwise: the file name without its folder
+  // 4. Otherwise: the file name without its folder
   const parts = url.split("/");
   const filename = parts[parts.length - 1];
   const decoded = filename ? decodeURIComponent(filename) : url;
