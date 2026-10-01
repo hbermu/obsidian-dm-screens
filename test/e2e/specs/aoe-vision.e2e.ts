@@ -104,4 +104,38 @@ describe("aoe overlays and vision", function () {
       where: (m) => (m.payload.visions as unknown[]).length === 0,
     });
   });
+
+  it("Setting dim radius broadcasts dimFt and updates card summary", async function () {
+    await (await panelButton("Add Vision")).click();
+    await browser.$(".menu").waitForExist();
+    await browser.$(".menu-item-title=Circle 30 ft").click();
+
+    await rec.waitFor("map-vision", {
+      where: (m) => (m.payload.visions as unknown[]).length === 2,
+    });
+
+    const cards = await browser.$$(".dm-control-panel .dm-control-card");
+    const card = cards[cards.length - 1];
+    await card.$(".dm-control-card-header").click();
+
+    const inputs = await card.$$("input[type='number']");
+    const dimInput = inputs[1];
+
+    const seen = rec.count("map-vision");
+    await dimInput.setValue("20");
+    await browser.pause(500);
+
+    const msg = await rec.waitFor("map-vision", {
+      skip: seen,
+      where: (m) => {
+        const visions = m.payload.visions as Record<string, unknown>[];
+        return visions.length === 2 && (visions[1]?.dimFt as number) === 20;
+      },
+    });
+    const vision = (msg.payload.visions as Record<string, unknown>[])[1];
+    expect(vision.dimFt).toBe(20);
+
+    const summary = await card.$(".dm-control-card-summary").getText();
+    expect(summary).toContain("30/+20 ft");
+  });
 });
