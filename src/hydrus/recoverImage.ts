@@ -1,6 +1,7 @@
 import type DmScreenPlugin from "../main";
 import { vaultPathFromUrl } from "../server";
 import { debug, debugWarn } from "../debug";
+import { hydrusHashFromVaultPath } from "./hashFromPath";
 
 export type RecoverResult = "ok" | "recovered" | "missing";
 
@@ -14,12 +15,8 @@ export async function recoverVaultImage(
   const exists = await plugin.app.vault.adapter.exists(vaultPath);
   if (exists) return "ok";
 
-  const base = (plugin.settings.cacheBaseFolder || ".dm-screen").replace(/^\/+|\/+$/g, "") || ".dm-screen";
-  const hydrusPattern = new RegExp(`^${base}/hydrus/([0-9a-f]{64})\\.(\\w+)$`);
-  const match = hydrusPattern.exec(vaultPath);
-  if (!match) return "missing";
-
-  const hash = match[1];
+  const hash = hydrusHashFromVaultPath(vaultPath, plugin.settings.cacheBaseFolder || ".dm-screen");
+  if (!hash) return "missing";
   if (!plugin.hydrusCache || !plugin.buildHydrusClient()) {
     return "missing";
   }

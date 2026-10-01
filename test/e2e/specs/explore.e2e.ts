@@ -51,6 +51,13 @@ describe("exploration mode", function () {
     expect(coverage).toBeGreaterThan(0.8);
   });
 
+  it("explore bar shows visible source label", async function () {
+    const label = await browser.$(".dm-explore-modal .dm-explore-bar .dm-explore-title.dm-source-label");
+    await expect(label).toExist();
+    const text = await label.getText();
+    expect(text).toBe("fixtures");
+  });
+
   it("holding Shift toggles the exploration focus class", async function () {
     const markers = browser.$(".dm-explore-modal .dm-explore-markers");
 

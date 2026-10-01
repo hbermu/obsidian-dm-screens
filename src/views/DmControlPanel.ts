@@ -258,7 +258,7 @@ export class DmControlPanel extends ItemView {
     }
 
     const savedLabel = this.plugin.settings.lastSourceLabels?.background;
-    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeBackgroundUrl }).label;
+    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin }).label;
     new Notice(`Background "${label}" is no longer available`);
     this.activeBackgroundUrl = null;
     this.activeVideoPath = null;
@@ -691,7 +691,7 @@ export class DmControlPanel extends ItemView {
         }
 
         const savedLabel = this.plugin.settings.lastSourceLabels?.background;
-        const sourceLabel = savedLabel || resolveSourceLabel({ url: this.activeBackgroundUrl });
+        const sourceLabel = savedLabel || resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin });
         const labelChip = bgWrap.createDiv("dm-source-label");
         labelChip.textContent = sourceLabel.label;
         labelChip.title = sourceLabel.title;
@@ -2009,6 +2009,7 @@ export class DmControlPanel extends ItemView {
           url,
           hydrusHash: ref.hash,
           knownTags: entry.knownTags,
+          plugin: this.plugin,
         });
         this.setBackgroundLabel(sourceLabel);
 
@@ -2212,6 +2213,7 @@ export class DmControlPanel extends ItemView {
     const sourceLabel = resolveSourceLabel({
       url,
       noteBasename: activeFile?.basename,
+      plugin: this.plugin,
     });
     this.setBackgroundLabel(sourceLabel);
 

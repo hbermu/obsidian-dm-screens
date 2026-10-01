@@ -45,6 +45,7 @@ export class HydrusCache {
   private ttlMs: number;
   private adapter: VaultAdapterLike;
   private indexPromise: Promise<IndexFile> | null = null;
+  private cachedIndex: IndexFile | null = null;
   // Serialise writes; the plugin is single-process but multiple async paths may
   // race (eg. fetchAndCache + markUsed firing nearly simultaneously).
   private writeQueue: Promise<void> = Promise.resolve();
@@ -76,6 +77,11 @@ export class HydrusCache {
   async get(hash: string): Promise<CachedEntry | undefined> {
     const index = await this.loadIndex();
     return index.entries[hash];
+  }
+
+  getSync(hash: string): CachedEntry | undefined {
+    if (!this.cachedIndex) return undefined;
+    return this.cachedIndex.entries[hash];
   }
 
   async fetchAndCache(
@@ -192,7 +198,10 @@ export class HydrusCache {
 
   private async loadIndex(): Promise<IndexFile> {
     if (!this.indexPromise) {
-      this.indexPromise = this.readIndexFromDisk();
+      this.indexPromise = this.readIndexFromDisk().then((index) => {
+        this.cachedIndex = index;
+        return index;
+      });
     }
     return this.indexPromise;
   }
@@ -221,6 +230,7 @@ export class HydrusCache {
       await this.ensureFolder();
       await this.adapter.write(this.indexPath(), JSON.stringify(index, null, 2));
       // Refresh the cached promise so subsequent readers see the updated state.
+      this.cachedIndex = index;
       this.indexPromise = Promise.resolve(index);
     };
     this.writeQueue = this.writeQueue.then(run, run);

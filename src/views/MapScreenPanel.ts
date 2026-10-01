@@ -155,7 +155,7 @@ export class MapScreenPanel {
     }
 
     const savedLabel = this.plugin.settings.lastSourceLabels?.map;
-    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url }).label;
+    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url, plugin: this.plugin }).label;
     new Notice(`Map "${label}" is no longer available`);
     this.activeMap = null;
     this.aoes = [];
@@ -383,6 +383,7 @@ export class MapScreenPanel {
       hydrusHash: opts?.hydrusHash,
       knownTags: opts?.knownTags,
       noteBasename: opts?.noteBasename,
+      plugin: this.plugin,
     });
     if (!this.plugin.settings.lastSourceLabels) {
       this.plugin.settings.lastSourceLabels = {};
@@ -973,7 +974,7 @@ export class MapScreenPanel {
       }
 
       const savedLabel = this.plugin.settings.lastSourceLabels?.map;
-      const sourceLabel = savedLabel || resolveSourceLabel({ url: map.url });
+      const sourceLabel = savedLabel || resolveSourceLabel({ url: map.url, plugin: this.plugin });
       const labelChip = stage.createDiv("dm-source-label");
       labelChip.textContent = sourceLabel.label;
       labelChip.title = sourceLabel.title;

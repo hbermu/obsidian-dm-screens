@@ -82,8 +82,10 @@ export class MapExploreModal extends Modal {
 
     const bar = contentEl.createDiv("dm-explore-bar");
     const savedLabel = this.plugin.settings.lastSourceLabels?.map;
-    const sourceLabel = savedLabel || resolveSourceLabel({ url: this.map.url });
-    bar.title = sourceLabel.label;
+    const sourceLabel = savedLabel || resolveSourceLabel({ url: this.map.url, plugin: this.plugin });
+    const labelEl = bar.createEl("span", { cls: "dm-source-label dm-explore-title" });
+    labelEl.textContent = sourceLabel.label;
+    labelEl.title = sourceLabel.title;
     const revealAll = bar.createEl("button", { text: "Reveal All" });
     const coverAll = bar.createEl("button", { text: "Cover All", cls: "mod-warning" });
     const lockBtn = bar.createEl("button", { cls: "dm-explore-lock-btn" });

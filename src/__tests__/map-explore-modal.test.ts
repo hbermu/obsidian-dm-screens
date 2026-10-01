@@ -194,6 +194,57 @@ afterEach(() => {
 
 // ---- Tests ----
 
+describe("MapExploreModal — visible source label", () => {
+  it("renders a visible label in the bar with the map label text", () => {
+    const panel = makePanelStub();
+    const pluginStub = {
+      app: appStub,
+      settings: {
+        lastSourceLabels: { map: { label: "Test Map", title: "Full Title" } },
+      },
+    };
+    const map: ActiveMap = {
+      url: "/vault/maps/test.png",
+      mediaType: "image",
+      naturalWidth: MAP_W,
+      naturalHeight: MAP_H,
+    };
+
+    const modal = new MapExploreModal(appStub as any, pluginStub as any, panel as any, map);
+    modal.onOpen();
+
+    const labelEl = modal.contentEl.querySelector(".dm-explore-title.dm-source-label");
+    expect(labelEl).toBeTruthy();
+    expect(labelEl?.textContent).toBe("Test Map");
+    expect(labelEl?.getAttribute("title")).toBe("Full Title");
+
+    modal.close();
+  });
+
+  it("resolves label from URL when no saved label", () => {
+    const panel = makePanelStub();
+    const pluginStub = {
+      app: appStub,
+      settings: { lastSourceLabels: {} },
+      hydrusCache: null,
+    };
+    const map: ActiveMap = {
+      url: "/vault/maps/dungeon%20level%201.png",
+      mediaType: "image",
+      naturalWidth: MAP_W,
+      naturalHeight: MAP_H,
+    };
+
+    const modal = new MapExploreModal(appStub as any, pluginStub as any, panel as any, map);
+    modal.onOpen();
+
+    const labelEl = modal.contentEl.querySelector(".dm-explore-title.dm-source-label");
+    expect(labelEl?.textContent).toBe("dungeon level 1.png");
+
+    modal.close();
+  });
+});
+
 describe("MapExploreModal — room fog auto-toggle", () => {
   // Two rooms split by a vertical wall at natural x=500 (fog x≈512).
   const twoRoomWalls = (): MapWall[] => [

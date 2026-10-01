@@ -56,6 +56,13 @@ describe("map screen", function () {
     }
   });
 
+  it("map preview shows source label chip with note basename", async function () {
+    const label = await browser.$(".dm-map-preview-stage .dm-source-label");
+    await expect(label).toExist();
+    const text = await label.getText();
+    expect(text).toBe("fixtures");
+  });
+
   it("Rotate broadcasts an updated map-view", async function () {
     const seen = rec.count("map-view");
     await (await panelButton("Rotate: 0°")).click();

@@ -956,6 +956,13 @@
   pointer-events: none;
 }
 
+.dm-explore-title.dm-source-label {
+  position: static;
+  flex: 1 1 auto;
+  min-width: 0;
+  pointer-events: auto;
+}
+
 .dm-preview-zoom-controls {
   position: absolute;
   top: 6px;
