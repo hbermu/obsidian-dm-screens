@@ -1264,7 +1264,7 @@ export class MapScreenPanel {
           if (!Number.isFinite(v) || v <= 0) return;
           aoe.sizeFt = v;
           this.broadcastAoes(true);
-          this.repaintOverlays();
+          onChange();
         });
         row2.createSpan({ text: "ft", cls: "dm-status-detail" });
 
@@ -1284,7 +1284,7 @@ export class MapScreenPanel {
             if (!Number.isFinite(v) || v <= 0) return;
             aoe.widthFt = v;
             this.broadcastAoes(true);
-            this.repaintOverlays();
+            onChange();
           });
           row3.createSpan({ text: "ft", cls: "dm-status-detail" });
         }
