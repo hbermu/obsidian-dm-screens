@@ -1,14 +1,23 @@
 import { blocksSight, visibilityPolygon } from "./los";
 import type { MapVision, MapWall } from "./types";
 
+export function normalizeVision(v: MapVision): MapVision {
+  return {
+    ...v,
+    dimFt: Number.isFinite(v.dimFt) && v.dimFt >= 0 ? v.dimFt : 0,
+  };
+}
+
 // Fully revealed out to sizeFt (bright zone); dim zone from sizeFt to sizeFt+dimFt
 // is revealed but darkened; alpha fades to 0 across the feather band beyond
-// the outermost zone.
+// the outermost zone. dimAlpha controls the dim zone opacity: 1.0 for full erase
+// (baking), 0.5 for half-erase (live rendering with darkening).
 export function eraseVision(
   ctx: CanvasRenderingContext2D,
   vision: MapVision,
   scale: number,
-  pxPerSquare: number
+  pxPerSquare: number,
+  dimAlpha: number = 0.5
 ): void {
   const ftToPx = (pxPerSquare / 5) * scale;
   const cx = vision.x * scale;
@@ -28,7 +37,7 @@ export function eraseVision(
     ctx.fill();
 
     if (dimR > 0) {
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillStyle = `rgba(0,0,0,${dimAlpha})`;
       ctx.beginPath();
       ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
       ctx.arc(cx, cy, brightR, 0, Math.PI * 2, true);
@@ -37,8 +46,9 @@ export function eraseVision(
 
     if (feather > 0) {
       const outer = Math.max(1, outerR + feather);
+      const featherStartAlpha = dimR > 0 ? dimAlpha : 1;
       const g = ctx.createRadialGradient(cx, cy, outerR, cx, cy, outer);
-      g.addColorStop(0, "rgba(0,0,0,0.5)");
+      g.addColorStop(0, `rgba(0,0,0,${featherStartAlpha})`);
       g.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
@@ -52,7 +62,7 @@ export function eraseVision(
     ctx.fillRect(cx - brightHalf, cy - brightHalf, brightHalf * 2, brightHalf * 2);
 
     if (dimR > 0) {
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillStyle = `rgba(0,0,0,${dimAlpha})`;
       const outerHalf = outerR;
       ctx.beginPath();
       ctx.rect(cx - outerHalf, cy - outerHalf, outerHalf * 2, outerHalf * 2);
@@ -63,7 +73,8 @@ export function eraseVision(
     if (feather > 0) {
       ctx.filter = `blur(${feather / 2}px)`;
       const featherHalf = feather / 2;
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      const featherStartAlpha = dimR > 0 ? dimAlpha : 1;
+      ctx.fillStyle = `rgba(0,0,0,${featherStartAlpha})`;
       ctx.beginPath();
       ctx.rect(cx - (outerR + featherHalf), cy - (outerR + featherHalf), (outerR + featherHalf) * 2, (outerR + featherHalf) * 2);
       ctx.rect(cx - outerR, cy - outerR, outerR * 2, outerR * 2);
@@ -82,10 +93,11 @@ export function eraseVisionWithWalls(
   pxPerSquare: number,
   walls: MapWall[],
   mapWidth: number,
-  mapHeight: number
+  mapHeight: number,
+  dimAlpha: number = 0.5
 ): void {
   if (!walls.some(blocksSight)) {
-    eraseVision(ctx, vision, scale, pxPerSquare);
+    eraseVision(ctx, vision, scale, pxPerSquare, dimAlpha);
     return;
   }
   const poly = visibilityPolygon(vision.x, vision.y, walls, { x: 0, y: 0, w: mapWidth, h: mapHeight });
@@ -96,6 +108,6 @@ export function eraseVisionWithWalls(
   path.closePath();
   ctx.save();
   ctx.clip(path);
-  eraseVision(ctx, vision, scale, pxPerSquare);
+  eraseVision(ctx, vision, scale, pxPerSquare, dimAlpha);
   ctx.restore();
 }

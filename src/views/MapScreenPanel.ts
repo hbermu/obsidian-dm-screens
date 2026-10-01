@@ -19,7 +19,7 @@ import {
 } from "../map/transform";
 import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, StoredMapState } from "../map/types";
 import { renderAoe } from "../map/aoe";
-import { eraseVisionWithWalls } from "../map/vision";
+import { eraseVisionWithWalls, normalizeVision } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
 import { finiteScale, fitScale } from "./mapStage";
 import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
@@ -123,10 +123,7 @@ export class MapScreenPanel {
     if (visionCache) {
       try {
         const restored = (JSON.parse(visionCache).payload as { visions?: MapVision[] })?.visions ?? [];
-        this.visions = restored.map((v) => ({
-          ...v,
-          dimFt: Number.isFinite(v.dimFt) && v.dimFt >= 0 ? v.dimFt : 0,
-        }));
+        this.visions = restored.map(normalizeVision);
       } catch { /* ignore */ }
     }
     const fogCache = cache["map-fog"];
@@ -1631,7 +1628,7 @@ export class MapScreenPanel {
 
     const scale = canvas.width / map.naturalWidth;
     for (const v of this.visions) {
-      eraseVisionWithWalls(ctx, v, scale, this.state.pxPerSquare, this.walls, map.naturalWidth, map.naturalHeight);
+      eraseVisionWithWalls(ctx, v, scale, this.state.pxPerSquare, this.walls, map.naturalWidth, map.naturalHeight, 1.0);
     }
 
     await this.commitFog(canvas.toDataURL("image/png"));

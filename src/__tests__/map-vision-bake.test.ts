@@ -222,7 +222,7 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     expect(visible[3]).toBeLessThan(50);
   });
 
-  it("bakes both bright and dim zones", async () => {
+  it("bakes both bright and dim zones fully revealed", async () => {
     const { MapScreenPanel } = await import("../views/MapScreenPanel");
     const { plugin, host } = makePanel();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -240,14 +240,13 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     await panel.bakeVisions(map);
     expect(panel.fogDataUrl).toMatch(/^data:image\/png;base64,/);
 
-    // Center (bright zone) → transparent
+    // Center (bright zone) → fully revealed
     const center = await sampleFogPixel(panel.fogDataUrl!, 512, 512);
     expect(center[3]).toBeLessThan(50);
 
-    // Dim ring → partially revealed (not fully opaque, not fully transparent)
+    // Dim ring → fully revealed (baking passes dimAlpha=1.0)
     const dimRing = await sampleFogPixel(panel.fogDataUrl!, 512 + 250, 512);
-    expect(dimRing[3]).toBeGreaterThan(50);
-    expect(dimRing[3]).toBeLessThan(200);
+    expect(dimRing[3]).toBeLessThan(50);
 
     // Outside dim zone → fully opaque
     const outside = await sampleFogPixel(panel.fogDataUrl!, 10, 10);
