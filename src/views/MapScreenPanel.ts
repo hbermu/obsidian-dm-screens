@@ -171,6 +171,7 @@ export class MapScreenPanel {
       }
       await this.plugin.saveSettings();
     }
+    this.host.render();
   }
 
   async republish() {

@@ -256,6 +256,7 @@ export class DmControlPanel extends ItemView {
       delete this.plugin.settings.lastBroadcastCache?.["show-background-media"];
       await this.plugin.saveSettings();
     }
+    this.render();
   }
 
   async republishToServer() {
