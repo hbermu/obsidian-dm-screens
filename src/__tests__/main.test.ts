@@ -54,6 +54,7 @@ function makeFakeServer() {
     maxClients: 10,
     onClientInfo: null as any,
     onClientCountChanged: null as any,
+    onStateChange: vi.fn(() => () => {}),
   };
 }
 

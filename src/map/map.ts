@@ -17,7 +17,7 @@ import {
 } from "./transform";
 import type { MapAoe, MapGridConfig, MapMediaPayload, MapRotation, MapView, MapVision, MapWall, ScreenProfile } from "./types";
 import { renderAoe } from "./aoe";
-import { eraseVisionWithWalls } from "./vision";
+import { eraseVisionWithWalls, normalizeVision } from "./vision";
 
 interface MapMessage {
   type: string;
@@ -97,6 +97,35 @@ class MapScreen {
       this.applyLayout();
     });
     this.initFullscreenButton();
+    this.initMapErrorHandlers();
+  }
+
+  private initMapErrorHandlers() {
+    const video = document.getElementById("map-video") as HTMLVideoElement;
+    const image = document.getElementById("map-image") as HTMLImageElement;
+    const waitingScreen = document.getElementById("waiting-screen");
+    // showMap and clearMap blank the inactive element with src = "", which fires
+    // an error of its own; only a failure of the media on screen counts.
+    if (video) {
+      video.addEventListener("error", () => {
+        if (video.style.display === "none" || !video.getAttribute("src")) return;
+        console.warn("[Map Screen] Map video failed to load");
+        video.style.display = "none";
+        video.src = "";
+        if (waitingScreen) waitingScreen.style.display = "flex";
+        this.media = null;
+      });
+    }
+    if (image) {
+      image.addEventListener("error", () => {
+        if (image.style.display === "none" || !image.getAttribute("src")) return;
+        console.warn("[Map Screen] Map image failed to load");
+        image.style.display = "none";
+        image.src = "";
+        if (waitingScreen) waitingScreen.style.display = "flex";
+        this.media = null;
+      });
+    }
   }
 
   private initFullscreenButton() {
@@ -269,7 +298,7 @@ class MapScreen {
         this.showFog(msg.payload as { dataUrl?: string | null; opacity?: number });
         break;
       case "map-vision":
-        this.visions = this.boundedArray<MapVision>((msg.payload as { visions?: unknown }).visions, "visions");
+        this.visions = this.boundedArray<MapVision>((msg.payload as { visions?: unknown }).visions, "visions").map(normalizeVision);
         this.recompositeFog();
         break;
       case "map-walls":
@@ -372,7 +401,7 @@ class MapScreen {
       const scale = fw / nw;
       const { h: nh } = this.naturalSize();
       for (const v of this.visions) {
-        eraseVisionWithWalls(ctx, v, scale, this.config.pxPerSquare, this.walls, nw, nh);
+        eraseVisionWithWalls(ctx, v, scale, this.config.pxPerSquare, this.walls, nw, nh, 0.5);
       }
     }
     canvas.style.opacity = String(this.fogOpacity);

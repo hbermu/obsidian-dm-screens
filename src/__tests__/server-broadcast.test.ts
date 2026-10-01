@@ -135,6 +135,15 @@ describe("PlayerScreenServer.broadcast", () => {
   it("getConnectedClients returns empty when no clients", () => {
     expect(server.getConnectedClients()).toEqual([]);
   });
+
+  it("does not cache sourceLabel or lastSourceLabels in broadcast payloads", () => {
+    server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
+    const cache = (server as any).lastState as Map<string, string>;
+    const cached = JSON.parse(cache.get("show-background-media")!);
+    expect(cached.payload).not.toHaveProperty("sourceLabel");
+    expect(cached.payload).not.toHaveProperty("label");
+    expect(cached).not.toHaveProperty("sourceLabel");
+  });
 });
 
 // The late-joiner cache is also written to data.json as lastBroadcastCache, so an

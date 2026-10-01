@@ -45,6 +45,11 @@
 
 13. When a cached file is pushed as background, the cache shall update its `lastUsedAt` to `Date.now()` and persist the index.
 
+### Cache queries and maintenance
+
+13a. `hasFile(hash)` shall return `true` only when the hash has an index entry AND the file exists on disk via `adapter.exists(entry.vaultPath)`; `false` otherwise (including when the hash is not indexed).
+13b. `evict(hash)` shall remove the hash's entry from the index and persist the index file. It shall not delete the file on disk. If the hash is not indexed, it shall be a no-op.
+
 ### Fetch-and-cache
 
 14. `fetchAndCache(file)` shall download the file via `client.getFileBytes(hash)` and the thumbnail via `client.getThumbnailBytes(hash)`, write both to disk, and insert the `CachedEntry` into the index.

@@ -24,6 +24,15 @@ describe("background media from a real note", function () {
     await expect(panelButton("Stop BG")).toExist();
   });
 
+  it("background preview shows source label chip with note basename", async function () {
+    rec.send({ type: "client-info", payload: { width: 1920, height: 1080 } });
+    await new Promise((r) => setTimeout(r, 200));
+    const label = await browser.$(".dm-preview-bg .dm-source-label");
+    await expect(label).toExist();
+    const text = await label.getText();
+    expect(text).toBe("Home");
+  });
+
   it("Stop BG broadcasts hide-background-media", async function () {
     await (await panelButton("Stop BG")).click();
     await rec.waitFor("hide-background-media");

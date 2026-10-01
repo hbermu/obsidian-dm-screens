@@ -127,7 +127,7 @@ function openModal(
 } {
   const modal = new MapExploreModal(
     appStub as never,
-    { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+    { app: appStub, settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
     panelStub as never,
     mapStub
   );
@@ -193,6 +193,57 @@ afterEach(() => {
 });
 
 // ---- Tests ----
+
+describe("MapExploreModal — visible source label", () => {
+  it("renders a visible label in the bar with the map label text", () => {
+    const panel = makePanelStub();
+    const pluginStub = {
+      app: appStub,
+      settings: {
+        lastSourceLabels: { map: { label: "Test Map", title: "Full Title" } },
+      },
+    };
+    const map: ActiveMap = {
+      url: "/vault/maps/test.png",
+      mediaType: "image",
+      naturalWidth: MAP_W,
+      naturalHeight: MAP_H,
+    };
+
+    const modal = new MapExploreModal(appStub as any, pluginStub as any, panel as any, map);
+    modal.onOpen();
+
+    const labelEl = modal.contentEl.querySelector(".dm-explore-title.dm-source-label");
+    expect(labelEl).toBeTruthy();
+    expect(labelEl?.textContent).toBe("Test Map");
+    expect(labelEl?.getAttribute("title")).toBe("Full Title");
+
+    modal.close();
+  });
+
+  it("resolves label from URL when no saved label", () => {
+    const panel = makePanelStub();
+    const pluginStub = {
+      app: appStub,
+      settings: { lastSourceLabels: {} },
+      hydrusCache: null,
+    };
+    const map: ActiveMap = {
+      url: "/vault/maps/dungeon%20level%201.png",
+      mediaType: "image",
+      naturalWidth: MAP_W,
+      naturalHeight: MAP_H,
+    };
+
+    const modal = new MapExploreModal(appStub as any, pluginStub as any, panel as any, map);
+    modal.onOpen();
+
+    const labelEl = modal.contentEl.querySelector(".dm-explore-title.dm-source-label");
+    expect(labelEl?.textContent).toBe("dungeon level 1.png");
+
+    modal.close();
+  });
+});
 
 describe("MapExploreModal — room fog auto-toggle", () => {
   // Two rooms split by a vertical wall at natural x=500 (fog x≈512).
@@ -422,7 +473,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
   });
 
   it("leaves a vision where it was when the overlay cannot be measured", () => {
-    const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5 };
+    const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
     const panel = makePanelStub([], { visions: [vision] });
     const { modal, markers } = openModal(panel, { width: 0, height: 0 });
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
@@ -477,7 +528,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
   });
 
   it("dragging a vision dot moves it and broadcasts", () => {
-    const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5 };
+    const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
     const panel = makePanelStub([], { visions: [vision] });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
@@ -493,13 +544,17 @@ describe("MapExploreModal — AoE and vision markers", () => {
     modal.onClose();
   });
 
-  it("renders the AoE + Vision control sidebar by reusing the panel sections", () => {
+  it("renders the AoE + Vision floating windows by reusing the panel sections", () => {
     const panel = makePanelStub();
     const { modal, contentEl } = openModal(panel);
-    const sidebar = contentEl.querySelector(".dm-explore-sidebar") as HTMLElement;
-    expect(sidebar).not.toBeNull();
-    expect(panel.renderAoeSection).toHaveBeenCalledWith(sidebar, mapStub, expect.any(Function));
-    expect(panel.renderVisionSection).toHaveBeenCalledWith(sidebar, mapStub, expect.any(Function));
+    const aoesWindow = contentEl.querySelector(".dm-floating-window") as HTMLElement;
+    expect(aoesWindow).not.toBeNull();
+    const aoesBody = aoesWindow.querySelector(".dm-floating-window-body") as HTMLElement;
+    const visionWindow = contentEl.querySelectorAll(".dm-floating-window")[1] as HTMLElement;
+    expect(visionWindow).not.toBeNull();
+    const visionBody = visionWindow.querySelector(".dm-floating-window-body") as HTMLElement;
+    expect(panel.renderAoeSection).toHaveBeenCalledWith(aoesBody, mapStub, expect.any(Function));
+    expect(panel.renderVisionSection).toHaveBeenCalledWith(visionBody, mapStub, expect.any(Function));
     modal.onClose();
   });
 
@@ -593,7 +648,7 @@ describe("MapExploreModal — Shift focus (door/room without locking)", () => {
 describe("MapExploreModal — view-bound vision", () => {
   it("dragging the viewport rect drags a view-bound vision along with it", () => {
     const vision: MapVision = {
-      id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5, followsView: true,
+      id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5, followsView: true,
     };
     const panel = makePanelStub([], { mode: "physical", visions: [vision] });
     const { modal, markers } = openModal(panel);

@@ -1,8 +1,10 @@
 import { Menu, Notice, setIcon } from "obsidian";
 import type DmScreenPlugin from "../main";
 import type { DmControlPanel } from "./DmControlPanel";
-import { encodeForVaultUrl } from "./HydrusExplorerModal";
+import { encodeForVaultUrl, layerLabelFromTags } from "./HydrusExplorerModal";
 import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
+import { resolveSourceLabel } from "../sourceLabel";
+import { recoverVaultImage } from "../hydrus/recoverImage";
 import { vaultPathFromUrl, type ClientInfo } from "../server";
 import { fogCanvasSize, loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
 import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
@@ -17,13 +19,15 @@ import {
 } from "../map/transform";
 import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, StoredMapState } from "../map/types";
 import { renderAoe } from "../map/aoe";
-import { eraseVisionWithWalls } from "../map/vision";
+import { DEFAULT_VISION_COLOR, eraseVisionWithWalls, moveVisions, normalizeVision, visionDragTargets } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
+import { LightSourceModal } from "./LightSourceModal";
 import { finiteScale, fitScale } from "./mapStage";
 import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
 import { buildJoinUrl } from "../auth";
+import { renderControlCard } from "./controlCard";
 
 export interface ActiveMap {
   url: string;
@@ -59,6 +63,7 @@ export class MapScreenPanel {
   mapClients: ClientInfo[] = [];
   aoes: MapAoe[] = [];
   visions: MapVision[] = [];
+  visionGroup = false;
   walls: MapWall[] = [];
   fogDataUrl: string | null = null;
   private viewBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,10 +81,12 @@ export class MapScreenPanel {
   private previewThumbMapUrl: string | null = null;
   private previewThumbPending = false;
   private disposeOverlayRepaint: (() => void) | null = null;
+  private expandedAoeId: string | null = null;
+  private expandedVisionId: string | null = null;
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
 
-  restoreFromCache(cache: Record<string, string>) {
+  async restoreFromCache(cache: Record<string, string>) {
     const show = cache["map-show"];
     if (!show) return;
     try {
@@ -117,7 +124,8 @@ export class MapScreenPanel {
     const visionCache = cache["map-vision"];
     if (visionCache) {
       try {
-        this.visions = ((JSON.parse(visionCache).payload as { visions?: MapVision[] })?.visions ?? []);
+        const restored = (JSON.parse(visionCache).payload as { visions?: MapVision[] })?.visions ?? [];
+        this.visions = restored.map(normalizeVision);
       } catch { /* ignore */ }
     }
     const fogCache = cache["map-fog"];
@@ -133,10 +141,50 @@ export class MapScreenPanel {
       } catch { /* ignore */ }
     }
     this.clampStateToViewport();
-    debug("MapScreenPanel: restoreFromCache —", this.activeMap.url, this.state.mode, `${this.aoes.length} AoEs`, `${this.visions.length} visions`);
+
+    await this.checkAndRecoverMap();
+
+    debug("MapScreenPanel: restoreFromCache —", this.activeMap?.url ?? "(none)", this.state.mode, `${this.aoes.length} AoEs`, `${this.visions.length} visions`);
   }
 
-  republish() {
+  private async checkAndRecoverMap() {
+    if (!this.activeMap) return;
+
+    const result = await recoverVaultImage(this.plugin, this.activeMap.url);
+
+    if (result === "ok") return;
+
+    if (result === "recovered") {
+      debug("MapScreenPanel: recovered missing map");
+      this.host.render();
+      return;
+    }
+
+    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url, plugin: this.plugin }).label;
+    new Notice(`Map "${label}" is no longer available`);
+    this.activeMap = null;
+    this.aoes = [];
+    this.visions = [];
+    this.walls = [];
+    this.fogDataUrl = null;
+    if (this.plugin.settings.lastSourceLabels) {
+      delete this.plugin.settings.lastSourceLabels.map;
+    }
+
+    const mapTypes = ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"];
+    if (this.plugin.server) {
+      this.plugin.server.forgetCached(mapTypes);
+    } else {
+      for (const type of mapTypes) {
+        delete this.plugin.settings.lastBroadcastCache?.[type];
+      }
+      await this.plugin.saveSettings();
+    }
+    this.host.render();
+  }
+
+  async republish() {
     if (!this.plugin.server) return;
     this.plugin.broadcastMapCalibration();
     if (!this.activeMap) return;
@@ -321,7 +369,7 @@ export class MapScreenPanel {
     this.host.render();
   }
 
-  async setVaultMap(vaultPath: string, mediaType: "image" | "video") {
+  async setVaultMap(vaultPath: string, mediaType: "image" | "video", opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string }) {
     const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
     const resourceUrl = adapter.getResourcePath?.(vaultPath);
     const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
@@ -335,6 +383,20 @@ export class MapScreenPanel {
       ? { ...stored }
       : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
+
+    const sourceLabel = resolveSourceLabel({
+      url,
+      hydrusHash: opts?.hydrusHash,
+      knownTags: opts?.knownTags,
+      noteBasename: opts?.noteBasename,
+      plugin: this.plugin,
+    });
+    if (!this.plugin.settings.lastSourceLabels) {
+      this.plugin.settings.lastSourceLabels = {};
+    }
+    this.plugin.settings.lastSourceLabels.map = sourceLabel;
+    void this.plugin.saveSettings();
+
     this.releasePreviewThumb();
     this.fogDataUrl = await loadFogSidecar(this.fogAdapter(), url);
     this.walls = await loadWallsSidecar(this.fogAdapter(), url);
@@ -365,6 +427,10 @@ export class MapScreenPanel {
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
+    if (this.plugin.settings.lastSourceLabels) {
+      delete this.plugin.settings.lastSourceLabels.map;
+    }
+    void this.plugin.saveSettings();
     this.plugin.server?.broadcast({ type: "map-clear", payload: {} });
     this.host.render();
   }
@@ -372,7 +438,10 @@ export class MapScreenPanel {
   private async applyHydrusRefAsMap(ref: ResolvedHydrusRef) {
     try {
       const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
-      await this.setVaultMap(entry.vaultPath, ref.mediaType === "video" ? "video" : "image");
+      await this.setVaultMap(entry.vaultPath, ref.mediaType === "video" ? "video" : "image", {
+        hydrusHash: ref.hash,
+        knownTags: entry.knownTags,
+      });
       await this.plugin.hydrusCache!.markUsed(ref.hash);
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
@@ -398,7 +467,7 @@ export class MapScreenPanel {
 
     if (images.length + hydrusActionable.length === 1 && disabled.length === 0) {
       if (images.length === 1) {
-        void this.setVaultMap(images[0].path, "image");
+        void this.setVaultMap(images[0].path, "image", { noteBasename: activeFile.basename });
       } else {
         void this.applyHydrusRefAsMap(hydrusActionable[0]);
       }
@@ -409,7 +478,7 @@ export class MapScreenPanel {
     for (const img of images) {
       menu.addItem((item: any) => {
         item.setTitle(img.label);
-        item.onClick(() => void this.setVaultMap(img.path, "image"));
+        item.onClick(() => void this.setVaultMap(img.path, "image", { noteBasename: activeFile.basename }));
       });
     }
     for (const ref of hydrus) {
@@ -741,20 +810,35 @@ export class MapScreenPanel {
       for (const aoe of this.aoes) {
         renderAoe(ctx, aoe, s, 0, 0, this.state.pxPerSquare, 0);
       }
-      ctx.setLineDash([6, 4]);
-      ctx.strokeStyle = "#ffd23f";
       ctx.lineWidth = 2;
       const ftToPxScaled = (this.state.pxPerSquare / 5) * s;
       for (const v of this.visions) {
-        const radius = v.sizeFt * ftToPxScaled;
+        const color = v.color ?? DEFAULT_VISION_COLOR;
+        ctx.strokeStyle = color;
+        ctx.setLineDash([6, 4]);
+        const brightR = v.sizeFt * ftToPxScaled;
         ctx.beginPath();
         if (v.shape === "circle") {
-          ctx.arc(v.x * s, v.y * s, radius, 0, Math.PI * 2);
+          ctx.arc(v.x * s, v.y * s, brightR, 0, Math.PI * 2);
         } else {
-          const half = radius;
+          const half = brightR;
           ctx.rect(v.x * s - half, v.y * s - half, half * 2, half * 2);
         }
         ctx.stroke();
+
+        if (v.dimFt > 0) {
+          const dimR = (v.sizeFt + v.dimFt) * ftToPxScaled;
+          ctx.strokeStyle = `${color}88`;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          if (v.shape === "circle") {
+            ctx.arc(v.x * s, v.y * s, dimR, 0, Math.PI * 2);
+          } else {
+            const half = dimR;
+            ctx.rect(v.x * s - half, v.y * s - half, half * 2, half * 2);
+          }
+          ctx.stroke();
+        }
       }
       ctx.setLineDash([]);
     };
@@ -893,12 +977,28 @@ export class MapScreenPanel {
         v.loop = true;
         v.autoplay = true;
         v.playsInline = true;
+        v.addEventListener("error", () => {
+          stage.empty();
+          const placeholder = stage.createDiv("dm-image-unavailable");
+          placeholder.textContent = "Image unavailable";
+        });
         v.play().catch(() => {});
       } else {
         const img = stage.createEl("img");
         img.src = this.previewMediaSrc(map, resourceUrl);
         img.alt = "";
+        img.addEventListener("error", () => {
+          stage.empty();
+          const placeholder = stage.createDiv("dm-image-unavailable");
+          placeholder.textContent = "Image unavailable";
+        });
       }
+
+      const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+      const sourceLabel = savedLabel || resolveSourceLabel({ url: map.url, plugin: this.plugin });
+      const labelChip = stage.createDiv("dm-source-label");
+      labelChip.textContent = sourceLabel.label;
+      labelChip.title = sourceLabel.title;
     }
 
     const repositionMarkers: Array<() => void> = [];
@@ -984,7 +1084,8 @@ export class MapScreenPanel {
     const repositionVisionDots: Array<() => void> = [];
     for (const vision of this.visions) {
       const dot = stage.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const positionVisionDot = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
         dot.style.top = `${(vision.y / nh) * 100}%`;
@@ -999,15 +1100,14 @@ export class MapScreenPanel {
         if (!stage.offsetWidth) return;
         const startX = ev.clientX;
         const startY = ev.clientY;
-        const startVX = vision.x;
-        const startVY = vision.y;
+        const targets = visionDragTargets(this.visions, vision, this.visionGroup);
+        const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.trackDrag(
           (me: MouseEvent) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
-            vision.x = Math.max(0, Math.min(nw, startVX + d.x));
-            vision.y = Math.max(0, Math.min(nh, startVY + d.y));
-            positionVisionDot();
+            moveVisions(targets, starts, d.x, d.y, nw, nh);
+            for (const reposition of repositionVisionDots) reposition();
             redrawAoes();
             this.broadcastVisions();
           },
@@ -1121,99 +1221,138 @@ export class MapScreenPanel {
   }
 
   private renderAoeRow(container: HTMLElement, aoe: MapAoe, onChange: () => void) {
-    const row = container.createDiv("dm-map-aoe-row");
-    if (aoe.label) {
-      row.createSpan({ text: aoe.label, cls: "dm-map-aoe-label" });
-    }
+    const shapeIcons: Record<AoeShape, string> = {
+      circle: "○",
+      square: "□",
+      cone: "△",
+      line: "―",
+      ring: "◯",
+    };
 
-    const shapeSelect = row.createEl("select");
-    for (const shape of AOE_SHAPES) {
-      shapeSelect.createEl("option", { text: shape, value: shape });
-    }
-    shapeSelect.value = aoe.shape;
-    shapeSelect.addEventListener("change", () => {
-      aoe.shape = shapeSelect.value as AoeShape;
-      this.broadcastAoes(true);
-      onChange();
-    });
+    const summaryText =
+      aoe.shape === "line" || aoe.shape === "ring"
+        ? `${aoe.sizeFt}×${aoe.widthFt} ft`
+        : `${aoe.sizeFt} ft`;
 
-    const sizeInput = row.createEl("input", { type: "number" });
-    sizeInput.value = String(aoe.sizeFt);
-    sizeInput.min = "5";
-    sizeInput.step = "5";
-    sizeInput.title =
-      aoe.shape === "circle" || aoe.shape === "ring"
-        ? "Radius (ft)"
-        : aoe.shape === "line"
-          ? "Length (ft)"
-          : "Size (ft)";
-    sizeInput.addEventListener("change", () => {
-      const v = parseFloat(sizeInput.value);
-      if (!Number.isFinite(v) || v <= 0) return;
-      aoe.sizeFt = v;
-      this.broadcastAoes(true);
-      this.repaintOverlays();
-    });
-    row.createSpan({ text: "ft", cls: "dm-status-detail" });
-
-    if (aoe.shape === "line" || aoe.shape === "ring") {
-      const widthInput = row.createEl("input", { type: "number" });
-      widthInput.value = String(aoe.widthFt);
-      widthInput.min = "5";
-      widthInput.step = "5";
-      widthInput.title = aoe.shape === "ring" ? "Band thickness (ft)" : "Width (ft)";
-      widthInput.addEventListener("change", () => {
-        const v = parseFloat(widthInput.value);
-        if (!Number.isFinite(v) || v <= 0) return;
-        aoe.widthFt = v;
+    renderControlCard(container, {
+      id: aoe.id,
+      color: aoe.color,
+      label: aoe.label || aoe.shape,
+      summary: summaryText,
+      icon: shapeIcons[aoe.shape],
+      expanded: this.expandedAoeId === aoe.id,
+      onToggle: () => {
+        this.expandedAoeId = this.expandedAoeId === aoe.id ? null : aoe.id;
+        onChange();
+      },
+      onRemove: () => {
+        this.aoes = this.aoes.filter((a) => a.id !== aoe.id);
         this.broadcastAoes(true);
-        this.repaintOverlays();
-      });
-      row.createSpan({ text: aoe.shape === "ring" ? "thick" : "wide", cls: "dm-status-detail" });
-    }
+        onChange();
+      },
+      renderDetails: (body) => {
+        const row1 = body.createDiv({ cls: "dm-control-card-row" });
 
-    const colorSwatch = row.createEl("input", { type: "color" });
-    colorSwatch.value = aoe.color;
-    colorSwatch.addEventListener("change", () => {
-      aoe.color = colorSwatch.value;
-      this.broadcastAoes(true);
-      onChange();
-    });
+        row1.createSpan({ text: "Shape", cls: "dm-status-detail" });
+        const shapeSelect = row1.createEl("select");
+        for (const shape of AOE_SHAPES) {
+          shapeSelect.createEl("option", { text: shape, value: shape });
+        }
+        shapeSelect.value = aoe.shape;
+        shapeSelect.addEventListener("change", () => {
+          aoe.shape = shapeSelect.value as AoeShape;
+          this.broadcastAoes(true);
+          onChange();
+        });
 
-    const opacityInput = row.createEl("input", { type: "range" });
-    opacityInput.min = "0.05";
-    opacityInput.max = "0.8";
-    opacityInput.step = "0.05";
-    opacityInput.value = String(aoe.opacity);
-    opacityInput.title = "Opacity";
-    opacityInput.addEventListener("input", () => {
-      aoe.opacity = parseFloat(opacityInput.value);
-      this.broadcastAoes();
-      this.repaintOverlays();
-    });
-    opacityInput.addEventListener("change", () => {
-      aoe.opacity = parseFloat(opacityInput.value);
-      this.broadcastAoes(true);
-      this.repaintOverlays();
-    });
+        const row2 = body.createDiv({ cls: "dm-control-card-row" });
+        row2.createSpan({ text: "Size", cls: "dm-status-detail" });
+        const sizeInput = row2.createEl("input", { type: "number" });
+        sizeInput.value = String(aoe.sizeFt);
+        sizeInput.min = "5";
+        sizeInput.step = "5";
+        sizeInput.title =
+          aoe.shape === "circle" || aoe.shape === "ring"
+            ? "Radius (ft)"
+            : aoe.shape === "line"
+              ? "Length (ft)"
+              : "Size (ft)";
+        sizeInput.addEventListener("change", () => {
+          const v = parseFloat(sizeInput.value);
+          if (!Number.isFinite(v) || v <= 0) return;
+          aoe.sizeFt = v;
+          this.broadcastAoes(true);
+          onChange();
+        });
+        row2.createSpan({ text: "ft", cls: "dm-status-detail" });
 
-    const rotInput = row.createEl("input", { type: "number" });
-    rotInput.value = String(aoe.rotation);
-    rotInput.min = "0";
-    rotInput.max = "359";
-    rotInput.step = "15";
-    rotInput.title = "Rotation (°)";
-    rotInput.addEventListener("change", () => {
-      aoe.rotation = parseInt(rotInput.value, 10) || 0;
-      this.broadcastAoes(true);
-      onChange();
-    });
+        if (aoe.shape === "line" || aoe.shape === "ring") {
+          const row3 = body.createDiv({ cls: "dm-control-card-row" });
+          row3.createSpan({
+            text: aoe.shape === "ring" ? "Thickness" : "Width",
+            cls: "dm-status-detail",
+          });
+          const widthInput = row3.createEl("input", { type: "number" });
+          widthInput.value = String(aoe.widthFt);
+          widthInput.min = "5";
+          widthInput.step = "5";
+          widthInput.title = aoe.shape === "ring" ? "Band thickness (ft)" : "Width (ft)";
+          widthInput.addEventListener("change", () => {
+            const v = parseFloat(widthInput.value);
+            if (!Number.isFinite(v) || v <= 0) return;
+            aoe.widthFt = v;
+            this.broadcastAoes(true);
+            onChange();
+          });
+          row3.createSpan({ text: "ft", cls: "dm-status-detail" });
+        }
 
-    const removeBtn = row.createEl("button", { text: "✕" });
-    removeBtn.addEventListener("click", () => {
-      this.aoes = this.aoes.filter((a) => a.id !== aoe.id);
-      this.broadcastAoes(true);
-      onChange();
+        const row4 = body.createDiv({ cls: "dm-control-card-row" });
+        row4.createSpan({ text: "Color", cls: "dm-status-detail" });
+        const colorSwatch = row4.createEl("input", { type: "color" });
+        colorSwatch.value = aoe.color;
+        colorSwatch.addEventListener("change", () => {
+          aoe.color = colorSwatch.value;
+          this.broadcastAoes(true);
+          onChange();
+        });
+
+        const row5 = body.createDiv({ cls: "dm-control-card-row" });
+        row5.createSpan({ text: "Opacity", cls: "dm-status-detail" });
+        const opacityInput = row5.createEl("input", { type: "range" });
+        opacityInput.min = "0.05";
+        opacityInput.max = "0.8";
+        opacityInput.step = "0.05";
+        opacityInput.value = String(aoe.opacity);
+        opacityInput.title = "Opacity";
+        opacityInput.addEventListener("input", () => {
+          aoe.opacity = parseFloat(opacityInput.value);
+          this.broadcastAoes();
+          this.repaintOverlays();
+        });
+        opacityInput.addEventListener("change", () => {
+          aoe.opacity = parseFloat(opacityInput.value);
+          this.broadcastAoes(true);
+          this.repaintOverlays();
+        });
+
+        if (aoe.shape !== "circle" && aoe.shape !== "ring") {
+          const row6 = body.createDiv({ cls: "dm-control-card-row" });
+          row6.createSpan({ text: "Rotation", cls: "dm-status-detail" });
+          const rotInput = row6.createEl("input", { type: "number" });
+          rotInput.value = String(aoe.rotation);
+          rotInput.min = "0";
+          rotInput.max = "359";
+          rotInput.step = "15";
+          rotInput.title = "Rotation (°)";
+          rotInput.addEventListener("change", () => {
+            aoe.rotation = parseInt(rotInput.value, 10) || 0;
+            this.broadcastAoes(true);
+            onChange();
+          });
+          row6.createSpan({ text: "°", cls: "dm-status-detail" });
+        }
+      },
     });
   }
 
@@ -1352,6 +1491,7 @@ export class MapScreenPanel {
               x: map.naturalWidth / 2,
               y: map.naturalHeight / 2,
               sizeFt: 30,
+              dimFt: 0,
               featherFt: 5,
             });
             this.broadcastVisions(true);
@@ -1359,10 +1499,42 @@ export class MapScreenPanel {
           })
         );
       }
+      menu.addItem((item) =>
+        item.setTitle("Lights…").onClick(() => {
+          new LightSourceModal(this.plugin.app, (source) => {
+            debug("MapScreenPanel: light preset —", source.name);
+            this.visions.push({
+              id: `vision-${nextVisionId++}`,
+              shape: "circle",
+              x: map.naturalWidth / 2,
+              y: map.naturalHeight / 2,
+              sizeFt: source.brightFt,
+              dimFt: source.dimFt,
+              featherFt: 5,
+              label: source.name,
+            });
+            this.broadcastVisions(true);
+            onChange();
+          }).open();
+        })
+      );
       menu.showAtMouseEvent(evt);
     });
 
     if (this.visions.length === 0) return;
+
+    const groupBtn = header.createEl("button", {
+      text: "🔗",
+      cls: this.visionGroup ? "dm-map-vision-group dm-fog-active" : "dm-map-vision-group",
+    });
+    groupBtn.setAttribute("aria-pressed", String(this.visionGroup));
+    groupBtn.title = this.visionGroup
+      ? "Group mode on — dragging any vision moves every unbound vision. Click to drag them one by one."
+      : "Group mode — drag every unbound vision together";
+    groupBtn.addEventListener("click", () => {
+      this.visionGroup = !this.visionGroup;
+      onChange();
+    });
 
     const bakeBtn = header.createEl("button", { text: "Bake into fog" });
     bakeBtn.title = "Burns current vision into the persistent mask and clears the live layer";
@@ -1376,70 +1548,128 @@ export class MapScreenPanel {
     });
 
     for (const vision of this.visions) {
-      const row = wrap.createDiv("dm-map-aoe-row");
+      const shapeIcons: Record<"circle" | "square", string> = {
+        circle: "○",
+        square: "□",
+      };
 
-      const shapeSelect = row.createEl("select");
-      for (const shape of ["circle", "square"] as Array<"circle" | "square">) {
-        shapeSelect.createEl("option", { text: shape, value: shape });
-      }
-      shapeSelect.value = vision.shape;
-      shapeSelect.addEventListener("change", () => {
-        vision.shape = shapeSelect.value as "circle" | "square";
-        this.broadcastVisions(true);
-        onChange();
-      });
+      const summaryText = vision.dimFt > 0 ? `${vision.sizeFt}/+${vision.dimFt} ft` : `${vision.sizeFt} ft`;
 
-      const sizeInput = row.createEl("input", { type: "number" });
-      sizeInput.value = String(vision.sizeFt);
-      sizeInput.min = "5";
-      sizeInput.step = "5";
-      sizeInput.title = "Vision range (ft)";
-      sizeInput.addEventListener("change", () => {
-        const v = parseFloat(sizeInput.value);
-        if (!Number.isFinite(v) || v <= 0) return;
-        vision.sizeFt = v;
-        this.broadcastVisions(true);
-        onChange();
-      });
-      row.createSpan({ text: "ft", cls: "dm-status-detail" });
+      renderControlCard(wrap, {
+        id: vision.id,
+        color: vision.color ?? DEFAULT_VISION_COLOR,
+        label: vision.label || vision.shape,
+        summary: summaryText,
+        icon: shapeIcons[vision.shape],
+        expanded: this.expandedVisionId === vision.id,
+        onToggle: () => {
+          this.expandedVisionId = this.expandedVisionId === vision.id ? null : vision.id;
+          onChange();
+        },
+        onRemove: () => {
+          this.visions = this.visions.filter((v) => v.id !== vision.id);
+          this.broadcastVisions(true);
+          onChange();
+        },
+        renderDetails: (body) => {
+          const row0 = body.createDiv({ cls: "dm-control-card-row" });
+          row0.createSpan({ text: "Label", cls: "dm-status-detail" });
+          const labelInput = row0.createEl("input", { type: "text", cls: "dm-map-vision-label" });
+          labelInput.value = vision.label ?? "";
+          labelInput.placeholder = vision.shape;
+          labelInput.addEventListener("change", () => {
+            vision.label = labelInput.value.trim() || undefined;
+            this.broadcastVisions(true);
+            onChange();
+          });
+          const colorInput = row0.createEl("input", { type: "color", cls: "dm-map-vision-color" });
+          colorInput.value = vision.color ?? DEFAULT_VISION_COLOR;
+          colorInput.title = "Marker colour (DM only)";
+          colorInput.addEventListener("change", () => {
+            vision.color = colorInput.value;
+            this.broadcastVisions(true);
+            onChange();
+          });
 
-      const featherInput = row.createEl("input", { type: "number" });
-      featherInput.value = String(vision.featherFt);
-      featherInput.min = "0";
-      featherInput.step = "5";
-      featherInput.title = "Feather (ft)";
-      featherInput.addEventListener("change", () => {
-        const v = parseFloat(featherInput.value);
-        if (!Number.isFinite(v) || v < 0) return;
-        vision.featherFt = v;
-        this.broadcastVisions(true);
-      });
-      row.createSpan({ text: "feather", cls: "dm-status-detail" });
+          const row1 = body.createDiv({ cls: "dm-control-card-row" });
+          row1.createSpan({ text: "Shape", cls: "dm-status-detail" });
+          const shapeSelect = row1.createEl("select");
+          for (const shape of ["circle", "square"] as Array<"circle" | "square">) {
+            shapeSelect.createEl("option", { text: shape, value: shape });
+          }
+          shapeSelect.value = vision.shape;
+          shapeSelect.addEventListener("change", () => {
+            vision.shape = shapeSelect.value as "circle" | "square";
+            this.broadcastVisions(true);
+            onChange();
+          });
 
-      // Bind-to-view toggle: a lit vision that tracks the players' viewport
-      // centre, so panning the view during exploration drags the light with it.
-      const bindBtn = row.createEl("button", {
-        text: "⦿",
-        cls: vision.followsView ? "dm-map-vision-bind dm-fog-active" : "dm-map-vision-bind",
-      });
-      bindBtn.title = vision.followsView
-        ? "Bound to the players' view — moves with it. Click to unbind."
-        : "Bind to the players' view so it moves with what the players see";
-      bindBtn.addEventListener("click", () => {
-        vision.followsView = !vision.followsView;
-        if (vision.followsView) {
-          vision.x = this.state.panX;
-          vision.y = this.state.panY;
-        }
-        this.broadcastVisions(true);
-        onChange();
-      });
+          const row2 = body.createDiv({ cls: "dm-control-card-row" });
+          row2.createSpan({ text: "Bright", cls: "dm-status-detail" });
+          const sizeInput = row2.createEl("input", { type: "number" });
+          sizeInput.value = String(vision.sizeFt);
+          sizeInput.min = "0";
+          sizeInput.step = "5";
+          sizeInput.title = "Bright vision range (ft)";
+          sizeInput.addEventListener("change", () => {
+            const v = parseFloat(sizeInput.value);
+            if (!Number.isFinite(v) || v < 0) return;
+            vision.sizeFt = v;
+            this.broadcastVisions(true);
+            onChange();
+          });
+          row2.createSpan({ text: "ft", cls: "dm-status-detail" });
 
-      const removeBtn = row.createEl("button", { text: "✕" });
-      removeBtn.addEventListener("click", () => {
-        this.visions = this.visions.filter((v) => v.id !== vision.id);
-        this.broadcastVisions(true);
-        onChange();
+          const row3 = body.createDiv({ cls: "dm-control-card-row" });
+          row3.createSpan({ text: "Dim", cls: "dm-status-detail" });
+          const dimInput = row3.createEl("input", { type: "number" });
+          dimInput.value = String(vision.dimFt);
+          dimInput.min = "0";
+          dimInput.step = "5";
+          dimInput.title = "Dim vision range (ft)";
+          dimInput.addEventListener("change", () => {
+            const v = parseFloat(dimInput.value);
+            if (!Number.isFinite(v) || v < 0) return;
+            vision.dimFt = v;
+            this.broadcastVisions(true);
+            onChange();
+          });
+          row3.createSpan({ text: "ft", cls: "dm-status-detail" });
+
+          const row4 = body.createDiv({ cls: "dm-control-card-row" });
+          row4.createSpan({ text: "Feather", cls: "dm-status-detail" });
+          const featherInput = row4.createEl("input", { type: "number" });
+          featherInput.value = String(vision.featherFt);
+          featherInput.min = "0";
+          featherInput.step = "5";
+          featherInput.title = "Feather (ft)";
+          featherInput.addEventListener("change", () => {
+            const v = parseFloat(featherInput.value);
+            if (!Number.isFinite(v) || v < 0) return;
+            vision.featherFt = v;
+            this.broadcastVisions(true);
+          });
+          row4.createSpan({ text: "ft", cls: "dm-status-detail" });
+
+          const row5 = body.createDiv({ cls: "dm-control-card-row" });
+          row5.createSpan({ text: "Follow view", cls: "dm-status-detail" });
+          const bindBtn = row5.createEl("button", {
+            text: "⦿",
+            cls: vision.followsView ? "dm-map-vision-bind dm-fog-active" : "dm-map-vision-bind",
+          });
+          bindBtn.title = vision.followsView
+            ? "Bound to the players' view — moves with it. Click to unbind."
+            : "Bind to the players' view so it moves with what the players see";
+          bindBtn.addEventListener("click", () => {
+            vision.followsView = !vision.followsView;
+            if (vision.followsView) {
+              vision.x = this.state.panX;
+              vision.y = this.state.panY;
+            }
+            this.broadcastVisions(true);
+            onChange();
+          });
+        },
       });
     }
   }
@@ -1466,7 +1696,7 @@ export class MapScreenPanel {
 
     const scale = canvas.width / map.naturalWidth;
     for (const v of this.visions) {
-      eraseVisionWithWalls(ctx, v, scale, this.state.pxPerSquare, this.walls, map.naturalWidth, map.naturalHeight);
+      eraseVisionWithWalls(ctx, v, scale, this.state.pxPerSquare, this.walls, map.naturalWidth, map.naturalHeight, 1.0);
     }
 
     await this.commitFog(canvas.toDataURL("image/png"));

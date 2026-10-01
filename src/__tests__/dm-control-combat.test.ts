@@ -171,16 +171,21 @@ describe("DmControlPanel.addImageLayer dedup", () => {
 describe("DmControlPanel.restoreState rebroadcast", () => {
   function makeServerStub() {
     const broadcasts: any[] = [];
+    const lastState = new Map<string, string>();
     return {
-      lastState: new Map<string, string>(),
+      lastState,
       broadcast: vi.fn((msg: any) => {
         broadcasts.push(msg);
       }),
+      forgetCached: vi.fn((types: string[]) => {
+        for (const type of types) lastState.delete(type);
+      }),
+      cachedEntries: vi.fn(() => [...lastState.entries()]),
       _broadcasts: broadcasts,
     };
   }
 
-  it("re-broadcasts image-layers-sync after restoring layers when the server is running", () => {
+  it("re-broadcasts image-layers-sync after restoring layers when the server is running", async () => {
     const layers = [
       {
         id: "l1", label: "Goblin", dataUrl: "data:image/png;base64,X",
@@ -200,7 +205,7 @@ describe("DmControlPanel.restoreState rebroadcast", () => {
     });
     const panel = makePanel(plugin);
 
-    (panel as any).restoreState();
+    await (panel as any).restoreState();
 
     expect(serverStub.broadcast).toHaveBeenCalledTimes(2);
     const [msg] = serverStub.broadcast.mock.calls[0];

@@ -56,13 +56,20 @@ function cachedEntry(hash: string, mime: string): CachedEntry {
   };
 }
 
-function fakeCache(entries: Record<string, CachedEntry>): HydrusCache {
+function fakeCache(entries: Record<string, CachedEntry>, existingPaths: Set<string> = new Set()): HydrusCache {
   return {
     get: vi.fn(async (h: string) => entries[h]),
     fetchAndCache: vi.fn(async (_c: HydrusClient, f: { hash: string; mime: string }) => ({
       entry: cachedEntry(f.hash, f.mime),
       isFresh: true,
     })),
+    hasFile: vi.fn(async (h: string) => {
+      const entry = entries[h];
+      return entry ? existingPaths.has(entry.vaultPath) : false;
+    }),
+    evict: vi.fn(async (h: string) => {
+      delete entries[h];
+    }),
   } as unknown as HydrusCache;
 }
 
@@ -123,7 +130,7 @@ describe("resolveHydrusRefs", () => {
 describe("ensureLocalCopy", () => {
   it("returns the cached entry without downloading", async () => {
     const entry = cachedEntry(H1, "image/png");
-    const cache = fakeCache({ [H1]: entry });
+    const cache = fakeCache({ [H1]: entry }, new Set([entry.vaultPath]));
     const out = await ensureLocalCopy(
       { label: "L", hash: H1, mediaType: "image", cached: true, available: true },
       cache,
@@ -154,5 +161,27 @@ describe("ensureLocalCopy", () => {
         null
       )
     ).rejects.toThrow();
+  });
+
+  it("checks file existence and re-downloads if indexed but missing", async () => {
+    const entry = cachedEntry(H1, "image/png");
+    const cache = fakeCache({ [H1]: entry }, new Set());
+    const client = {
+      getFileMetadata: vi.fn(async (hashes: string[]) =>
+        hashes.map((h) => ({ hash: h, mime: "image/png", ext: "png", size: 0, knownTags: [] }))
+      ),
+    } as unknown as HydrusClient;
+    const ref = { label: "L", hash: H1, mediaType: "image" as const, cached: true, available: true };
+    await ensureLocalCopy(ref, cache, client);
+    expect(cache.fetchAndCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns cached entry when file exists", async () => {
+    const entry = cachedEntry(H1, "image/png");
+    const cache = fakeCache({ [H1]: entry }, new Set([entry.vaultPath]));
+    const ref = { label: "L", hash: H1, mediaType: "image" as const, cached: true, available: true };
+    const out = await ensureLocalCopy(ref, cache, null);
+    expect(out).toBe(entry);
+    expect(cache.fetchAndCache).not.toHaveBeenCalled();
   });
 });

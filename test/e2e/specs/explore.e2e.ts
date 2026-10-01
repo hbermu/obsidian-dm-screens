@@ -51,6 +51,15 @@ describe("exploration mode", function () {
     expect(coverage).toBeGreaterThan(0.8);
   });
 
+  it("explore bar shows visible source label", async function () {
+    const modal = browser.$(".dm-explore-modal");
+    await expect(modal).toExist();
+    const label = await modal.$(".dm-explore-bar .dm-explore-title.dm-source-label");
+    await expect(label).toExist();
+    const text = await label.getText();
+    expect(text).toBe("Home");
+  });
+
   it("holding Shift toggles the exploration focus class", async function () {
     const markers = browser.$(".dm-explore-modal .dm-explore-markers");
 
@@ -120,5 +129,104 @@ describe("exploration mode", function () {
 
     await browser.$(".dm-explore-modal").$("button=Exit").click();
     await browser.waitUntil(async () => !(await browser.$(".dm-explore-modal").isExisting()));
+  });
+
+  it("floating windows minimize and restore", async function () {
+    await (await panelButton("Explore")).click();
+    const modal = browser.$(".dm-explore-modal");
+    await expect(modal).toExist();
+
+    const aoesWindow = await modal.$(".dm-floating-window");
+    const minimizeBtn = await aoesWindow.$(".dm-floating-window-minimize");
+    await expect(minimizeBtn).toExist();
+
+    const body = await aoesWindow.$(".dm-floating-window-body");
+    const isMinimized = () => aoesWindow.getAttribute("class").then((c) => c?.includes("dm-floating-window-minimized") ?? false);
+
+    expect(await isMinimized()).toBe(false);
+    await expect(body).toBeDisplayed();
+
+    await minimizeBtn.click();
+    expect(await isMinimized()).toBe(true);
+    await expect(body).not.toBeDisplayed();
+
+    await minimizeBtn.click();
+    expect(await isMinimized()).toBe(false);
+    await expect(body).toBeDisplayed();
+
+    await modal.$("button=Exit").click();
+    await browser.waitUntil(async () => !(await modal.isExisting()));
+  });
+
+  it("windows can be dragged by their header and stay inside the stage", async function () {
+    await (await panelButton("Explore")).click();
+    const modal = browser.$(".dm-explore-modal");
+    await expect(modal).toExist();
+
+    const initialPos = await browser.executeObsidian(() => {
+      const win = document.querySelectorAll(".dm-floating-window")[1] as HTMLElement;
+      return { left: win.style.left, top: win.style.top };
+    });
+
+    const headerBox = await browser.executeObsidian(() => {
+      const header = document.querySelectorAll(".dm-floating-window")[1]!.querySelector(".dm-floating-window-header") as HTMLElement;
+      const rect = header.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
+    const centerX = Math.round(headerBox.x + headerBox.width / 2);
+    const centerY = Math.round(headerBox.y + headerBox.height / 2);
+
+    await browser
+      .action("pointer", { parameters: { pointerType: "mouse" } })
+      .move({ x: centerX, y: centerY })
+      .down()
+      .move({ x: centerX - 100, y: centerY + 50 })
+      .up()
+      .perform();
+
+    const newPos = await browser.executeObsidian(() => {
+      const win = document.querySelectorAll(".dm-floating-window")[1] as HTMLElement;
+      const stage = document.querySelector(".dm-explore-stage") as HTMLElement;
+      return {
+        left: win.style.left,
+        top: win.style.top,
+        winLeft: win.offsetLeft,
+        winTop: win.offsetTop,
+        stageWidth: stage.clientWidth,
+        stageHeight: stage.clientHeight,
+      };
+    });
+
+    expect(newPos.left).not.toBe(initialPos.left);
+    expect(newPos.top).not.toBe(initialPos.top);
+    expect(newPos.winLeft).toBeGreaterThanOrEqual(0);
+    expect(newPos.winTop).toBeGreaterThanOrEqual(0);
+
+    await modal.$("button=Exit").click();
+    await browser.waitUntil(async () => !(await modal.isExisting()));
+  });
+
+  it("window bodies have no horizontal scrollbar", async function () {
+    await (await panelButton("Explore")).click();
+    const modal = browser.$(".dm-explore-modal");
+    await expect(modal).toExist();
+
+    const scrollInfo = await browser.executeObsidian(() => {
+      const windows = Array.from(document.querySelectorAll(".dm-floating-window"));
+      return windows.map((w) => {
+        const body = w.querySelector(".dm-floating-window-body") as HTMLElement;
+        return {
+          scrollWidth: body.scrollWidth,
+          clientWidth: body.clientWidth,
+        };
+      });
+    });
+
+    for (const info of scrollInfo) {
+      expect(info.scrollWidth).toBeLessThanOrEqual(info.clientWidth);
+    }
+
+    await modal.$("button=Exit").click();
+    await browser.waitUntil(async () => !(await modal.isExisting()));
   });
 });

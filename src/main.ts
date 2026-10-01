@@ -103,6 +103,13 @@ export default class DmScreenPlugin extends Plugin {
 
   async onunload() {
     debug("Plugin unloading");
+    const dmPanels = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
+    for (const leaf of dmPanels) {
+      const view = leaf.view;
+      if (view && "saveState" in view && typeof (view as any).saveState === "function") {
+        (view as any).saveState();
+      }
+    }
     this.stopServer();
   }
 
@@ -182,6 +189,15 @@ export default class DmScreenPlugin extends Plugin {
         view.debouncedRender?.();
       }
     };
+    this.server.onStateChange(() => {
+      const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
+      for (const leaf of leaves) {
+        const view = leaf.view;
+        if (view instanceof DmControlPanel) {
+          view.scheduleSaveState();
+        }
+      }
+    });
     this.server.start(this.settings.serverPort);
     this.broadcastWaitingScreen();
     this.broadcastInspirationStyle();
@@ -189,7 +205,7 @@ export default class DmScreenPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view as DmControlPanel;
-      view.republishToServer?.();
+      void view.republishToServer?.();
     }
     new Notice(`Player Screen server started on port ${this.settings.serverPort}`);
   }

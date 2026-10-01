@@ -49,10 +49,11 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     expect(aoes(sync)[0].shape).toBe("cone");
 
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).toExist();
-    // Cone has no width/thickness field — neither label is rendered.
-    const row = browser.$(".dm-control-panel .dm-map-aoe-row");
-    await expect(row.$("span*=wide")).not.toExist();
-    await expect(row.$("span*=thick")).not.toExist();
+    // Cone has no width/thickness field — neither label is rendered even when expanded.
+    const card = browser.$(".dm-control-panel .dm-control-card");
+    await card.$(".dm-control-card-header").click();
+    await expect(card.$(".dm-control-card-body").$("span*=Width")).not.toExist();
+    await expect(card.$(".dm-control-card-body").$("span*=Thickness")).not.toExist();
   });
 
   it("Line adds a width field and a rotation handle", async function () {
@@ -62,7 +63,9 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     expect(aoes(sync)[0].shape).toBe("line");
     expect(typeof aoes(sync)[0].widthFt).toBe("number");
 
-    await expect(browser.$(".dm-control-panel .dm-map-aoe-row").$("span*=wide")).toExist();
+    const card = browser.$(".dm-control-panel .dm-control-card");
+    await card.$(".dm-control-card-header").click();
+    await expect(card.$(".dm-control-card-body").$("span*=Width")).toExist();
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).toExist();
   });
 
@@ -72,7 +75,9 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     const sync = await rec.waitFor("map-aoe-sync", { skip: seen, where: (m) => aoes(m).length === 1 });
     expect(aoes(sync)[0].shape).toBe("ring");
 
-    await expect(browser.$(".dm-control-panel .dm-map-aoe-row").$("span*=thick")).toExist();
+    const card = browser.$(".dm-control-panel .dm-control-card");
+    await card.$(".dm-control-card-header").click();
+    await expect(card.$(".dm-control-card-body").$("span*=Thickness")).toExist();
     // Ring is rotationally symmetric — no rotation handle in the preview.
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).not.toExist();
   });
@@ -150,6 +155,6 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     expect(spell.shape).toBe("cone");
     expect(spell.sizeFt).toBe(15);
 
-    await expect(browser.$(".dm-control-panel .dm-map-aoe-label")).toExist();
+    await expect(browser.$(".dm-control-panel .dm-control-card-label")).toExist();
   });
 });

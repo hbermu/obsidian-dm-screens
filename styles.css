@@ -3,6 +3,8 @@
 /* ─── DM Control Panel ─── */
 
 .dm-control-panel {
+  --dm-radius: 8px;
+  --dm-radius-lg: 12px;
   padding: 12px;
   /* Drive responsive rules off the panel's own width, not the window's.
      Side panels in Obsidian can be narrow even when the window is wide. */
@@ -55,7 +57,7 @@
   color: var(--text-muted);
   background: var(--background-secondary);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   cursor: pointer;
 }
 
@@ -115,7 +117,7 @@
   gap: 6px;
   padding: 2px 10px;
   height: 22px;
-  border-radius: 12px;
+  border-radius: var(--dm-radius-lg);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   color: var(--text-muted);
@@ -199,7 +201,7 @@
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   background: var(--background-secondary);
 }
 
@@ -283,7 +285,7 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   padding: 2px 10px;
-  border-radius: 12px;
+  border-radius: var(--dm-radius-lg);
   font-size: 0.8em;
   font-weight: 600;
   white-space: nowrap;
@@ -349,7 +351,7 @@
   background: rgba(255, 152, 0, 0.2);
   color: #ff9800;
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   white-space: nowrap;
 }
 
@@ -435,7 +437,7 @@
 .dm-statblock-container {
   margin: 4px 0 8px 28px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   overflow: hidden;
 }
 
@@ -570,7 +572,7 @@
 
 .dm-encounter-card {
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   padding: 8px 12px !important;
 }
 
@@ -597,7 +599,7 @@
   color: var(--text-muted);
   background: var(--background-secondary);
   padding: 1px 8px;
-  border-radius: 10px;
+  border-radius: var(--dm-radius);
   flex-shrink: 0;
 }
 
@@ -692,7 +694,7 @@
   width: 100%;
   background: #1a1a2e;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   margin: 8px 0;
   overflow: hidden;
   outline: 2px dashed rgba(255,255,255,0.1);
@@ -758,7 +760,7 @@
   align-items: stretch;
   gap: 6px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   background: var(--background-secondary);
 }
 
@@ -927,6 +929,42 @@
   display: block;
 }
 
+.dm-image-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 0.9em;
+  border: 1px dashed var(--background-modifier-border);
+}
+
+.dm-source-label {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.85em;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.dm-explore-title.dm-source-label {
+  position: static;
+  flex: 1 1 auto;
+  min-width: 0;
+  pointer-events: auto;
+}
+
 .dm-preview-zoom-controls {
   position: absolute;
   top: 6px;
@@ -945,7 +983,7 @@
 .dm-preview-reset-btn {
   font-size: 0.75em;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   cursor: pointer;
   color: var(--text-muted);
   background: var(--background-secondary);
@@ -1026,7 +1064,7 @@
   margin: 4px 0 8px 0;
   padding: 8px;
   background: var(--background-secondary);
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   border-left: 3px solid var(--text-accent);
 }
 
@@ -1058,7 +1096,7 @@
 
 .dm-fog-tool-btn {
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1073,7 +1111,7 @@
 .dm-fog-canvas-wrapper {
   margin-top: 6px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   overflow: hidden;
 }
 
@@ -1090,6 +1128,8 @@
 /* ─── Hydrus Source Modal ─── */
 
 .dm-hydrus-modal {
+  --dm-radius: 8px;
+  --dm-radius-lg: 12px;
   width: min(90vw, 1100px);
   max-height: 85vh;
 }
@@ -1105,7 +1145,7 @@
   background: var(--background-modifier-error-hover, #5a3a1a);
   color: var(--text-warning, #f0c674);
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   font-size: 0.85em;
 }
 
@@ -1132,7 +1172,7 @@
   overflow-y: auto;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   display: none;
 }
@@ -1209,7 +1249,7 @@
 .dm-hydrus-tile {
   position: relative;
   aspect-ratio: 1 / 1;
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   overflow: hidden;
   background: var(--background-secondary);
   cursor: pointer;
@@ -1340,7 +1380,7 @@
   height: 100%;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
+  border-radius: var(--dm-radius);
   padding: 12px;
 }
 
@@ -1352,7 +1392,7 @@
   width: 30px;
   height: 30px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   line-height: 1;
 }
 
@@ -1369,7 +1409,7 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
 }
 
 .dm-hydrus-preview-error {
@@ -1409,7 +1449,7 @@
 .dm-tab,
 .dm-tab-active {
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   cursor: pointer;
   font-size: 0.9em;
   border: none;
@@ -1461,7 +1501,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   cursor: pointer;
   background: var(--background-secondary);
 }
@@ -1481,7 +1521,7 @@
   background: rgba(76, 175, 80, 0.2);
   color: #4caf50;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   white-space: nowrap;
 }
 
@@ -1503,7 +1543,7 @@
   flex: 1;
   padding: 4px 8px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   background: var(--background-primary);
   color: var(--text-normal);
 }
@@ -1527,7 +1567,7 @@
   margin-top: 8px;
   padding: 8px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   background: var(--background-secondary);
   overflow: hidden;
 }
@@ -1561,7 +1601,7 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   background: var(--background-primary);
   font-size: 0.85em;
 }
@@ -1593,7 +1633,7 @@
   box-shadow:
     inset 0 0 0 2px rgba(255, 200, 70, 0.65),
     inset 0 0 4px rgba(255, 200, 70, 0.3);
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
 }
 
 @keyframes dm-inspired-pulse-dm {
@@ -1627,7 +1667,7 @@
   background: rgba(65, 105, 225, 0.2);
   color: #4169E1;
   padding: 1px 4px;
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   margin-left: 6px;
   flex-shrink: 0;
 }
@@ -1719,7 +1759,7 @@
 
 .dm-webhook-block {
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--dm-radius);
   padding: 12px 16px;
   margin-bottom: 16px;
   background: var(--background-secondary);
@@ -1748,6 +1788,8 @@
 
 .dm-send-modal .modal-content,
 .dm-send-modal {
+  --dm-radius: 8px;
+  --dm-radius-lg: 12px;
   min-width: 360px;
 }
 .dm-send-modal-row {
@@ -1769,7 +1811,7 @@
   justify-content: center;
   margin: 12px 0;
   background: var(--background-primary-alt);
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   padding: 8px;
 }
 .dm-send-modal-preview img {
@@ -1846,7 +1888,7 @@
   width: 100%;
   margin-top: 8px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
+  border-radius: var(--dm-radius);
   overflow: hidden;
   background: #111;
   user-select: none;
@@ -1996,39 +2038,107 @@
   margin-top: 8px;
 }
 
-.dm-map-aoe-row {
+.dm-control-card {
+  margin: 4px 0;
+  min-width: 0;
+}
+
+.dm-control-card-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 0;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: var(--dm-radius);
+  background: var(--background-secondary);
 }
 
-.dm-map-aoe-row input[type="color"] {
-  width: 24px;
-  height: 24px;
+.dm-control-card-header:hover {
+  background: var(--background-secondary-alt);
+}
+
+.dm-control-card-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.dm-control-card-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+.dm-control-card-icon {
+  font-size: 0.9em;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.dm-control-card-summary {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.dm-control-card-remove {
+  font-size: 0.9em;
+  opacity: 0.6;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+.dm-control-card-remove:hover {
+  opacity: 1;
+  color: var(--text-error);
+}
+
+.dm-control-card-body {
+  padding: 8px 6px 6px 6px;
+}
+
+.dm-control-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.dm-control-card-row:last-child {
+  margin-bottom: 0;
+}
+
+.dm-control-card-row input[type="color"] {
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   cursor: pointer;
 }
 
-.dm-map-aoe-row input[type="range"] {
-  width: 60px;
+.dm-control-card-row input[type="range"] {
+  flex: 1;
+  min-width: 80px;
 }
 
-.dm-map-aoe-row input[type="number"] {
-  width: 56px;
+.dm-control-card-row input[type="number"] {
+  width: 70px;
 }
 
-.dm-map-aoe-label {
-  font-size: 0.85em;
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.dm-control-card-row select {
+  flex: 1;
+  min-width: 100px;
 }
 
 /* ─── Map fog modal ─────────────────────────────────────────────── */
 .dm-fog-modal {
+  --dm-radius: 8px;
+  --dm-radius-lg: 12px;
   width: 90vw;
   max-width: 1400px;
 }
@@ -2072,6 +2182,8 @@
 }
 
 .dm-explore-modal {
+  --dm-radius: 8px;
+  --dm-radius-lg: 12px;
   width: 96vw;
   height: 96vh;
   max-width: none;
@@ -2106,11 +2218,62 @@
   background: var(--background-secondary);
 }
 /* The AoE/Vision control panel, reusing the DM panel's row layout. */
-.dm-explore-sidebar {
-  width: 280px;
-  flex-shrink: 0;
+.dm-floating-window {
+  position: absolute;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--dm-radius-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+.dm-floating-window-minimized .dm-floating-window-body {
+  display: none;
+}
+.dm-floating-window-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: var(--dm-radius-lg) var(--dm-radius-lg) 0 0;
+  cursor: move;
+  user-select: none;
+}
+.dm-floating-window-minimized .dm-floating-window-header {
+  border-radius: var(--dm-radius-lg);
+}
+.dm-floating-window-title {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+.dm-floating-window-extra {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+.dm-floating-window-minimize {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--dm-radius);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.dm-floating-window-minimize:hover {
+  background: var(--background-modifier-hover);
+}
+.dm-floating-window-body {
+  padding: 12px;
   overflow-y: auto;
-  padding-right: 4px;
+  overflow-x: hidden;
+  max-height: calc(100vh - 100px);
 }
 .dm-explore-lock-btn.dm-fog-active,
 .dm-map-vision-bind.dm-fog-active {

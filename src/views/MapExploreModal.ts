@@ -4,12 +4,15 @@ import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize } from "../map/fog";
 import { buildBlockedMask, floodRegion, regionToCanvas } from "../map/walls";
 import { vaultPathFromUrl } from "../server";
+import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
+import { DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
 import { rotatePoint } from "../map/transform";
 import { debug } from "../debug";
 import { fitScale } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
+import { FloatingWindow, type WindowState } from "./FloatingWindow";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's
@@ -29,6 +32,9 @@ export class MapExploreModal extends Modal {
   private hoverCell: { x: number; y: number } | null = null;
   private blockedCache: { walls: MapWall[]; fogScale: number; mask: Uint8Array } | null = null;
   private hoverRegion: { cellX: number; cellY: number; region: Uint8Array | null } | null = null;
+  private aoesWindow: FloatingWindow | null = null;
+  private visionWindow: FloatingWindow | null = null;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(
     app: App,
@@ -80,6 +86,11 @@ export class MapExploreModal extends Modal {
     const doorRadius = Math.max(10, this.panel.state.pxPerSquare * fogScale * 0.35);
 
     const bar = contentEl.createDiv("dm-explore-bar");
+    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const sourceLabel = savedLabel || resolveSourceLabel({ url: this.map.url, plugin: this.plugin });
+    const labelEl = bar.createEl("span", { cls: "dm-source-label dm-explore-title" });
+    labelEl.textContent = sourceLabel.label;
+    labelEl.title = sourceLabel.title;
     const revealAll = bar.createEl("button", { text: "Reveal All" });
     const coverAll = bar.createEl("button", { text: "Cover All", cls: "mod-warning" });
     const lockBtn = bar.createEl("button", { cls: "dm-explore-lock-btn" });
@@ -175,19 +186,33 @@ export class MapExploreModal extends Modal {
 
       // Vision range outlines.
       octx.save();
-      octx.setLineDash([6, 4]);
-      octx.strokeStyle = "#ffd23f";
       octx.lineWidth = 2;
       const ftToPxScaled = (this.panel.state.pxPerSquare / 5) * fogScale;
       for (const v of this.panel.visions) {
-        const radius = v.sizeFt * ftToPxScaled;
+        const color = v.color ?? DEFAULT_VISION_COLOR;
+        octx.strokeStyle = color;
+        octx.setLineDash([6, 4]);
+        const brightR = v.sizeFt * ftToPxScaled;
         octx.beginPath();
         if (v.shape === "circle") {
-          octx.arc(v.x * fogScale, v.y * fogScale, radius, 0, Math.PI * 2);
+          octx.arc(v.x * fogScale, v.y * fogScale, brightR, 0, Math.PI * 2);
         } else {
-          octx.rect(v.x * fogScale - radius, v.y * fogScale - radius, radius * 2, radius * 2);
+          octx.rect(v.x * fogScale - brightR, v.y * fogScale - brightR, brightR * 2, brightR * 2);
         }
         octx.stroke();
+
+        if (v.dimFt > 0) {
+          const dimR = (v.sizeFt + v.dimFt) * ftToPxScaled;
+          octx.strokeStyle = `${color}88`;
+          octx.setLineDash([3, 3]);
+          octx.beginPath();
+          if (v.shape === "circle") {
+            octx.arc(v.x * fogScale, v.y * fogScale, dimR, 0, Math.PI * 2);
+          } else {
+            octx.rect(v.x * fogScale - dimR, v.y * fogScale - dimR, dimR * 2, dimR * 2);
+          }
+          octx.stroke();
+        }
       }
       octx.restore();
 
@@ -258,8 +283,6 @@ export class MapExploreModal extends Modal {
       return { x: (r.x / uw) * nw, y: (r.y / uh) * nh };
     };
 
-    const sidebar = body.createDiv("dm-explore-sidebar");
-
     const renderMarkers = () => {
       markers.empty();
       this.buildAoeMarkers(markers, nw, nh, rotation, overlayGeom, deltaToMap, redraw);
@@ -267,27 +290,63 @@ export class MapExploreModal extends Modal {
       this.buildViewportRect(markers, nw, nh, deltaToMap, redraw);
     };
     this.renderMarkers = renderMarkers;
-    // Size, width and opacity edits made in the sidebar repaint the map in
-    // place rather than rebuilding it (aoe-overlays.md requirement 8).
     this.disposeOverlayRepaint = this.panel.registerOverlayRepaint(() => {
       renderMarkers();
       redraw();
     });
 
-    // Full refresh after any structural edit made in the side panel: rebuild the
-    // AoE/vision rows, the on-map markers, and repaint the overlay footprints.
     const refresh = () => {
-      renderSidebar();
+      renderWindows();
       renderMarkers();
       redraw();
     };
-    const renderSidebar = () => {
-      sidebar.empty();
-      this.panel.renderAoeSection(sidebar, this.map, refresh);
-      this.panel.renderVisionSection(sidebar, this.map, refresh);
+
+    const defaultAoesState: WindowState = this.plugin.settings.exploreWindows?.["aoes"] || {
+      x: 1 - (260 + 260 + 12 + 12) / stage.clientWidth,
+      y: 12 / stage.clientHeight,
+      minimized: false,
     };
-    renderSidebar();
+    const defaultVisionState: WindowState = this.plugin.settings.exploreWindows?.["vision"] || {
+      x: 1 - (260 + 12) / stage.clientWidth,
+      y: 12 / stage.clientHeight,
+      minimized: false,
+    };
+
+    this.aoesWindow = new FloatingWindow(stage, {
+      id: "aoes",
+      title: "AoEs",
+      initial: defaultAoesState,
+      onChange: (state) => {
+        this.plugin.settings.exploreWindows["aoes"] = state;
+        void this.plugin.saveSettings();
+      },
+    });
+
+    this.visionWindow = new FloatingWindow(stage, {
+      id: "vision",
+      title: "Vision",
+      initial: defaultVisionState,
+      onChange: (state) => {
+        this.plugin.settings.exploreWindows["vision"] = state;
+        void this.plugin.saveSettings();
+      },
+    });
+
+    const renderWindows = () => {
+      this.aoesWindow!.body.empty();
+      this.visionWindow!.body.empty();
+      this.panel.renderAoeSection(this.aoesWindow!.body, this.map, refresh);
+      this.panel.renderVisionSection(this.visionWindow!.body, this.map, refresh);
+    };
+
+    renderWindows();
     renderMarkers();
+
+    this.resizeObserver = new ResizeObserver(() => {
+      this.aoesWindow?.clamp();
+      this.visionWindow?.clamp();
+    });
+    this.resizeObserver.observe(stage);
 
     revealAll.addEventListener("click", () => {
       this.ctx().clearRect(0, 0, this.fogCanvas.width, this.fogCanvas.height);
@@ -493,29 +552,31 @@ export class MapExploreModal extends Modal {
     deltaToMap: (dx: number, dy: number) => { x: number; y: number } | null,
     redraw: () => void
   ) {
+    const positions: Array<() => void> = [];
     for (const vision of this.panel.visions) {
       const dot = layer.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const position = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
         dot.style.top = `${(vision.y / nh) * 100}%`;
       };
       position();
+      positions.push(position);
       dot.addEventListener("mousedown", (ev: MouseEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         const startX = ev.clientX;
         const startY = ev.clientY;
-        const startVX = vision.x;
-        const startVY = vision.y;
+        const targets = visionDragTargets(this.panel.visions, vision, this.panel.visionGroup);
+        const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.beginDrag(
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
-            vision.x = Math.max(0, Math.min(nw, startVX + d.x));
-            vision.y = Math.max(0, Math.min(nh, startVY + d.y));
-            position();
+            moveVisions(targets, starts, d.x, d.y, nw, nh);
+            for (const reposition of positions) reposition();
             redraw();
             this.panel.broadcastVisions();
           },
@@ -645,6 +706,12 @@ export class MapExploreModal extends Modal {
     this.cancelOverlayRepaint = null;
     this.disposeOverlayRepaint?.();
     this.disposeOverlayRepaint = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.aoesWindow?.destroy();
+    this.aoesWindow = null;
+    this.visionWindow?.destroy();
+    this.visionWindow = null;
     this.panel.refreshPanel();
     this.contentEl.empty();
   }

@@ -5,18 +5,22 @@
 ## Source files
 
 - `src/views/DmControlPanel.ts` — Add BG / Stop BG button, `showBackgroundPicker`, `setImageAsBackground`, `getImagesFromNote`, `collectHydrusRefEntries`, `applyHydrusRef`, `activeBackgroundUrl`, `activeVideoPath`, DM-side preview overlay rendered in `renderPlayerScreenSection`, `resolveBackgroundPreviewUrl`, `isVideoBackgroundUrl`
+- `src/sourceLabel.ts` — `resolveSourceLabel` computes human labels for images from Hydrus name tags, note basenames or file names; extracts hash from Hydrus cache URLs to lookup tags when no explicit hash is provided
+- `src/hydrus/hashFromPath.ts` — `hydrusHashFromVaultPath` extracts the Hydrus hash from a vault path matching the cache pattern, shared with `recoverImage`
+- `src/hydrus/cache.ts` — `getSync` provides synchronous access to a cached entry's tags when the index is already loaded
 - `src/views/HydrusExplorerModal.ts` — `handleSetBackground` broadcasts the Hydrus-cached file as the background; loop and mute come from settings
 - `src/hydrus/noteRefs.ts` — resolves and downloads the active note's `hydrus://` references for the Add BG picker (see `../hydrus-integration/note-references.md`)
 - `src/player/player.ts` — `showBackgroundMedia` and `hideBackgroundMedia` handle the `<video>` and `<img>` elements
 - `src/player/player.css` — `#video-background`, `#image-background` styling
 - `src/server.ts` — `buildPlayerHtml` includes `<video id="video-background">` and `<img id="image-background">`
-- `styles.css` — `.dm-preview-bg` overlay styling for the DM-side preview
+- `styles.css` — `.dm-preview-bg` overlay styling for the DM-side preview, `.dm-source-label` chip styling
 
 ## Settings used
 
 - `hydrusDefaultLoop` — default `loop` flag for the `show-background-media` payload when pushed from the Hydrus modal
 - `hydrusDefaultMuted` — default `muted` flag (videos autoplay only when muted)
 - `cacheBaseFolder` — Hydrus-sourced backgrounds are persisted by `HydrusCache` at `<cacheBaseFolder>/hydrus/<hash>.<ext>` and served back over `/vault/`
+- `lastSourceLabels.background` — persisted label for the active background, shown in the DM preview chip and used in missing-file Notices; cleared when the background is stopped or the player screen is cleared
 
 ## Requirements
 
@@ -38,6 +42,13 @@
 14. While `activeBackgroundUrl` is non-null and a currently-connected client's dimensions match the effective resolution (the "selected client"), the DM preview shall render a background overlay inside that client's viewport rect — same geometry as the green `.dm-player-viewport-rect`, behind the image-layer rectangles (`z-index: 0`). The overlay uses `object-fit: cover` so the preview mirrors what the player browser shows.
 15. The DM preview overlay shall resolve `/vault/<encoded path>` URLs to an `app://…` local resource via `vault.adapter.getResourcePath()`; non-`/vault/` URLs pass through unchanged; videos (extension `.mp4`, `.webm`, `.mov`, `.ogv`) render as `<video muted loop autoplay playsinline>`; everything else renders as `<img>`.
 16. While no client is connected, or no connected client matches the effective resolution, the DM preview shall not render the background overlay.
+17. When the DM Control Panel restores state from `lastBroadcastCache`, it shall check whether the restored background file exists via `vault.adapter.exists(vaultPath)` before marking it active. If the file is missing and the URL matches a Hydrus cache path (`<cacheBaseFolder>/hydrus/<hash>.<ext>`), the panel shall attempt to re-download it from Hydrus. If the file is still missing (not Hydrus-sourced, or Hydrus is offline, or the file is gone from Hydrus), the panel shall delete the `show-background-media` cache entry, clear `activeBackgroundUrl` and `activeVideoPath`, show a Notice `Background "<label>" is no longer available` where `<label>` is the stored label from `lastSourceLabels.background` or resolved from the URL, persist the cleared state, and call `render()` so the UI reflects the cleared state.
+18. The DM background preview `<img>` and `<video>` shall handle the `error` event by replacing themselves with a `.dm-image-unavailable` placeholder element reading "Image unavailable", styled with centered text, a dashed border and a muted background color.
+19. The player-side `<img id="image-background">` and `<video id="video-background">` shall handle the `error` event of the media on screen (the element is displayed and carries a non-empty `src`; the error that blanking the inactive element with `src = ""` fires is ignored) by hiding the broken media element (setting `style.display = "none"` and clearing the `src`) and showing the waiting screen.
+20. When a background is set from any path (note picker, Hydrus note references, Hydrus Explorer modal), the DM panel shall resolve a source label and call `setBackgroundLabel(label)` which stores it in `lastSourceLabels.background` and persists the settings. The label is resolved in order: the first `name:` tag (namespace stripped), the first 8 hex chars of the Hydrus hash (formatted as `Hydrus <hash8>`), the note basename, or the decoded filename from the URL. When resolving from a Hydrus cache URL without an explicit hash, the hash shall be extracted from the vault path using `hydrusHashFromVaultPath` and the tags looked up via `plugin.hydrusCache.getSync(hash)`; when the cache index is not loaded or has no entry, the label falls back to `Hydrus <hash8>`.
+21. When Stop BG is clicked or the player screen is cleared, the panel shall call `setBackgroundLabel(null)` which deletes `lastSourceLabels.background` and persists the settings.
+22. The DM background preview overlay shall render a `.dm-source-label` chip at its top-left corner displaying the label from `lastSourceLabels.background` (or resolved from the URL when restoring state), with the full hash or filename in the `title` attribute. The chip is absolutely positioned, ellipsised, and never wider than the preview.
+23. The source label shall never be included in the `show-background-media` broadcast payload or in `lastBroadcastCache`.
 
 ## Broadcast / IPC
 
@@ -48,11 +59,15 @@
 
 ## Tests covering this
 
-- `src/__tests__/server-broadcast.test.ts` — `show-background-media` is cached and replayed
+- `src/__tests__/server-broadcast.test.ts` — `show-background-media` is cached and replayed; requirement 23: payload has no label keys
 - `src/__tests__/server-bootstrap.integration.test.ts` — wires the DM → player flow
 - `src/__tests__/dm-preview-bg.test.ts` — `resolveBackgroundPreviewUrl` and `isVideoBackgroundUrl` helpers used by the DM-side preview overlay
+- `src/__tests__/dm-control-restore.test.ts` — unit tests for requirement 17: missing non-Hydrus file → Notice + state cleared + cache entry deleted, covering both server-running (`forgetCached`) and server-null (`settings.lastBroadcastCache` delete + `saveSettings`) cases; Notice uses the label
+- `src/__tests__/source-label.test.ts` — requirement 20: label resolution from name tags, Hydrus hash, note basename and filename; Hydrus-aware URL fallback via cache lookup
+- `src/__tests__/hydrus-hash-from-path.test.ts` — `hydrusHashFromVaultPath` helper extracts hash from cache paths with default/custom folders and various edge cases
 - `test/visual/background.spec.ts` — Playwright visual regression: deterministic grid PNG broadcast via `show-background-media` is rendered by the real player bundle on `#image-background`.
-- `test/e2e/specs/background.e2e.ts` — real Obsidian: Add BG from a note embed broadcasts `show-background-media`; Stop BG broadcasts `hide-background-media`
+- `test/e2e/specs/background.e2e.ts` — real Obsidian: Add BG from a note embed broadcasts `show-background-media`; Stop BG broadcasts `hide-background-media`; requirement 22: the preview chip exists
+- `test/e2e/specs/restore.e2e.ts` — real Obsidian: set BG, stop BG, reload plugin → background is not restored (requirement 17 integration test)
 
 ## Non-goals
 

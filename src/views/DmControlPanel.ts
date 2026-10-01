@@ -5,11 +5,14 @@ import { renderStatblock } from "./StatblockPanel";
 import { DnDBeyondPanel } from "./DnDBeyondPanel";
 import { MapScreenPanel } from "./MapScreenPanel";
 import type { ClientInfo } from "../server";
+import { vaultPathFromUrl } from "../server";
 import { SendToWebhookModal } from "./SendToWebhookModal";
 import { buildLayerContextMenu } from "./layerContextMenu";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
+import { recoverVaultImage } from "../hydrus/recoverImage";
 import { sortByInitiative, clampTrackerScale, advanceTurn, applyRound1Reveal } from "../combat/tracker";
-import { encodeForVaultUrl, uniqueLayerLabel } from "./HydrusExplorerModal";
+import { encodeForVaultUrl, uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
+import { resolveSourceLabel, type SourceLabel } from "../sourceLabel";
 import { debug, debugWarn, debugError } from "../debug";
 import { CONDITIONS, decodeStatus, encodeExhaustion } from "../conditions";
 import { buildJoinUrl } from "../auth";
@@ -106,6 +109,7 @@ export class DmControlPanel extends ItemView {
   private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
   private layerGeometryTimer: ReturnType<typeof setTimeout> | null = null;
   private panZoomAbort: AbortController | null = null;
+  private restored: Promise<void> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DmScreenPlugin) {
     super(leaf);
@@ -123,6 +127,18 @@ export class DmControlPanel extends ItemView {
 
   getIcon(): string {
     return "monitor";
+  }
+
+  setBackgroundLabel(label: SourceLabel | null) {
+    if (!this.plugin.settings.lastSourceLabels) {
+      this.plugin.settings.lastSourceLabels = {};
+    }
+    if (label) {
+      this.plugin.settings.lastSourceLabels.background = label;
+    } else {
+      delete this.plugin.settings.lastSourceLabels.background;
+    }
+    void this.plugin.saveSettings();
   }
 
   private escHandler = (e: KeyboardEvent) => {
@@ -143,8 +159,9 @@ export class DmControlPanel extends ItemView {
     this.dmZoom = 1;
     this.dmPanX = 0;
     this.dmPanY = 0;
-    this.restoreState();
+    this.restored = this.restoreState();
     this.render();
+    await this.restored;
   }
 
   async onClose() {
@@ -186,7 +203,7 @@ export class DmControlPanel extends ItemView {
     return { vpW, vpH, vpX, vpY };
   }
 
-  private restoreState() {
+  private async restoreState() {
     const s = this.plugin.settings;
     if (s.lastPlayerScreenWidth > 0) {
       this.connectedClients = [{ width: s.lastPlayerScreenWidth, height: s.lastPlayerScreenHeight, devicePixelRatio: 1 }];
@@ -213,7 +230,9 @@ export class DmControlPanel extends ItemView {
         this.activeBackgroundUrl = msg.payload?.url ?? null;
       } catch { /* ignore */ }
     }
-    this.mapPanel.restoreFromCache(s.lastBroadcastCache ?? {});
+
+    await this.checkAndRecoverBackground();
+    await this.mapPanel.restoreFromCache(s.lastBroadcastCache ?? {});
 
     debug(
       "DmControlPanel: restoreState — layers:", this.imageLayers.length,
@@ -225,8 +244,38 @@ export class DmControlPanel extends ItemView {
     }
   }
 
-  republishToServer() {
+  private async checkAndRecoverBackground() {
+    if (!this.activeBackgroundUrl) return;
+
+    const result = await recoverVaultImage(this.plugin, this.activeBackgroundUrl);
+
+    if (result === "ok") return;
+
+    if (result === "recovered") {
+      debug("DmControlPanel: recovered missing background");
+      this.render();
+      return;
+    }
+
+    const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin }).label;
+    new Notice(`Background "${label}" is no longer available`);
+    this.activeBackgroundUrl = null;
+    this.activeVideoPath = null;
+    this.setBackgroundLabel(null);
+
+    if (this.plugin.server) {
+      this.plugin.server.forgetCached(["show-background-media"]);
+    } else {
+      delete this.plugin.settings.lastBroadcastCache?.["show-background-media"];
+      await this.plugin.saveSettings();
+    }
+    this.render();
+  }
+
+  async republishToServer() {
     if (!this.plugin.server) return;
+    if (this.restored) await this.restored;
     if (this.imageLayers.length > 0) {
       debug("DmControlPanel: republishToServer — layers:", this.imageLayers.length);
       this.broadcastImageLayers();
@@ -239,7 +288,7 @@ export class DmControlPanel extends ItemView {
         payload: { url: this.activeBackgroundUrl, mediaType },
       });
     }
-    this.mapPanel.republish();
+    await this.mapPanel.republish();
   }
 
   saveState() {
@@ -254,7 +303,7 @@ export class DmControlPanel extends ItemView {
     // Save broadcast cache
     if (this.plugin.server) {
       const cache: Record<string, string> = {};
-      for (const [type, data] of (this.plugin.server as any).lastState?.entries() ?? []) {
+      for (const [type, data] of this.plugin.server.cachedEntries()) {
         cache[type] = data;
       }
       s.lastBroadcastCache = cache;
@@ -569,6 +618,7 @@ export class DmControlPanel extends ItemView {
       if (this.activeBackgroundUrl) {
         this.activeBackgroundUrl = null;
         this.activeVideoPath = null;
+        this.setBackgroundLabel(null);
         if (this.plugin.server) {
           this.plugin.server.broadcast({ type: "hide-background-media", payload: {} });
         }
@@ -623,12 +673,28 @@ export class DmControlPanel extends ItemView {
           v.loop = true;
           v.autoplay = true;
           v.playsInline = true;
+          v.addEventListener("error", () => {
+            bgWrap.empty();
+            const placeholder = bgWrap.createDiv("dm-image-unavailable");
+            placeholder.textContent = "Image unavailable";
+          });
           v.play().catch(() => {});
         } else {
           const img = bgWrap.createEl("img");
           img.src = bgUrl;
           img.alt = "";
+          img.addEventListener("error", () => {
+            bgWrap.empty();
+            const placeholder = bgWrap.createDiv("dm-image-unavailable");
+            placeholder.textContent = "Image unavailable";
+          });
         }
+
+        const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+        const sourceLabel = savedLabel || resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin });
+        const labelChip = bgWrap.createDiv("dm-source-label");
+        labelChip.textContent = sourceLabel.label;
+        labelChip.title = sourceLabel.title;
       }
     }
 
@@ -1004,6 +1070,7 @@ export class DmControlPanel extends ItemView {
           this.nextZIndex = 1;
           this.activeBackgroundUrl = null;
           this.activeVideoPath = null;
+          this.setBackgroundLabel(null);
           new Notice("Player screen cleared");
           this.render();
         }
@@ -1937,6 +2004,15 @@ export class DmControlPanel extends ItemView {
         debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), ref.mediaType);
         this.activeBackgroundUrl = url;
         this.activeVideoPath = ref.mediaType === "video" ? entry.vaultPath : null;
+
+        const sourceLabel = resolveSourceLabel({
+          url,
+          hydrusHash: ref.hash,
+          knownTags: entry.knownTags,
+          plugin: this.plugin,
+        });
+        this.setBackgroundLabel(sourceLabel);
+
         this.plugin.server?.broadcast({
           type: "show-background-media",
           payload: {
@@ -2132,6 +2208,15 @@ export class DmControlPanel extends ItemView {
     debug("DmControlPanel: setImageAsBackground", img.path);
     this.activeBackgroundUrl = url;
     this.activeVideoPath = null;
+
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    const sourceLabel = resolveSourceLabel({
+      url,
+      noteBasename: activeFile?.basename,
+      plugin: this.plugin,
+    });
+    this.setBackgroundLabel(sourceLabel);
+
     if (this.plugin.server) {
       this.plugin.server.broadcast({
         type: "show-background-media",

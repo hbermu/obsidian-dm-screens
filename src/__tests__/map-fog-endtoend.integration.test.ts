@@ -11,7 +11,7 @@ const PNG_URL =
 const MAP_URL = "/vault/maps/dungeon.jpg";
 const MAP_WALL: MapWall = { x1: 0, y1: 0, x2: 100, y2: 0 };
 const MAP_DOOR: MapWall = { x1: 50, y1: 0, x2: 50, y2: 100, door: true, open: false };
-const VISION: MapVision = { id: "v1", shape: "circle", x: 250, y: 250, sizeFt: 30, featherFt: 5 };
+const VISION: MapVision = { id: "v1", shape: "circle", x: 250, y: 250, sizeFt: 30, dimFt: 0, featherFt: 5 };
 
 function makeAdapter(files: Record<string, Uint8Array> = {}) {
   const dirs = new Set<string>();
@@ -62,6 +62,10 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
         broadcasts.push(msg);
         server.broadcast(msg);
       },
+      forgetCached: (types: string[]) => {
+        server.forgetCached(types);
+      },
+      cachedEntries: () => server.cachedEntries(),
     },
     saveSettings: () => Promise.resolve(),
     broadcastMapCalibration: () => {},

@@ -116,8 +116,13 @@ src/
   settings.ts            # Settings interface, defaults, settings UI
   types.ts               # Shared types (TrackerCombatant, ImageLayer, etc.)
   debug.ts               # Debug-mode logger
+  redact.ts              # redactUrl / redactSecret for log and Notice text
+  auth.ts                # Player-screen access token and join URL
+  sourceLabel.ts         # resolveSourceLabel — DM-side image label (Hydrus name: tag, Hydrus <hash8>, note basename)
   conditions.ts          # D&D 5e condition catalogue (icons, DDB id mapping, status encode/decode)
   global.d.ts            # Window augmentations (InitiativeTracker, FantasyStatblocks)
+  net/
+    urlPolicy.ts         # assertOutboundUrl — the outbound HTTP policy
   combat/
     tracker.ts           # Pure initiative helpers (sort, scale clamp, turn advance, round-1 reveal)
   player/
@@ -131,6 +136,16 @@ src/
     map.css              # Map-screen styles
     transform.ts         # Pure scale/translation/grid/calibration math (shared with the DM panel)
     types.ts             # Map payload/config/profile types
+    canvas.ts            # sizeCanvas + per-frame repaint scheduler
+    fog.ts               # Fog mask sizing, sidecar IO, grid-cell snapping
+    walls.ts             # Walls sidecar IO and the room-flood pipeline
+    los.ts               # Line-of-sight polygon against walls
+    uvtt.ts              # UVTT wall import
+    foundry.ts           # Foundry module wall import (NeDB + LevelDB)
+    aoe.ts               # renderAoe — AoE shape painter
+    spellAoes.ts         # Generated 5e spell area-of-effect catalog
+    vision.ts            # Vision erase (bright + dim + feather), normalize, group drag
+    lightSources.ts      # Generated 5e light-source catalog (scripts/gen-light-sources.py)
   hydrus/
     client.ts            # Hydrus Client API client
     cache.ts             # Vault-folder cache with TTL sweep
@@ -138,6 +153,8 @@ src/
     pagination.ts        # Client-side pagination helper
     tagFilter.ts         # Regex tag filtering
     tagInput.ts          # Comma-delimited tag query parser
+    hashFromPath.ts      # Hydrus hash from a cached vault path
+    recoverImage.ts      # Re-download a missing cached image from Hydrus
   dndbeyond/
     client.ts            # CobaltSession auth + encounter/character/monster API
     poller.ts            # Long-polling with min-gap and circuit breaker
@@ -157,6 +174,13 @@ src/
     HydrusTagSuggester.ts   # Tag autocomplete
     MapScreenPanel.ts    # Map Screen section of the DM panel (picker, pan preview, grid controls)
     MapCalibrationModal.ts  # Per-screen physical calibration (diagonal + fine-tune + test pattern)
+    MapFogModal.ts       # Fog and walls editor
+    MapExploreModal.ts   # Exploration Mode (room/door gestures, floating AoE and Vision windows)
+    FloatingWindow.ts    # Draggable, minimizable window used by Exploration Mode
+    controlCard.ts       # Collapsible AoE/vision control card
+    mapStage.ts          # fitScale / finiteScale shared stage math
+    SpellAoeModal.ts     # Fuzzy search over the spell AoE catalog
+    LightSourceModal.ts  # Fuzzy search over the light-source catalog
     SendToWebhookModal.ts   # Send-layer-to-webhook modal (target, preview, caption)
     StatblockPanel.ts    # 5e statblock renderer
     layerContextMenu.ts  # Right-click context menu for image-layer rows

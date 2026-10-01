@@ -70,7 +70,7 @@ While a map is active, the MAP SCREEN section gains a **Fog** button (it reads `
 - **Fog tab** — a single mask over the map: black hides, transparent reveals. Paint with a sized **brush**, a **rectangle** marquee, a snapped **grid cell** or **grid rectangle**, or the **Room** tool (one click floods a whole walled room). Reveal and Cover are the two modes; **Reveal All** / **Cover All** reset the whole map. The mask is saved as a sidecar next to nothing you have to manage — it lives in `.dm-screen/fog/`, keyed to the map, and comes back whenever you show that map again (note images and Hydrus-cached files alike). TV opacity of the fog layer is adjustable in settings.
 - **Walls tab** — draw line-of-sight **walls** and **doors** (chained clicks or a rectangle drag), toggle a door open/closed, or erase. Walls power dynamic vision and the Room flood.
 
-**Dynamic vision** lives in its own panel section: add a **Circle** or **Square** vision (range in feet, with a soft feather), drag it onto a token, and the fog carves out exactly what it can see. Where walls block the line of sight the reveal stops at the wall; an **open door** lets vision spill through while a closed one blocks it. **Bake into fog** burns the current vision permanently into the mask (for "we've explored this" areas) and clears the live layer.
+**Dynamic vision** lives in its own panel section: add a **Circle** or **Square** vision (range in feet, with a soft feather), drag it onto a token, and the fog carves out exactly what it can see. Each vision has a **bright** radius plus an optional **dim** ring that stays half-shrouded, and **Lights…** pre-fills both from the 5e catalog (torch 20/+20 ft, lantern, *light*, *daylight*, darkvision 60/120 ft …). Give a vision a name and a marker colour to tell the party's torches apart, and flip the 🔗 group toggle to drag them all together as the party moves. Where walls block the line of sight the reveal stops at the wall; an **open door** lets vision spill through while a closed one blocks it. **Bake into fog** burns the current vision permanently into the mask (for "we've explored this" areas) and clears the live layer.
 
 **Importing walls** — drawing walls by hand is optional. On the Walls tab:
 
@@ -99,7 +99,7 @@ The **Explore** button opens a near-fullscreen surface built for running the ses
 - **Click a room** to reveal or hide its fog in one gesture; a green hover highlight shows which room you're about to toggle. Doors always bound a room here, so an open door lights up without merging rooms.
 - **Move the players' view** — in physical mode, drag the viewport rectangle to pan what the table sees. A **lock** button freezes it so you can't nudge it by accident; hold **Shift** to momentarily click straight through to doors and rooms without moving anything.
 - **Bind a vision to the view** — flip the ⦿ toggle on a vision and its lit circle/square follows the players' viewport as you pan, a moving pool of light that makes exploration feel alive.
-- A side panel carries the full **AoE and Vision** controls, so you can add, tweak, and place templates without leaving the modal.
+- Two floating **AoEs** and **Vision** windows carry the full controls, so you can add, tweak, and place templates without leaving the modal; drag them by the header out of the way or minimize them, and they remember where you left them.
 
 Everything here reuses the same fog, walls, and vision the editor produced — Exploration Mode is where you *drive* them at the table.
 
