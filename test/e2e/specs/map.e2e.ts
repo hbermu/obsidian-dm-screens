@@ -57,6 +57,8 @@ describe("map screen", function () {
   });
 
   it("map preview shows source label chip with note basename", async function () {
+    rec.send({ type: "client-info", payload: { width: 1920, height: 1080 }, channel: "map" });
+    await new Promise((r) => setTimeout(r, 200));
     const label = await browser.$(".dm-map-preview-stage .dm-source-label");
     await expect(label).toExist();
     const text = await label.getText();

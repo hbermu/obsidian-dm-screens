@@ -52,7 +52,9 @@ describe("exploration mode", function () {
   });
 
   it("explore bar shows visible source label", async function () {
-    const label = await browser.$(".dm-explore-modal .dm-explore-bar .dm-explore-title.dm-source-label");
+    const modal = browser.$(".dm-explore-modal");
+    await expect(modal).toExist();
+    const label = await modal.$(".dm-explore-bar .dm-explore-title.dm-source-label");
     await expect(label).toExist();
     const text = await label.getText();
     expect(text).toBe("fixtures");
