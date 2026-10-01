@@ -28,19 +28,19 @@ describe("dim-light visions", () => {
   });
 
   it("normalizeVision defaults NaN dimFt to 0", () => {
-    const vision = { id: "v1", shape: "circle", x: 100, y: 100, sizeFt: 20, dimFt: NaN, featherFt: 0 } as MapVision;
+    const vision = { id: "v1", shape: "circle" as const, x: 100, y: 100, sizeFt: 20, dimFt: NaN, featherFt: 0 };
     const normalized = normalizeVision(vision);
     expect(normalized.dimFt).toBe(0);
   });
 
   it("normalizeVision defaults string dimFt to 0", () => {
-    const vision = { id: "v1", shape: "circle", x: 100, y: 100, sizeFt: 20, dimFt: "20" as unknown as number, featherFt: 0 };
+    const vision = { id: "v1", shape: "circle" as const, x: 100, y: 100, sizeFt: 20, dimFt: "20" as unknown as number, featherFt: 0 };
     const normalized = normalizeVision(vision);
     expect(normalized.dimFt).toBe(0);
   });
 
   it("normalizeVision preserves valid dimFt", () => {
-    const vision = { id: "v1", shape: "circle", x: 100, y: 100, sizeFt: 20, dimFt: 10, featherFt: 0 };
+    const vision = { id: "v1", shape: "circle" as const, x: 100, y: 100, sizeFt: 20, dimFt: 10, featherFt: 0 };
     const normalized = normalizeVision(vision);
     expect(normalized.dimFt).toBe(10);
   });
