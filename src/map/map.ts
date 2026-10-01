@@ -97,6 +97,31 @@ class MapScreen {
       this.applyLayout();
     });
     this.initFullscreenButton();
+    this.initMapErrorHandlers();
+  }
+
+  private initMapErrorHandlers() {
+    const video = document.getElementById("map-video") as HTMLVideoElement;
+    const image = document.getElementById("map-image") as HTMLImageElement;
+    const waitingScreen = document.getElementById("waiting-screen");
+    if (video) {
+      video.addEventListener("error", () => {
+        console.warn("[Map Screen] Map video failed to load");
+        video.style.display = "none";
+        video.src = "";
+        if (waitingScreen) waitingScreen.style.display = "flex";
+        this.media = null;
+      });
+    }
+    if (image) {
+      image.addEventListener("error", () => {
+        console.warn("[Map Screen] Map image failed to load");
+        image.style.display = "none";
+        image.src = "";
+        if (waitingScreen) waitingScreen.style.display = "flex";
+        this.media = null;
+      });
+    }
   }
 
   private initFullscreenButton() {

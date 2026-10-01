@@ -79,7 +79,7 @@ export class MapScreenPanel {
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
 
-  restoreFromCache(cache: Record<string, string>) {
+  async restoreFromCache(cache: Record<string, string>) {
     const show = cache["map-show"];
     if (!show) return;
     try {
@@ -133,7 +133,52 @@ export class MapScreenPanel {
       } catch { /* ignore */ }
     }
     this.clampStateToViewport();
-    debug("MapScreenPanel: restoreFromCache —", this.activeMap.url, this.state.mode, `${this.aoes.length} AoEs`, `${this.visions.length} visions`);
+
+    await this.checkAndRecoverMap();
+
+    debug("MapScreenPanel: restoreFromCache —", this.activeMap?.url ?? "(none)", this.state.mode, `${this.aoes.length} AoEs`, `${this.visions.length} visions`);
+  }
+
+  private async checkAndRecoverMap() {
+    if (!this.activeMap) return;
+
+    const vaultPath = vaultPathFromUrl(this.activeMap.url);
+    if (!vaultPath) return;
+
+    const exists = await this.plugin.app.vault.adapter.exists(vaultPath);
+    if (exists) return;
+
+    const hydrusMatch = /^\.dm-screen\/hydrus\/([0-9a-f]{64})\.\w+$/.exec(vaultPath);
+    if (hydrusMatch && this.plugin.hydrusCache && this.plugin.buildHydrusClient()) {
+      const hash = hydrusMatch[1];
+      try {
+        const client = this.plugin.buildHydrusClient();
+        const files = await client!.getFileMetadata([hash]);
+        if (files.length > 0) {
+          await this.plugin.hydrusCache.fetchAndCache(client!, files[0]);
+          debug("MapScreenPanel: re-downloaded missing map from Hydrus:", hash.slice(0, 12));
+          return;
+        }
+      } catch (err) {
+        debugWarn("MapScreenPanel: failed to re-download map:", (err as Error).message);
+      }
+    }
+
+    const filename = vaultPath.split("/").pop() || vaultPath;
+    new Notice(`Map "${filename}" is no longer available`);
+    this.activeMap = null;
+    this.aoes = [];
+    this.visions = [];
+    this.walls = [];
+    this.fogDataUrl = null;
+    if (this.plugin.server) {
+      for (const type of ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"]) {
+        (this.plugin.server as any).lastState?.delete(type);
+      }
+    }
+    if (this.host && typeof (this.host as any).scheduleSaveState === "function") {
+      (this.host as any).scheduleSaveState();
+    }
   }
 
   republish() {
@@ -893,11 +938,21 @@ export class MapScreenPanel {
         v.loop = true;
         v.autoplay = true;
         v.playsInline = true;
+        v.addEventListener("error", () => {
+          stage.empty();
+          const placeholder = stage.createDiv("dm-image-unavailable");
+          placeholder.textContent = "Image unavailable";
+        });
         v.play().catch(() => {});
       } else {
         const img = stage.createEl("img");
         img.src = this.previewMediaSrc(map, resourceUrl);
         img.alt = "";
+        img.addEventListener("error", () => {
+          stage.empty();
+          const placeholder = stage.createDiv("dm-image-unavailable");
+          placeholder.textContent = "Image unavailable";
+        });
       }
     }
 

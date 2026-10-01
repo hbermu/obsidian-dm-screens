@@ -20,8 +20,9 @@
 1b. When a WebSocket connection is established, the server shall tag it with channel `map` if the upgrade request path starts with `/map`, else `player` (`messageChannel(type)` maps a message type to its channel: `map-` prefix → `map`, everything else → `player`).
 2. The server shall send a serialised broadcast message exactly once per connected client of the message's channel whose `readyState` is `1` (OPEN); clients of the other channel shall not receive it.
 3. When a client connects, the server shall replay every cached message of the client's channel in insertion order before any new broadcast can be sent to that client.
-4. When a `clear` broadcast is sent, the server shall purge only the `player`-channel entries from the late-joiner cache before transmitting `clear` to player clients; `map-*` entries survive. Symmetrically, `map-clear` shall purge only the `map-*` entries and transmit to map clients only.
-5. When any broadcast other than `clear`/`map-clear` is sent, the server shall overwrite the cache entry for `message.type` with the new serialised payload (one entry per type at most).
+4. When a `clear` broadcast is sent, the server shall purge only the `player`-channel entries from the late-joiner cache before transmitting `clear` to player clients; `map-*` entries survive. Symmetrically, `map-clear` shall purge only the `map-*` entries except `map-calibration` and transmit to map clients only.
+4b. When a `hide-background-media` broadcast is sent, the server shall delete the `show-background-media` cache entry and shall not cache the `hide-background-media` message itself.
+5. When any broadcast other than `clear`/`map-clear`/`hide-background-media` is sent, the server shall overwrite the cache entry for `message.type` with the new serialised payload (one entry per type at most).
 5b. Every `image-layers-sync` broadcast shall be followed immediately by an `image-layers-geometry` broadcast derived from the same state, so the cached geometry entry is never staler than the cached sync (cache replay preserves first-insertion order: sync before geometry).
 6. When the player side receives a message whose `type` is not in its known set, it shall log `[Player Screen] Unknown message type:` and ignore the payload (no throw, no disconnect).
 7. When the player side fails to parse a message as JSON, it shall log the failure and ignore the message.
@@ -37,6 +38,7 @@
 17. `map-view.mode` shall be accepted only as `fit` or `physical` and `map-view.rotation` only as 0, 90, 180 or 270; any other value falls back to `fit` and 0 respectively.
 18. Every payload array shall pass `boundedArray`, which returns `[]` for a non-array and truncates to 200 entries with a `console.warn`. This covers the player's `combatants` and both layer arrays and the map's `aoes`, `visions` and `walls`.
 19. When the late-joiner cache exceeds 2 MiB in total, the server shall evict its largest entry repeatedly until it fits, never dropping the last remaining entry. The cache is persisted as `settings.lastBroadcastCache`, so the budget bounds `data.json` as well as the heap.
+20. The server shall expose an `onStateChange(callback): () => void` method that subscribes to state mutations. The callback shall fire after any `lastState` mutation, including cache purges (`clear`, `map-clear`, `hide-background-media`), cache updates and replay-cache evictions. The returned unsubscribe function shall remove the callback.
 
 ## Broadcast / IPC
 

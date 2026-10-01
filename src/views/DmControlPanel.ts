@@ -5,6 +5,7 @@ import { renderStatblock } from "./StatblockPanel";
 import { DnDBeyondPanel } from "./DnDBeyondPanel";
 import { MapScreenPanel } from "./MapScreenPanel";
 import type { ClientInfo } from "../server";
+import { vaultPathFromUrl } from "../server";
 import { SendToWebhookModal } from "./SendToWebhookModal";
 import { buildLayerContextMenu } from "./layerContextMenu";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
@@ -106,6 +107,7 @@ export class DmControlPanel extends ItemView {
   private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
   private layerGeometryTimer: ReturnType<typeof setTimeout> | null = null;
   private panZoomAbort: AbortController | null = null;
+  private unsubscribeStateChange: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DmScreenPlugin) {
     super(leaf);
@@ -144,6 +146,11 @@ export class DmControlPanel extends ItemView {
     this.dmPanX = 0;
     this.dmPanY = 0;
     this.restoreState();
+    if (this.plugin.server) {
+      this.unsubscribeStateChange = this.plugin.server.onStateChange(() => {
+        this.scheduleSaveState();
+      });
+    }
     this.render();
   }
 
@@ -160,6 +167,10 @@ export class DmControlPanel extends ItemView {
     if (this.ddbPanel) {
       this.ddbPanel.destroy();
       this.ddbPanel = null;
+    }
+    if (this.unsubscribeStateChange) {
+      this.unsubscribeStateChange();
+      this.unsubscribeStateChange = null;
     }
     this.saveState();
   }
@@ -186,7 +197,7 @@ export class DmControlPanel extends ItemView {
     return { vpW, vpH, vpX, vpY };
   }
 
-  private restoreState() {
+  private async restoreState() {
     const s = this.plugin.settings;
     if (s.lastPlayerScreenWidth > 0) {
       this.connectedClients = [{ width: s.lastPlayerScreenWidth, height: s.lastPlayerScreenHeight, devicePixelRatio: 1 }];
@@ -213,7 +224,9 @@ export class DmControlPanel extends ItemView {
         this.activeBackgroundUrl = msg.payload?.url ?? null;
       } catch { /* ignore */ }
     }
-    this.mapPanel.restoreFromCache(s.lastBroadcastCache ?? {});
+
+    await this.checkAndRecoverBackground();
+    await this.mapPanel.restoreFromCache(s.lastBroadcastCache ?? {});
 
     debug(
       "DmControlPanel: restoreState — layers:", this.imageLayers.length,
@@ -222,6 +235,43 @@ export class DmControlPanel extends ItemView {
     );
     if (this.plugin.server && this.imageLayers.length > 0) {
       this.broadcastImageLayers();
+    }
+  }
+
+  private async checkAndRecoverBackground() {
+    if (!this.activeBackgroundUrl) return;
+
+    const vaultPath = vaultPathFromUrl(this.activeBackgroundUrl);
+    if (!vaultPath) return;
+
+    const exists = await this.plugin.app.vault.adapter.exists(vaultPath);
+    if (exists) return;
+
+    const hydrusMatch = /^\.dm-screen\/hydrus\/([0-9a-f]{64})\.\w+$/.exec(vaultPath);
+    if (hydrusMatch && this.plugin.hydrusCache && this.plugin.buildHydrusClient()) {
+      const hash = hydrusMatch[1];
+      try {
+        const client = this.plugin.buildHydrusClient();
+        const files = await client!.getFileMetadata([hash]);
+        if (files.length > 0) {
+          await this.plugin.hydrusCache.fetchAndCache(client!, files[0]);
+          debug("DmControlPanel: re-downloaded missing background from Hydrus:", hash.slice(0, 12));
+          return;
+        }
+      } catch (err) {
+        debugWarn("DmControlPanel: failed to re-download background:", (err as Error).message);
+      }
+    }
+
+    const filename = vaultPath.split("/").pop() || vaultPath;
+    new Notice(`Background "${filename}" is no longer available`);
+    this.activeBackgroundUrl = null;
+    this.activeVideoPath = null;
+    if (this.plugin.server) {
+      (this.plugin.server as any).lastState?.delete("show-background-media");
+    }
+    if (typeof this.scheduleSaveState === "function") {
+      this.scheduleSaveState();
     }
   }
 
@@ -623,11 +673,21 @@ export class DmControlPanel extends ItemView {
           v.loop = true;
           v.autoplay = true;
           v.playsInline = true;
+          v.addEventListener("error", () => {
+            bgWrap.empty();
+            const placeholder = bgWrap.createDiv("dm-image-unavailable");
+            placeholder.textContent = "Image unavailable";
+          });
           v.play().catch(() => {});
         } else {
           const img = bgWrap.createEl("img");
           img.src = bgUrl;
           img.alt = "";
+          img.addEventListener("error", () => {
+            bgWrap.empty();
+            const placeholder = bgWrap.createDiv("dm-image-unavailable");
+            placeholder.textContent = "Image unavailable";
+          });
         }
       }
     }

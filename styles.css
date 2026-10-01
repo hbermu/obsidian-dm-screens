@@ -927,6 +927,18 @@
   display: block;
 }
 
+.dm-image-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 0.9em;
+  border: 1px dashed var(--background-modifier-border);
+}
+
 .dm-preview-zoom-controls {
   position: absolute;
   top: 6px;

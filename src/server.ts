@@ -121,9 +121,23 @@ export class PlayerScreenServer {
   // Cache last broadcast per message type for late-joining clients
   private lastState = new Map<string, string>();
   private allowlist = new VaultServeAllowlist();
+  private stateChangeCallbacks: Set<() => void> = new Set();
 
   constructor(plugin: DmScreenPlugin) {
     this.plugin = plugin;
+  }
+
+  onStateChange(callback: () => void): () => void {
+    this.stateChangeCallbacks.add(callback);
+    return () => {
+      this.stateChangeCallbacks.delete(callback);
+    };
+  }
+
+  private emitStateChange() {
+    for (const cb of this.stateChangeCallbacks) {
+      cb();
+    }
   }
 
   get clientCount(): number {
@@ -311,14 +325,24 @@ export class PlayerScreenServer {
     const data = JSON.stringify(message);
     debug("broadcast:", message.type, "→ channel", channel, `(${data.length} bytes)`);
 
-    if (message.type === "clear" || message.type === "map-clear") {
+    if (message.type === "clear") {
       for (const type of [...this.lastState.keys()]) {
         if (messageChannel(type) === channel) this.lastState.delete(type);
       }
+    } else if (message.type === "map-clear") {
+      for (const type of [...this.lastState.keys()]) {
+        if (messageChannel(type) === channel && type !== "map-calibration") {
+          this.lastState.delete(type);
+        }
+      }
+    } else if (message.type === "hide-background-media") {
+      this.lastState.delete("show-background-media");
     } else {
       this.lastState.set(message.type, data);
       this.trimReplayCache();
     }
+
+    this.emitStateChange();
 
     for (const client of this.clients) {
       if ((this.clientChannels.get(client) ?? "player") !== channel) continue;

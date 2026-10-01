@@ -66,7 +66,12 @@ export async function ensureLocalCopy(
   client: HydrusClient | null
 ): Promise<CachedEntry> {
   const existing = await cache.get(ref.hash);
-  if (existing) return existing;
+  if (existing) {
+    const adapter = (cache as any).adapter;
+    if (adapter && await adapter.exists(existing.vaultPath)) {
+      return existing;
+    }
+  }
   if (!client) throw new Error("Hydrus is offline; this reference is not cached.");
   const files = await client.getFileMetadata([ref.hash]);
   const file = files[0];

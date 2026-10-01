@@ -136,6 +136,27 @@ class PlayerScreen {
       }
     });
     this.initFullscreenButton();
+    this.initBackgroundErrorHandlers();
+  }
+
+  private initBackgroundErrorHandlers() {
+    const video = document.getElementById("video-background") as HTMLVideoElement;
+    const image = document.getElementById("image-background") as HTMLImageElement;
+    const waitingScreen = document.getElementById("waiting-screen");
+    if (video) {
+      video.addEventListener("error", () => {
+        video.style.display = "none";
+        video.src = "";
+        if (waitingScreen) waitingScreen.style.display = "flex";
+      });
+    }
+    if (image) {
+      image.addEventListener("error", () => {
+        image.style.display = "none";
+        image.src = "";
+        if (waitingScreen) waitingScreen.style.display = "flex";
+      });
+    }
   }
 
   private initFullscreenButton() {

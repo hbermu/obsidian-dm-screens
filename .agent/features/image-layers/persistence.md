@@ -25,6 +25,9 @@
 7. When the DM Control Panel opens and a cached `show-background-media` entry exists, the panel shall extract its URL into `activeBackgroundUrl` so the Stop BG button is shown.
 8. When the DM Control Panel restores state and the server is running with at least one restored layer, the panel shall broadcast a fresh `image-layers-sync` so the server's `lastState` reflects the authoritative current layers (overwriting any stale or missing cache entry). The panel shall also expose a public `republishToServer()` method.
 9. When the player-screen server starts, the plugin shall call `republishToServer()` on every open DM Control Panel so any client that connects later receives the current layer state via the late-joiner cache.
+10. When the DM Control Panel opens, it shall subscribe to the server's `onStateChange` event (requirement 20 in `../player-server/websocket-protocol.md`). The callback shall call the existing debounced `scheduleSaveState` (1 s).
+11. When the DM Control Panel closes, it shall unsubscribe from the state-change event before calling `saveState`.
+12. When the plugin unloads (`onunload`), it shall flush any pending debounced save by calling `saveState()` synchronously on every open DM Control Panel before stopping the server.
 
 ## Tests covering this
 

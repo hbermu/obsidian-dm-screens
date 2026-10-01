@@ -103,6 +103,13 @@ export default class DmScreenPlugin extends Plugin {
 
   async onunload() {
     debug("Plugin unloading");
+    const dmPanels = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
+    for (const leaf of dmPanels) {
+      const view = leaf.view;
+      if (view && "saveState" in view && typeof (view as any).saveState === "function") {
+        (view as any).saveState();
+      }
+    }
     this.stopServer();
   }
 
