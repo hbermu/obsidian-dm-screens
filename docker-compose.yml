@@ -87,7 +87,7 @@ services:
   # Uses its own node_modules volume — alpine vs jammy musl/glibc binaries (esbuild,
   # playwright browsers) are not interchangeable with the other services'.
   visual:
-    image: mcr.microsoft.com/playwright:v1.60.0-jammy
+    image: mcr.microsoft.com/playwright:v1.63.0-jammy
     profiles: ["tools"]
     working_dir: /app
     environment:
@@ -109,7 +109,7 @@ services:
   # alpine services'. No published ports: specs reach the plugin's server on
   # localhost inside this container.
   e2e:
-    image: mcr.microsoft.com/playwright:v1.60.0-jammy
+    image: mcr.microsoft.com/playwright:v1.63.0-jammy
     profiles: ["tools"]
     working_dir: /app
     # platform: linux/amd64  # uncomment if obsidian-launcher has no linux-arm64 asset for the requested version
