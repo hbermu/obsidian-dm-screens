@@ -473,7 +473,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
   });
 
   it("leaves a vision where it was when the overlay cannot be measured", () => {
-    const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5 };
+    const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
     const panel = makePanelStub([], { visions: [vision] });
     const { modal, markers } = openModal(panel, { width: 0, height: 0 });
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
@@ -528,7 +528,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
   });
 
   it("dragging a vision dot moves it and broadcasts", () => {
-    const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5 };
+    const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
     const panel = makePanelStub([], { visions: [vision] });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
@@ -648,7 +648,7 @@ describe("MapExploreModal — Shift focus (door/room without locking)", () => {
 describe("MapExploreModal — view-bound vision", () => {
   it("dragging the viewport rect drags a view-bound vision along with it", () => {
     const vision: MapVision = {
-      id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5, followsView: true,
+      id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5, followsView: true,
     };
     const panel = makePanelStub([], { mode: "physical", visions: [vision] });
     const { modal, markers } = openModal(panel);

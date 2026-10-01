@@ -105,7 +105,7 @@ describe("map fog lifecycle", () => {
 describe("map vision lifecycle", () => {
   it("broadcastVisions sends the vision list", () => {
     const { panel, broadcasts } = makePanel();
-    panel.visions = [{ id: "v1", shape: "circle", x: 10, y: 20, sizeFt: 30, featherFt: 5 }];
+    panel.visions = [{ id: "v1", shape: "circle", x: 10, y: 20, sizeFt: 30, dimFt: 0, featherFt: 5 }];
     panel.broadcastVisions(true);
     const msg = broadcasts.find((b) => b.type === "map-vision");
     expect(msg?.payload).toEqual({ visions: panel.visions });
@@ -114,7 +114,7 @@ describe("map vision lifecycle", () => {
   it("stopMap clears visions", () => {
     const { panel } = makePanel();
     panel.activeMap = { url: "/vault/x.png", mediaType: "image", naturalWidth: 10, naturalHeight: 10 };
-    panel.visions = [{ id: "v1", shape: "circle", x: 1, y: 1, sizeFt: 30, featherFt: 5 }];
+    panel.visions = [{ id: "v1", shape: "circle", x: 1, y: 1, sizeFt: 30, dimFt: 0, featherFt: 5 }];
     panel.stopMap();
     expect(panel.visions).toEqual([]);
   });
@@ -123,7 +123,7 @@ describe("map vision lifecycle", () => {
     const { panel } = makePanel();
     const cache = {
       "map-show": JSON.stringify({ type: "map-show", payload: { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 50, naturalHeight: 50 } }),
-      "map-vision": JSON.stringify({ type: "map-vision", payload: { visions: [{ id: "v1", shape: "square", x: 5, y: 5, sizeFt: 15, featherFt: 0 }] } }),
+      "map-vision": JSON.stringify({ type: "map-vision", payload: { visions: [{ id: "v1", shape: "square", x: 5, y: 5, sizeFt: 15, dimFt: 0, featherFt: 0 }] } }),
     };
     panel.restoreFromCache(cache);
     expect(panel.visions).toHaveLength(1);
@@ -135,7 +135,7 @@ describe("map vision lifecycle", () => {
     panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 50, naturalHeight: 50 };
     panel.republish();
     expect(broadcasts.some((b) => b.type === "map-vision")).toBe(false);
-    panel.visions = [{ id: "v1", shape: "circle", x: 1, y: 1, sizeFt: 30, featherFt: 5 }];
+    panel.visions = [{ id: "v1", shape: "circle", x: 1, y: 1, sizeFt: 30, dimFt: 0, featherFt: 5 }];
     panel.republish();
     expect(broadcasts.some((b) => b.type === "map-vision")).toBe(true);
   });

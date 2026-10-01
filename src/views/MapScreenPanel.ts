@@ -122,7 +122,11 @@ export class MapScreenPanel {
     const visionCache = cache["map-vision"];
     if (visionCache) {
       try {
-        this.visions = ((JSON.parse(visionCache).payload as { visions?: MapVision[] })?.visions ?? []);
+        const restored = (JSON.parse(visionCache).payload as { visions?: MapVision[] })?.visions ?? [];
+        this.visions = restored.map((v) => ({
+          ...v,
+          dimFt: Number.isFinite(v.dimFt) && v.dimFt >= 0 ? v.dimFt : 0,
+        }));
       } catch { /* ignore */ }
     }
     const fogCache = cache["map-fog"];
@@ -1473,6 +1477,7 @@ export class MapScreenPanel {
               x: map.naturalWidth / 2,
               y: map.naturalHeight / 2,
               sizeFt: 30,
+              dimFt: 0,
               featherFt: 5,
             });
             this.broadcastVisions(true);
@@ -1502,7 +1507,7 @@ export class MapScreenPanel {
         square: "□",
       };
 
-      const summaryText = `${vision.sizeFt} ft`;
+      const summaryText = vision.dimFt > 0 ? `${vision.sizeFt}/+${vision.dimFt} ft` : `${vision.sizeFt} ft`;
 
       renderControlCard(wrap, {
         id: vision.id,
@@ -1535,12 +1540,12 @@ export class MapScreenPanel {
           });
 
           const row2 = body.createDiv({ cls: "dm-control-card-row" });
-          row2.createSpan({ text: "Range", cls: "dm-status-detail" });
+          row2.createSpan({ text: "Bright", cls: "dm-status-detail" });
           const sizeInput = row2.createEl("input", { type: "number" });
           sizeInput.value = String(vision.sizeFt);
           sizeInput.min = "5";
           sizeInput.step = "5";
-          sizeInput.title = "Vision range (ft)";
+          sizeInput.title = "Bright vision range (ft)";
           sizeInput.addEventListener("change", () => {
             const v = parseFloat(sizeInput.value);
             if (!Number.isFinite(v) || v <= 0) return;
@@ -1551,8 +1556,24 @@ export class MapScreenPanel {
           row2.createSpan({ text: "ft", cls: "dm-status-detail" });
 
           const row3 = body.createDiv({ cls: "dm-control-card-row" });
-          row3.createSpan({ text: "Feather", cls: "dm-status-detail" });
-          const featherInput = row3.createEl("input", { type: "number" });
+          row3.createSpan({ text: "Dim", cls: "dm-status-detail" });
+          const dimInput = row3.createEl("input", { type: "number" });
+          dimInput.value = String(vision.dimFt);
+          dimInput.min = "0";
+          dimInput.step = "5";
+          dimInput.title = "Dim vision range (ft)";
+          dimInput.addEventListener("change", () => {
+            const v = parseFloat(dimInput.value);
+            if (!Number.isFinite(v) || v < 0) return;
+            vision.dimFt = v;
+            this.broadcastVisions(true);
+            onChange();
+          });
+          row3.createSpan({ text: "ft", cls: "dm-status-detail" });
+
+          const row4 = body.createDiv({ cls: "dm-control-card-row" });
+          row4.createSpan({ text: "Feather", cls: "dm-status-detail" });
+          const featherInput = row4.createEl("input", { type: "number" });
           featherInput.value = String(vision.featherFt);
           featherInput.min = "0";
           featherInput.step = "5";
@@ -1563,11 +1584,11 @@ export class MapScreenPanel {
             vision.featherFt = v;
             this.broadcastVisions(true);
           });
-          row3.createSpan({ text: "ft", cls: "dm-status-detail" });
+          row4.createSpan({ text: "ft", cls: "dm-status-detail" });
 
-          const row4 = body.createDiv({ cls: "dm-control-card-row" });
-          row4.createSpan({ text: "Follow view", cls: "dm-status-detail" });
-          const bindBtn = row4.createEl("button", {
+          const row5 = body.createDiv({ cls: "dm-control-card-row" });
+          row5.createSpan({ text: "Follow view", cls: "dm-status-detail" });
+          const bindBtn = row5.createEl("button", {
             text: "⦿",
             cls: vision.followsView ? "dm-map-vision-bind dm-fog-active" : "dm-map-vision-bind",
           });

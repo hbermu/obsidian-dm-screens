@@ -71,7 +71,7 @@ describe("MapScreenPanel restore with missing non-Hydrus map", () => {
     const { panel, host, plugin } = makePanel(makePlugin({ server: makeServerStub() }));
     panel.activeMap = { url: "/vault/.dm-screen/test.jpg", mediaType: "image", naturalWidth: 2000, naturalHeight: 3000 };
     panel.aoes = [{ id: "aoe-1", shape: "circle", sizeFt: 20, widthFt: 0, color: "#ff0000", opacity: 0.5, rotation: 0, x: 100, y: 200 }];
-    panel.visions = [{ id: "v-1", shape: "circle", x: 500, y: 600, sizeFt: 30, featherFt: 5 }];
+    panel.visions = [{ id: "v-1", shape: "circle", x: 500, y: 600, sizeFt: 30, dimFt: 0, featherFt: 5 }];
     panel.walls = [{ x1: 0, y1: 0, x2: 100, y2: 100, door: false, open: false }];
     panel.fogDataUrl = "data:image/png;base64,iVBORw0K";
 

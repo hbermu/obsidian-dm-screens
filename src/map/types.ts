@@ -63,6 +63,7 @@ export interface MapVision {
   x: number;
   y: number;
   sizeFt: number;
+  dimFt: number;
   featherFt: number;
   // When true the vision centre tracks the players' viewport centre (panX/panY),
   // so moving the view during exploration drags the lit area with it.

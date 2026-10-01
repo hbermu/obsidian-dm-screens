@@ -120,7 +120,7 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     panel.fogDataUrl = buildBlackFogDataUrl();
     const map = { url: "/vault/test.png", mediaType: "image" as const, naturalWidth: mapW, naturalHeight: mapH };
     panel.activeMap = map;
-    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 30, featherFt: 0 }];
+    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 30, dimFt: 0, featherFt: 0 }];
 
     await panel.bakeVisions(map);
 
@@ -147,7 +147,7 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     panel.fogDataUrl = buildBlackFogDataUrl();
     const map = { url: "/vault/test2.png", mediaType: "image" as const, naturalWidth: mapW, naturalHeight: mapH };
     panel.activeMap = map;
-    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 5, featherFt: 0 }];
+    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 5, dimFt: 0, featherFt: 0 }];
 
     await panel.bakeVisions(map);
     expect(panel.fogDataUrl).toMatch(/^data:image\/png;base64,/);
@@ -175,7 +175,7 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     panel.fogDataUrl = buildBlackFogDataUrl();
     const map = { url: "/vault/test3.png", mediaType: "image" as const, naturalWidth: mapW, naturalHeight: mapH };
     panel.activeMap = map;
-    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 5, featherFt: 5 }];
+    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 5, dimFt: 0, featherFt: 5 }];
 
     await panel.bakeVisions(map);
     expect(panel.fogDataUrl).toMatch(/^data:image\/png;base64,/);
@@ -208,7 +208,7 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     // Vertical wall to the right of center, blocks eastward sight
     panel.walls = [{ x1: mapW / 2 + 50, y1: 0, x2: mapW / 2 + 50, y2: mapH }];
     // Large enough vision (50ft) to reach far right but blocked by wall
-    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 50, featherFt: 0 }];
+    panel.visions = [{ id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 50, dimFt: 0, featherFt: 0 }];
 
     await panel.bakeVisions(map);
     expect(panel.fogDataUrl).toMatch(/^data:image\/png;base64,/);
@@ -220,6 +220,38 @@ describe("bakeVisions — real canvas pixel assertions", () => {
     // Left of center (fog x=300, map x≈293): visible to vision → transparent
     const visible = await sampleFogPixel(panel.fogDataUrl!, 300, 512);
     expect(visible[3]).toBeLessThan(50);
+  });
+
+  it("bakes both bright and dim zones", async () => {
+    const { MapScreenPanel } = await import("../views/MapScreenPanel");
+    const { plugin, host } = makePanel();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const panel = new MapScreenPanel(plugin as any, host as any);
+
+    const mapW = 1000;
+    const mapH = 1000;
+    panel.fogDataUrl = buildBlackFogDataUrl();
+    const map = { url: "/vault/test5.png", mediaType: "image" as const, naturalWidth: mapW, naturalHeight: mapH };
+    panel.activeMap = map;
+    panel.visions = [
+      { id: "v1", shape: "circle" as const, x: mapW / 2, y: mapH / 2, sizeFt: 10, dimFt: 10, featherFt: 0 },
+    ];
+
+    await panel.bakeVisions(map);
+    expect(panel.fogDataUrl).toMatch(/^data:image\/png;base64,/);
+
+    // Center (bright zone) → transparent
+    const center = await sampleFogPixel(panel.fogDataUrl!, 512, 512);
+    expect(center[3]).toBeLessThan(50);
+
+    // Dim ring → partially revealed (not fully opaque, not fully transparent)
+    const dimRing = await sampleFogPixel(panel.fogDataUrl!, 512 + 250, 512);
+    expect(dimRing[3]).toBeGreaterThan(50);
+    expect(dimRing[3]).toBeLessThan(200);
+
+    // Outside dim zone → fully opaque
+    const outside = await sampleFogPixel(panel.fogDataUrl!, 10, 10);
+    expect(outside[3]).toBeGreaterThan(200);
   });
 });
 

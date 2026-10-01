@@ -163,7 +163,7 @@ describe("Req 14 + Req 21 + Req 27: republish sends fog (even null) and walls (e
   it("republish with visions present emits map-vision", () => {
     const { panel, broadcasts } = makePanel();
     panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 50, naturalHeight: 50 };
-    const v: MapVision = { id: "v1", shape: "circle", x: 10, y: 10, sizeFt: 30, featherFt: 5 };
+    const v: MapVision = { id: "v1", shape: "circle", x: 10, y: 10, sizeFt: 30, dimFt: 0, featherFt: 5 };
     panel.visions = [v];
     panel.republish();
     expect(broadcasts.some((b) => b.type === "map-vision")).toBe(true);

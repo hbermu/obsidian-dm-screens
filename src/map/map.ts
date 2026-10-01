@@ -294,7 +294,12 @@ class MapScreen {
         this.showFog(msg.payload as { dataUrl?: string | null; opacity?: number });
         break;
       case "map-vision":
-        this.visions = this.boundedArray<MapVision>((msg.payload as { visions?: unknown }).visions, "visions");
+        this.visions = this.boundedArray<MapVision>((msg.payload as { visions?: unknown }).visions, "visions").map(
+          (v) => ({
+            ...v,
+            dimFt: Number.isFinite(v.dimFt) && v.dimFt >= 0 ? v.dimFt : 0,
+          })
+        );
         this.recompositeFog();
         break;
       case "map-walls":

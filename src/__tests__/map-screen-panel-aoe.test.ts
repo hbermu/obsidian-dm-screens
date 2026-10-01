@@ -167,8 +167,8 @@ describe("MapScreenPanel AoE lifecycle", () => {
     panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 4480, naturalHeight: 7000 };
     panel.state.panX = 1000;
     panel.state.panY = 1500;
-    const bound: MapVision = { id: "v-1", shape: "circle", x: 10, y: 20, sizeFt: 30, featherFt: 5, followsView: true };
-    const free: MapVision = { id: "v-2", shape: "square", x: 999, y: 888, sizeFt: 30, featherFt: 5 };
+    const bound: MapVision = { id: "v-1", shape: "circle", x: 10, y: 20, sizeFt: 30, dimFt: 0, featherFt: 5, followsView: true };
+    const free: MapVision = { id: "v-2", shape: "square", x: 999, y: 888, sizeFt: 30, dimFt: 0, featherFt: 5 };
     panel.visions = [bound, free];
 
     const changed = panel.syncBoundVisions(true);
@@ -187,7 +187,7 @@ describe("MapScreenPanel AoE lifecycle", () => {
     panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 4480, naturalHeight: 7000 };
     panel.state.panX = 1000;
     panel.state.panY = 1500;
-    panel.visions = [{ id: "v-1", shape: "circle", x: 10, y: 20, sizeFt: 30, featherFt: 5 }];
+    panel.visions = [{ id: "v-1", shape: "circle", x: 10, y: 20, sizeFt: 30, dimFt: 0, featherFt: 5 }];
 
     expect(panel.syncBoundVisions(true)).toBe(false);
     expect(broadcasts.filter((b) => b.type === "map-vision")).toHaveLength(0);
