@@ -74,6 +74,8 @@ function makePanelStub(
       stub.aoes = stub.aoes.filter((a) => a.id !== id);
     }),
     refreshPanel: vi.fn(),
+    beginPanelDrag: vi.fn(() => vi.fn()),
+    registerOverlayRepaint: vi.fn((_repaint: () => void) => vi.fn()),
     playerViewportMapSize: vi.fn(() => (opts.mode === "physical" ? { w: 400, h: 300 } : null)),
     applyExplorePan: vi.fn((x: number, y: number) => {
       stub.state.panX = x;
@@ -395,6 +397,72 @@ describe("MapExploreModal — AoE and vision markers", () => {
     expect(panel.broadcastAoes).toHaveBeenLastCalledWith(true);
 
     modal.onClose();
+  });
+
+  it("leaves an AoE where it was when the overlay cannot be measured", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe] });
+    // A collapsed or torn-down overlay reports a zero-width rect. Dividing by it
+    // used to yield Infinity, which the map-bounds clamp turned into "snap to
+    // the map edge" and then broadcast.
+    const { modal, markers } = openModal(panel, { width: 0, height: 0 });
+    const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
+    const startX = aoe.x;
+    const startY = aoe.y;
+
+    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocMouse("mousemove", 400, 400);
+
+    expect(aoe.x).toBe(startX);
+    expect(aoe.y).toBe(startY);
+    expect(panel.broadcastAoes).not.toHaveBeenCalled();
+
+    fireDocMouse("mouseup", 400, 400);
+    modal.onClose();
+  });
+
+  it("leaves a vision where it was when the overlay cannot be measured", () => {
+    const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, featherFt: 5 };
+    const panel = makePanelStub([], { visions: [vision] });
+    const { modal, markers } = openModal(panel, { width: 0, height: 0 });
+    const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
+
+    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocMouse("mousemove", 400, 400);
+
+    expect(vision.x).toBe(MAP_W / 2);
+    expect(vision.y).toBe(MAP_H / 2);
+    expect(panel.broadcastVisions).not.toHaveBeenCalled();
+
+    fireDocMouse("mouseup", 400, 400);
+    modal.onClose();
+  });
+
+  it("re-places the rotation handle when a registered overlay repaint fires", () => {
+    const aoe: MapAoe = { ...anAoe(), shape: "cone" };
+    const panel = makePanelStub([], { aoes: [aoe] });
+    const { modal, markers } = openModal(panel);
+    const before = (markers.querySelector(".dm-map-aoe-rot-handle") as HTMLElement).style.left;
+
+    // The handle sits at the shape's tip, so a size edit moves it. An in-place
+    // repaint has to re-place the markers, not only redraw the canvas.
+    aoe.sizeFt = 60;
+    const repaint = panel.registerOverlayRepaint.mock.calls[0][0] as () => void;
+    repaint();
+
+    const after = (markers.querySelector(".dm-map-aoe-rot-handle") as HTMLElement).style.left;
+    expect(after).not.toBe(before);
+
+    modal.onClose();
+  });
+
+  it("drops its overlay repaint registration on close", () => {
+    const panel = makePanelStub([], { aoes: [anAoe()] });
+    const { modal } = openModal(panel);
+    const dispose = panel.registerOverlayRepaint.mock.results[0].value as ReturnType<typeof vi.fn>;
+
+    modal.onClose();
+    expect(dispose).toHaveBeenCalled();
   });
 
   it("right-clicking an AoE dot removes it via panel.removeAoe", () => {

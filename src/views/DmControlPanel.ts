@@ -152,6 +152,7 @@ export class DmControlPanel extends ItemView {
     document.removeEventListener("keydown", this.escHandler);
     this.panZoomAbort?.abort();
     this.panZoomAbort = null;
+    this.mapPanel.disconnectPreviewObserver();
     if (this.layerGeometryTimer) {
       clearTimeout(this.layerGeometryTimer);
       this.layerGeometryTimer = null;
@@ -332,12 +333,30 @@ export class DmControlPanel extends ItemView {
     this.renderDebounceTimer = setTimeout(() => this.renderFromBackground(), 100);
   }
 
+  private dragDepth = 0;
+
+  // A preview drag holds its stage in closures bound to the document. render()
+  // empties the container, so a background render landing mid-drag detaches
+  // that stage; a detached stage measures zero, and the conversion helpers
+  // cannot tell that apart from a legitimate scale.
+  beginDrag(): () => void {
+    this.dragDepth++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.dragDepth--;
+      if (this.dragDepth === 0) this.flushPendingRender();
+    };
+  }
+
   // A background-triggered render (a client connecting/disconnecting) must not
-  // wipe the DOM out from under a field the DM is typing in. Defer it until the
-  // field loses focus; the client-count state is already updated on the view,
-  // so the deferred render still shows the current count.
-  private renderFromBackground() {
-    if (this.isEditingPanelField()) {
+  // wipe the DOM out from under a field the DM is typing in, or out from under
+  // a drag in progress. Defer it until the field loses focus or the drag ends;
+  // the client-count state is already updated on the view, so the deferred
+  // render still shows the current count.
+  renderFromBackground() {
+    if (this.dragDepth > 0 || this.isEditingPanelField()) {
       this.pendingBackgroundRender = true;
       return;
     }
@@ -356,7 +375,7 @@ export class DmControlPanel extends ItemView {
   private flushPendingRender = () => {
     // Focus may hop straight to another panel field; re-check on the next tick.
     setTimeout(() => {
-      if (this.pendingBackgroundRender && !this.isEditingPanelField()) {
+      if (this.pendingBackgroundRender && this.dragDepth === 0 && !this.isEditingPanelField()) {
         this.pendingBackgroundRender = false;
         this.render();
       }
