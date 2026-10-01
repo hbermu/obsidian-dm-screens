@@ -38,7 +38,7 @@
 14. While `activeBackgroundUrl` is non-null and a currently-connected client's dimensions match the effective resolution (the "selected client"), the DM preview shall render a background overlay inside that client's viewport rect — same geometry as the green `.dm-player-viewport-rect`, behind the image-layer rectangles (`z-index: 0`). The overlay uses `object-fit: cover` so the preview mirrors what the player browser shows.
 15. The DM preview overlay shall resolve `/vault/<encoded path>` URLs to an `app://…` local resource via `vault.adapter.getResourcePath()`; non-`/vault/` URLs pass through unchanged; videos (extension `.mp4`, `.webm`, `.mov`, `.ogv`) render as `<video muted loop autoplay playsinline>`; everything else renders as `<img>`.
 16. While no client is connected, or no connected client matches the effective resolution, the DM preview shall not render the background overlay.
-17. When the DM Control Panel restores state from `lastBroadcastCache`, it shall check whether the restored background file exists via `vault.adapter.exists(vaultPath)` before marking it active. If the file is missing and the URL matches a Hydrus cache path (`<cacheBaseFolder>/hydrus/<hash>.<ext>`), the panel shall attempt to re-download it from Hydrus. If the file is still missing (not Hydrus-sourced, or Hydrus is offline, or the file is gone from Hydrus), the panel shall delete the `show-background-media` cache entry, clear `activeBackgroundUrl` and `activeVideoPath`, show a Notice `Background "<filename>" is no longer available`, and persist the cleared state.
+17. When the DM Control Panel restores state from `lastBroadcastCache`, it shall check whether the restored background file exists via `vault.adapter.exists(vaultPath)` before marking it active. If the file is missing and the URL matches a Hydrus cache path (`<cacheBaseFolder>/hydrus/<hash>.<ext>`), the panel shall attempt to re-download it from Hydrus. If the file is still missing (not Hydrus-sourced, or Hydrus is offline, or the file is gone from Hydrus), the panel shall delete the `show-background-media` cache entry, clear `activeBackgroundUrl` and `activeVideoPath`, show a Notice `Background "<filename>" is no longer available`, persist the cleared state, and call `render()` so the UI reflects the cleared state.
 18. The DM background preview `<img>` and `<video>` shall handle the `error` event by replacing themselves with a `.dm-image-unavailable` placeholder element reading "Image unavailable", styled with centered text, a dashed border and a muted background color.
 19. The player-side `<img id="image-background">` and `<video id="video-background">` shall handle the `error` event by hiding the broken media element (setting `style.display = "none"` and clearing the `src`) and showing the waiting screen.
 
@@ -54,8 +54,10 @@
 - `src/__tests__/server-broadcast.test.ts` — `show-background-media` is cached and replayed
 - `src/__tests__/server-bootstrap.integration.test.ts` — wires the DM → player flow
 - `src/__tests__/dm-preview-bg.test.ts` — `resolveBackgroundPreviewUrl` and `isVideoBackgroundUrl` helpers used by the DM-side preview overlay
+- `src/__tests__/dm-control-restore.test.ts` — unit tests for requirement 17: missing non-Hydrus file → Notice + state cleared + cache entry deleted, covering both server-running (`forgetCached`) and server-null (`settings.lastBroadcastCache` delete + `saveSettings`) cases
 - `test/visual/background.spec.ts` — Playwright visual regression: deterministic grid PNG broadcast via `show-background-media` is rendered by the real player bundle on `#image-background`.
 - `test/e2e/specs/background.e2e.ts` — real Obsidian: Add BG from a note embed broadcasts `show-background-media`; Stop BG broadcasts `hide-background-media`
+- `test/e2e/specs/restore.e2e.ts` — real Obsidian: set BG, stop BG, reload plugin → background is not restored (requirement 17 integration test)
 
 ## Non-goals
 
