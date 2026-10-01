@@ -19,7 +19,7 @@ export class FloatingWindow {
   private minimizeBtn: HTMLElement;
   private state: WindowState;
   private isDragging = false;
-  private dragStart: { x: number; y: number } | null = null;
+  private dragStart: { x: number; y: number; pointerId: number } | null = null;
 
   constructor(
     private host: HTMLElement,
@@ -79,7 +79,7 @@ export class FloatingWindow {
     if (this.isDragging) {
       document.removeEventListener("pointermove", this.onPointerMove);
       document.removeEventListener("pointerup", this.onPointerUp);
-      this.header.releasePointerCapture(this.dragStart!.x);
+      this.header.releasePointerCapture(this.dragStart!.pointerId);
     }
     this.el.remove();
   }
@@ -100,7 +100,7 @@ export class FloatingWindow {
     e.preventDefault();
     this.isDragging = true;
     this.header.setPointerCapture(e.pointerId);
-    this.dragStart = { x: e.clientX, y: e.clientY };
+    this.dragStart = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
 
     document.addEventListener("pointermove", this.onPointerMove);
     document.addEventListener("pointerup", this.onPointerUp);
@@ -118,7 +118,7 @@ export class FloatingWindow {
     this.state.x += dx / hostRect.width;
     this.state.y += dy / hostRect.height;
 
-    this.dragStart = { x: e.clientX, y: e.clientY };
+    this.dragStart = { ...this.dragStart, x: e.clientX, y: e.clientY };
     this.clamp();
   };
 

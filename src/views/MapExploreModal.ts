@@ -25,6 +25,7 @@ export class MapExploreModal extends Modal {
   private redrawOverlay: (() => void) | null = null;
   private renderMarkers: (() => void) | null = null;
   private cleanupListeners: (() => void) | null = null;
+  // Force-detaches an in-progress document drag if the modal closes mid-gesture.
   private activeDrag: (() => void) | null = null;
   private walls: MapWall[] = [];
   private hoverCell: { x: number; y: number } | null = null;
