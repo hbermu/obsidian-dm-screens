@@ -62,6 +62,10 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
         broadcasts.push(msg);
         server.broadcast(msg);
       },
+      forgetCached: (types: string[]) => {
+        server.forgetCached(types);
+      },
+      cachedEntries: () => server.cachedEntries(),
     },
     saveSettings: () => Promise.resolve(),
     broadcastMapCalibration: () => {},

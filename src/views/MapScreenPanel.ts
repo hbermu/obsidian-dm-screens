@@ -3,6 +3,7 @@ import type DmScreenPlugin from "../main";
 import type { DmControlPanel } from "./DmControlPanel";
 import { encodeForVaultUrl } from "./HydrusExplorerModal";
 import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
+import { recoverVaultImage } from "../hydrus/recoverImage";
 import { vaultPathFromUrl, type ClientInfo } from "../server";
 import { fogCanvasSize, loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
 import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
@@ -142,46 +143,37 @@ export class MapScreenPanel {
   private async checkAndRecoverMap() {
     if (!this.activeMap) return;
 
-    const vaultPath = vaultPathFromUrl(this.activeMap.url);
-    if (!vaultPath) return;
+    const result = await recoverVaultImage(this.plugin, this.activeMap.url);
 
-    const exists = await this.plugin.app.vault.adapter.exists(vaultPath);
-    if (exists) return;
+    if (result === "ok") return;
 
-    const hydrusMatch = /^\.dm-screen\/hydrus\/([0-9a-f]{64})\.\w+$/.exec(vaultPath);
-    if (hydrusMatch && this.plugin.hydrusCache && this.plugin.buildHydrusClient()) {
-      const hash = hydrusMatch[1];
-      try {
-        const client = this.plugin.buildHydrusClient();
-        const files = await client!.getFileMetadata([hash]);
-        if (files.length > 0) {
-          await this.plugin.hydrusCache.fetchAndCache(client!, files[0]);
-          debug("MapScreenPanel: re-downloaded missing map from Hydrus:", hash.slice(0, 12));
-          return;
-        }
-      } catch (err) {
-        debugWarn("MapScreenPanel: failed to re-download map:", (err as Error).message);
-      }
+    if (result === "recovered") {
+      debug("MapScreenPanel: recovered missing map");
+      this.host.render();
+      return;
     }
 
-    const filename = vaultPath.split("/").pop() || vaultPath;
+    const vaultPath = vaultPathFromUrl(this.activeMap.url);
+    const filename = vaultPath?.split("/").pop() || "map";
     new Notice(`Map "${filename}" is no longer available`);
     this.activeMap = null;
     this.aoes = [];
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
+
+    const mapTypes = ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"];
     if (this.plugin.server) {
-      for (const type of ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"]) {
-        (this.plugin.server as any).lastState?.delete(type);
+      this.plugin.server.forgetCached(mapTypes);
+    } else {
+      for (const type of mapTypes) {
+        delete this.plugin.settings.lastBroadcastCache?.[type];
       }
-    }
-    if (this.host && typeof (this.host as any).scheduleSaveState === "function") {
-      (this.host as any).scheduleSaveState();
+      await this.plugin.saveSettings();
     }
   }
 
-  republish() {
+  async republish() {
     if (!this.plugin.server) return;
     this.plugin.broadcastMapCalibration();
     if (!this.activeMap) return;

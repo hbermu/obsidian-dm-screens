@@ -40,7 +40,11 @@ function makePanel(files: Record<string, Uint8Array> = {}) {
       hydrusDefaultMuted: true,
       mapFogTvOpacity: 0.9,
     },
-    server: { broadcast: (msg: Broadcast) => broadcasts.push(msg) },
+    server: {
+      broadcast: (msg: Broadcast) => broadcasts.push(msg),
+      forgetCached: () => {},
+      cachedEntries: () => [],
+    },
     saveSettings: () => Promise.resolve(),
     broadcastMapCalibration: () => {},
     app: { vault: { adapter } },

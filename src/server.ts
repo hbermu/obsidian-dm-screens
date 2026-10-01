@@ -140,6 +140,17 @@ export class PlayerScreenServer {
     }
   }
 
+  forgetCached(types: string[]): void {
+    for (const type of types) {
+      this.lastState.delete(type);
+    }
+    this.emitStateChange();
+  }
+
+  cachedEntries(): [string, string][] {
+    return [...this.lastState.entries()];
+  }
+
   get clientCount(): number {
     return this.clients.size;
   }

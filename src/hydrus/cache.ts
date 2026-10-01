@@ -140,6 +140,12 @@ export class HydrusCache {
     });
   }
 
+  async hasFile(hash: string): Promise<boolean> {
+    const entry = await this.get(hash);
+    if (!entry) return false;
+    return this.adapter.exists(entry.vaultPath);
+  }
+
   async sweep(): Promise<number> {
     const index = await this.loadIndex();
     const cutoff = Date.now() - this.ttlMs;

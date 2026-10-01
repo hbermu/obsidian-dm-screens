@@ -9,6 +9,7 @@ import { vaultPathFromUrl } from "../server";
 import { SendToWebhookModal } from "./SendToWebhookModal";
 import { buildLayerContextMenu } from "./layerContextMenu";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
+import { recoverVaultImage } from "../hydrus/recoverImage";
 import { sortByInitiative, clampTrackerScale, advanceTurn, applyRound1Reveal } from "../combat/tracker";
 import { encodeForVaultUrl, uniqueLayerLabel } from "./HydrusExplorerModal";
 import { debug, debugWarn, debugError } from "../debug";
@@ -107,7 +108,7 @@ export class DmControlPanel extends ItemView {
   private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
   private layerGeometryTimer: ReturnType<typeof setTimeout> | null = null;
   private panZoomAbort: AbortController | null = null;
-  private unsubscribeStateChange: (() => void) | null = null;
+  private restored: Promise<void> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DmScreenPlugin) {
     super(leaf);
@@ -145,13 +146,9 @@ export class DmControlPanel extends ItemView {
     this.dmZoom = 1;
     this.dmPanX = 0;
     this.dmPanY = 0;
-    this.restoreState();
-    if (this.plugin.server) {
-      this.unsubscribeStateChange = this.plugin.server.onStateChange(() => {
-        this.scheduleSaveState();
-      });
-    }
+    this.restored = this.restoreState();
     this.render();
+    await this.restored;
   }
 
   async onClose() {
@@ -167,10 +164,6 @@ export class DmControlPanel extends ItemView {
     if (this.ddbPanel) {
       this.ddbPanel.destroy();
       this.ddbPanel = null;
-    }
-    if (this.unsubscribeStateChange) {
-      this.unsubscribeStateChange();
-      this.unsubscribeStateChange = null;
     }
     this.saveState();
   }
@@ -241,42 +234,33 @@ export class DmControlPanel extends ItemView {
   private async checkAndRecoverBackground() {
     if (!this.activeBackgroundUrl) return;
 
-    const vaultPath = vaultPathFromUrl(this.activeBackgroundUrl);
-    if (!vaultPath) return;
+    const result = await recoverVaultImage(this.plugin, this.activeBackgroundUrl);
 
-    const exists = await this.plugin.app.vault.adapter.exists(vaultPath);
-    if (exists) return;
+    if (result === "ok") return;
 
-    const hydrusMatch = /^\.dm-screen\/hydrus\/([0-9a-f]{64})\.\w+$/.exec(vaultPath);
-    if (hydrusMatch && this.plugin.hydrusCache && this.plugin.buildHydrusClient()) {
-      const hash = hydrusMatch[1];
-      try {
-        const client = this.plugin.buildHydrusClient();
-        const files = await client!.getFileMetadata([hash]);
-        if (files.length > 0) {
-          await this.plugin.hydrusCache.fetchAndCache(client!, files[0]);
-          debug("DmControlPanel: re-downloaded missing background from Hydrus:", hash.slice(0, 12));
-          return;
-        }
-      } catch (err) {
-        debugWarn("DmControlPanel: failed to re-download background:", (err as Error).message);
-      }
+    if (result === "recovered") {
+      debug("DmControlPanel: recovered missing background");
+      this.render();
+      return;
     }
 
-    const filename = vaultPath.split("/").pop() || vaultPath;
+    const vaultPath = vaultPathFromUrl(this.activeBackgroundUrl);
+    const filename = vaultPath?.split("/").pop() || "image";
     new Notice(`Background "${filename}" is no longer available`);
     this.activeBackgroundUrl = null;
     this.activeVideoPath = null;
+
     if (this.plugin.server) {
-      (this.plugin.server as any).lastState?.delete("show-background-media");
-    }
-    if (typeof this.scheduleSaveState === "function") {
-      this.scheduleSaveState();
+      this.plugin.server.forgetCached(["show-background-media"]);
+    } else {
+      delete this.plugin.settings.lastBroadcastCache?.["show-background-media"];
+      await this.plugin.saveSettings();
     }
   }
 
-  republishToServer() {
+  async republishToServer() {
     if (!this.plugin.server) return;
+    if (this.restored) await this.restored;
     if (this.imageLayers.length > 0) {
       debug("DmControlPanel: republishToServer — layers:", this.imageLayers.length);
       this.broadcastImageLayers();
@@ -289,7 +273,7 @@ export class DmControlPanel extends ItemView {
         payload: { url: this.activeBackgroundUrl, mediaType },
       });
     }
-    this.mapPanel.republish();
+    await this.mapPanel.republish();
   }
 
   saveState() {
@@ -304,7 +288,7 @@ export class DmControlPanel extends ItemView {
     // Save broadcast cache
     if (this.plugin.server) {
       const cache: Record<string, string> = {};
-      for (const [type, data] of (this.plugin.server as any).lastState?.entries() ?? []) {
+      for (const [type, data] of this.plugin.server.cachedEntries()) {
         cache[type] = data;
       }
       s.lastBroadcastCache = cache;

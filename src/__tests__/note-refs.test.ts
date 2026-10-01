@@ -63,9 +63,13 @@ function fakeCache(entries: Record<string, CachedEntry>, existingPaths: Set<stri
       entry: cachedEntry(f.hash, f.mime),
       isFresh: true,
     })),
-    adapter: {
-      exists: vi.fn(async (path: string) => existingPaths.has(path)),
-    },
+    hasFile: vi.fn(async (h: string) => {
+      const entry = entries[h];
+      return entry ? existingPaths.has(entry.vaultPath) : false;
+    }),
+    evict: vi.fn(async (h: string) => {
+      delete entries[h];
+    }),
   } as unknown as HydrusCache;
 }
 

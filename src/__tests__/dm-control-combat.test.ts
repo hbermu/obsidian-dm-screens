@@ -171,11 +171,16 @@ describe("DmControlPanel.addImageLayer dedup", () => {
 describe("DmControlPanel.restoreState rebroadcast", () => {
   function makeServerStub() {
     const broadcasts: any[] = [];
+    const lastState = new Map<string, string>();
     return {
-      lastState: new Map<string, string>(),
+      lastState,
       broadcast: vi.fn((msg: any) => {
         broadcasts.push(msg);
       }),
+      forgetCached: vi.fn((types: string[]) => {
+        for (const type of types) lastState.delete(type);
+      }),
+      cachedEntries: vi.fn(() => [...lastState.entries()]),
       _broadcasts: broadcasts,
     };
   }
