@@ -8,6 +8,7 @@ import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
 import { rotatePoint } from "../map/transform";
 import { debug } from "../debug";
+import { createRepaintScheduler, fitScale } from "./mapStage";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's
@@ -119,7 +120,7 @@ export class MapExploreModal extends Modal {
         v.play().catch(() => {});
       } else {
         const img = inner.createEl("img");
-        img.src = resourceUrl;
+        img.src = this.panel.previewMediaSrc(this.map, resourceUrl);
         img.alt = "";
       }
     } else {
@@ -135,12 +136,10 @@ export class MapExploreModal extends Modal {
     const markers = inner.createDiv("dm-explore-markers");
 
     const layout = () => {
-      const availW = stage.clientWidth;
-      const availH = stage.clientHeight;
-      if (!availW || !availH) return;
       const rotW = sideways ? nh : nw;
       const rotH = sideways ? nw : nh;
-      const s = Math.min(availW / rotW, availH / rotH);
+      const s = fitScale(stage.clientWidth, stage.clientHeight, rotW, rotH);
+      if (s === null) return;
       inner.style.width = `${nw * s}px`;
       inner.style.height = `${nh * s}px`;
       inner.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
@@ -148,7 +147,7 @@ export class MapExploreModal extends Modal {
     layout();
     requestAnimationFrame(layout);
 
-    const redraw = () => {
+    const paint = () => {
       octx.clearRect(0, 0, overlay.width, overlay.height);
 
       octx.globalAlpha = 0.5;
@@ -220,8 +219,13 @@ export class MapExploreModal extends Modal {
         octx.restore();
       }
     };
+    // The repaint walks the fog image, every AoE, vision, wall and door. Hover
+    // and marker drags fire it per pointer move, so it is coalesced per frame.
+    const painter = createRepaintScheduler(paint);
+    const redraw = painter.schedule;
+    this.cancelOverlayRepaint = painter.cancel;
     this.redrawOverlay = redraw;
-    redraw();
+    paint();
 
     // Overlay geometry, read fresh so it survives layout/rotation changes. The
     // rotated overlay's AABB preserves its centre; its unrotated client size is
@@ -576,6 +580,7 @@ export class MapExploreModal extends Modal {
   }
 
   private disposeOverlayRepaint: (() => void) | null = null;
+  private cancelOverlayRepaint: (() => void) | null = null;
 
   private beginDrag(onMove: (e: MouseEvent) => void, onUp?: (e: MouseEvent) => void) {
     // Tear down any prior drag whose mouseup was missed (e.g. released off-window)
@@ -635,6 +640,8 @@ export class MapExploreModal extends Modal {
     this.hoverRegion = null;
     this.blockedCache = null;
     this.redrawOverlay = null;
+    this.cancelOverlayRepaint?.();
+    this.cancelOverlayRepaint = null;
     this.disposeOverlayRepaint?.();
     this.disposeOverlayRepaint = null;
     this.panel.refreshPanel();

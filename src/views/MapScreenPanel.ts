@@ -19,8 +19,9 @@ import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, Stor
 import { renderAoe } from "../map/aoe";
 import { eraseVisionWithWalls } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
+import { createRepaintScheduler, finiteScale, fitScale, sizeCanvas } from "./mapStage";
 import { MapCalibrationModal } from "./MapCalibrationModal";
-import { debug } from "../debug";
+import { debug, debugWarn } from "../debug";
 import { buildJoinUrl } from "../auth";
 
 export interface ActiveMap {
@@ -33,6 +34,10 @@ export interface ActiveMap {
 const VIEW_BROADCAST_THROTTLE_MS = 80;
 
 const PAN_START_THRESHOLD_PX = 3;
+
+const PREVIEW_MAX_HEIGHT_PX = 340;
+
+const PREVIEW_THUMB_MAX_PX = 2048;
 
 const AOE_SHAPES: AoeShape[] = ["circle", "square", "cone", "line", "ring"];
 
@@ -65,6 +70,10 @@ export class MapScreenPanel {
   private previewResizeObserver: ResizeObserver | null = null;
   private overlayRepaints = new Set<() => void>();
   private activeDrag: (() => void) | null = null;
+  private cancelPreviewRepaint: (() => void) | null = null;
+  private previewThumbUrl: string | null = null;
+  private previewThumbMapUrl: string | null = null;
+  private previewThumbPending = false;
   private disposeOverlayRepaint: (() => void) | null = null;
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
@@ -325,6 +334,7 @@ export class MapScreenPanel {
       ? { ...stored }
       : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
+    this.releasePreviewThumb();
     this.fogDataUrl = await loadFogSidecar(this.fogAdapter(), url);
     this.walls = await loadWallsSidecar(this.fogAdapter(), url);
     this.aoes = [];
@@ -348,6 +358,7 @@ export class MapScreenPanel {
   stopMap() {
     debug("MapScreenPanel: stopMap");
     this.disconnectPreviewObserver();
+    this.releasePreviewThumb();
     this.activeMap = null;
     this.aoes = [];
     this.visions = [];
@@ -612,8 +623,61 @@ export class MapScreenPanel {
     for (const repaint of this.overlayRepaints) repaint();
   }
 
+  // A full-resolution battlemap is tens of megapixels — a 4480x7000 export is
+  // about 125 MB decoded, at the edge of the renderer's decoded-image cache, so
+  // every panel rebuild risks decoding it again. The three DM-side previews
+  // share one downscaled copy; the map screen keeps the original, where the
+  // resolution is the whole point.
+  previewMediaSrc(map: ActiveMap, resourceUrl: string): string {
+    if (map.mediaType === "video") return resourceUrl;
+    if (this.previewThumbMapUrl === map.url) return this.previewThumbUrl ?? resourceUrl;
+    this.buildPreviewThumb(map, resourceUrl);
+    return resourceUrl;
+  }
+
+  private releasePreviewThumb() {
+    if (this.previewThumbUrl) URL.revokeObjectURL(this.previewThumbUrl);
+    this.previewThumbUrl = null;
+    this.previewThumbMapUrl = null;
+  }
+
+  private buildPreviewThumb(map: ActiveMap, resourceUrl: string) {
+    if (this.previewThumbPending) return;
+    const longest = Math.max(map.naturalWidth, map.naturalHeight);
+    if (!(longest > PREVIEW_THUMB_MAX_PX)) {
+      this.releasePreviewThumb();
+      this.previewThumbMapUrl = map.url;
+      return;
+    }
+    this.previewThumbPending = true;
+    const img = new Image();
+    img.onload = () => {
+      const scale = PREVIEW_THUMB_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        this.previewThumbPending = false;
+        if (!blob || this.activeMap?.url !== map.url) return;
+        this.releasePreviewThumb();
+        this.previewThumbUrl = URL.createObjectURL(blob);
+        this.previewThumbMapUrl = map.url;
+        debug("MapScreenPanel: preview thumbnail", `${canvas.width}x${canvas.height}`, "from", `${map.naturalWidth}x${map.naturalHeight}`);
+        this.host.render();
+      }, "image/png");
+    };
+    img.onerror = () => {
+      this.previewThumbPending = false;
+      debugWarn("MapScreenPanel: preview thumbnail failed to decode the map");
+    };
+    img.src = resourceUrl;
+  }
+
   disconnectPreviewObserver() {
     this.activeDrag?.();
+    this.cancelPreviewRepaint?.();
+    this.cancelPreviewRepaint = null;
     this.previewResizeObserver?.disconnect();
     this.previewResizeObserver = null;
     this.disposeOverlayRepaint?.();
@@ -642,10 +706,7 @@ export class MapScreenPanel {
     // edge". That is the same failure requirement 11 guards against inside
     // transform.ts, at the panel boundary that was left outside it, so the
     // conversions refuse rather than return a non-finite point.
-    const effectiveScale = (): number | null => {
-      const s = (stage.offsetWidth / nw) * this.previewZoom;
-      return Number.isFinite(s) && s > 0 ? s : null;
-    };
+    const effectiveScale = (): number | null => finiteScale((stage.offsetWidth / nw) * this.previewZoom);
     const screenToMap = (clientX: number, clientY: number): { x: number; y: number } | null => {
       const s = effectiveScale();
       if (s === null) return null;
@@ -667,13 +728,12 @@ export class MapScreenPanel {
       stage.style.setProperty("--dm-map-zoom", String(this.previewZoom));
     };
 
-    const redrawAoes = () => {
+    const paintAoes = () => {
       const w = stage.clientWidth;
       const h = stage.clientHeight;
       if (!w || !h) return;
       const z = this.previewZoom;
-      aoeCanvas.width = Math.round(w * z);
-      aoeCanvas.height = Math.round(h * z);
+      sizeCanvas(aoeCanvas, w * z, h * z);
       const ctx = aoeCanvas.getContext("2d")!;
       ctx.clearRect(0, 0, aoeCanvas.width, aoeCanvas.height);
       const s = (w * z) / nw;
@@ -697,6 +757,10 @@ export class MapScreenPanel {
       }
       ctx.setLineDash([]);
     };
+    // Pointer moves outrun frames; one repaint per frame is enough and keeps the
+    // measurement above ahead of the style writes the markers make.
+    const aoePainter = createRepaintScheduler(paintAoes);
+    const redrawAoes = aoePainter.schedule;
 
     const sideways = rotation % 180 !== 0;
     const client = this.effectiveMapClient();
@@ -713,11 +777,10 @@ export class MapScreenPanel {
     if (this.previewZoom > zoomMax) this.previewZoom = zoomMax;
 
     const layoutStage = () => {
-      const availW = preview.clientWidth;
-      if (!availW) return;
       const rotW = sideways ? nh : nw;
       const rotH = sideways ? nw : nh;
-      const s = Math.min(availW / rotW, 340 / rotH);
+      const s = fitScale(preview.clientWidth, PREVIEW_MAX_HEIGHT_PX, rotW, rotH);
+      if (s === null) return;
       stage.style.width = `${nw * s}px`;
       stage.style.height = `${nh * s}px`;
       preview.style.height = `${rotH * s}px`;
@@ -832,7 +895,7 @@ export class MapScreenPanel {
         v.play().catch(() => {});
       } else {
         const img = stage.createEl("img");
-        img.src = resourceUrl;
+        img.src = this.previewMediaSrc(map, resourceUrl);
         img.alt = "";
       }
     }
@@ -952,6 +1015,7 @@ export class MapScreenPanel {
       });
     }
 
+    this.cancelPreviewRepaint = aoePainter.cancel;
     this.disposeOverlayRepaint = this.registerOverlayRepaint(() => {
       redrawAoes();
       for (const reposition of repositionMarkers) reposition();

@@ -7,6 +7,7 @@
 - `src/map/map.ts` — browser-side WebSocket client and rendering (stage transform, grid canvas, calibration card, fullscreen button, reconnect)
 - `src/map/map.css` — map screen styles
 - `src/map/transform.ts` — pure scale/translation/grid/calibration math shared by the map client and the DM panel
+- `src/views/mapStage.ts` — `fitScale`, `finiteScale`, `sizeCanvas`, `createRepaintScheduler`: the DOM-side geometry plumbing shared by the DM pan preview and the Exploration modal
 - `src/map/types.ts` — `MapMediaPayload`, `MapView`, `MapGridConfig`, `ScreenProfile`, `StoredMapState`, `AoeShape`, `MapAoe`, `AoePreset`
 - `src/map/aoe.ts`, `src/map/spellAoes.ts`, `src/views/SpellAoeModal.ts` — AoE overlays (see `aoe-overlays.md`)
 - `src/server.ts` — `/map`, `/map.js`, `/map.css` routes; per-connection channel tagging and channel-filtered broadcast/replay; `map-show`/`map-clear` slots in `VaultServeAllowlist`
