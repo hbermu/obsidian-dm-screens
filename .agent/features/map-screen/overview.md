@@ -7,6 +7,8 @@
 - `src/map/map.ts` — browser-side WebSocket client and rendering (stage transform, grid canvas, calibration card, fullscreen button, reconnect)
 - `src/map/map.css` — map screen styles
 - `src/map/transform.ts` — pure scale/translation/grid/calibration math shared by the map client and the DM panel
+- `src/views/mapStage.ts` — `fitScale`, `finiteScale`: the letterbox and measured-scale geometry shared by the DM pan preview and the Exploration modal
+- `src/map/canvas.ts` — `sizeCanvas`, `createRepaintScheduler`: canvas plumbing shared by the map client and both previews
 - `src/map/types.ts` — `MapMediaPayload`, `MapView`, `MapGridConfig`, `ScreenProfile`, `StoredMapState`, `AoeShape`, `MapAoe`, `AoePreset`
 - `src/map/aoe.ts`, `src/map/spellAoes.ts`, `src/views/SpellAoeModal.ts` — AoE overlays (see `aoe-overlays.md`)
 - `src/server.ts` — `/map`, `/map.js`, `/map.css` routes; per-connection channel tagging and channel-filtered broadcast/replay; `map-show`/`map-clear` slots in `VaultServeAllowlist`
@@ -43,6 +45,8 @@
 13. In physical mode, `clampPan` shall prevent the viewport from extending past the map edges: the pan is constrained so that no black (empty) region is visible; when the map is smaller than the visible window on an axis (including a degenerate scale), the pan is forced to the centre of that axis. The pan is re-clamped whenever it could go stale: on map apply, on cache restore, on scale-mode switch, and on rotation change.
 14. While a map is active, the DM section shall expose an AoE Overlays section; the full contract (data model, spell catalog, controls, rendering, preview interactions, broadcast cadence, lifecycle) is specified in `aoe-overlays.md`.
 15. While a map is active, the DM section shall expose fog of war editing and the map client shall render the fog mask; the full contract lives in `fog-of-war.md`.
+15b. The map client shall report its own repaint cost through `console` on a fixed interval (`PERF_REPORT_INTERVAL_MS`), summarising `applyLayout` and `recompositeFog` as a call count, an average and a maximum over the interval plus the viewport, AoE, vision and wall counts that explain it, and shall report nothing for an interval with no calls. The map bundle cannot reach the plugin's Debug setting, and logging each call would itself dominate the cost at the rate these run, so the sampler accumulates rather than logging per frame.
+
 16. The map bundle shall build all DOM with DOM APIs and text nodes — including the disconnect overlay of requirement 12 — and shall not assign markup strings into `innerHTML`, `outerHTML`, or `insertAdjacentHTML`. Clearing a container with `innerHTML = ""` is permitted. The bundle renders payloads that arrive over an unauthenticated LAN socket, so it keeps no markup-parsing sink available to be reached later.
 
 ## Broadcast / IPC

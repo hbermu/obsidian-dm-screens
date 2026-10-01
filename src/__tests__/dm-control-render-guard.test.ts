@@ -59,6 +59,71 @@ describe("DmControlPanel background render guard", () => {
     expect((panel as any).pendingBackgroundRender).toBe(false);
   });
 
+  it("defers a background render while a drag is active", () => {
+    const { panel, render } = makePanel();
+    panel.beginDrag();
+
+    panel.renderFromBackground();
+    expect(render).not.toHaveBeenCalled();
+    expect((panel as any).pendingBackgroundRender).toBe(true);
+  });
+
+  it("flushes the deferred render when the drag ends", async () => {
+    const { panel, render } = makePanel();
+    const end = panel.beginDrag();
+    panel.renderFromBackground();
+
+    end();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).toHaveBeenCalledTimes(1);
+    expect((panel as any).pendingBackgroundRender).toBe(false);
+  });
+
+  it("counts nested drags and only flushes on the last release", async () => {
+    const { panel, render } = makePanel();
+    const endOuter = panel.beginDrag();
+    const endInner = panel.beginDrag();
+    panel.renderFromBackground();
+
+    endInner();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).not.toHaveBeenCalled();
+
+    endOuter();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("releasing the same drag twice does not double-flush", async () => {
+    const { panel, render } = makePanel();
+    const end = panel.beginDrag();
+    panel.renderFromBackground();
+
+    end();
+    end();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render on release when nothing was deferred", async () => {
+    const { panel, render } = makePanel();
+    panel.beginDrag()();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("keeps deferring when a drag ends while a panel field still has focus", async () => {
+    const { panel, render, input } = makePanel();
+    input.focus();
+    const end = panel.beginDrag();
+    panel.renderFromBackground();
+
+    end();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).not.toHaveBeenCalled();
+    expect((panel as any).pendingBackgroundRender).toBe(true);
+  });
+
   it("does not flush when focus moves to another panel field", async () => {
     const { panel, render, input } = makePanel();
     const second = document.createElement("input");

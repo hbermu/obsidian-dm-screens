@@ -8,6 +8,8 @@ import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
 import { rotatePoint } from "../map/transform";
 import { debug } from "../debug";
+import { fitScale } from "./mapStage";
+import { createRepaintScheduler } from "../map/canvas";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's
@@ -119,7 +121,7 @@ export class MapExploreModal extends Modal {
         v.play().catch(() => {});
       } else {
         const img = inner.createEl("img");
-        img.src = resourceUrl;
+        img.src = this.panel.previewMediaSrc(this.map, resourceUrl);
         img.alt = "";
       }
     } else {
@@ -135,12 +137,10 @@ export class MapExploreModal extends Modal {
     const markers = inner.createDiv("dm-explore-markers");
 
     const layout = () => {
-      const availW = stage.clientWidth;
-      const availH = stage.clientHeight;
-      if (!availW || !availH) return;
       const rotW = sideways ? nh : nw;
       const rotH = sideways ? nw : nh;
-      const s = Math.min(availW / rotW, availH / rotH);
+      const s = fitScale(stage.clientWidth, stage.clientHeight, rotW, rotH);
+      if (s === null) return;
       inner.style.width = `${nw * s}px`;
       inner.style.height = `${nh * s}px`;
       inner.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
@@ -148,7 +148,7 @@ export class MapExploreModal extends Modal {
     layout();
     requestAnimationFrame(layout);
 
-    const redraw = () => {
+    const paint = () => {
       octx.clearRect(0, 0, overlay.width, overlay.height);
 
       octx.globalAlpha = 0.5;
@@ -220,8 +220,13 @@ export class MapExploreModal extends Modal {
         octx.restore();
       }
     };
+    // The repaint walks the fog image, every AoE, vision, wall and door. Hover
+    // and marker drags fire it per pointer move, so it is coalesced per frame.
+    const painter = createRepaintScheduler(paint);
+    const redraw = painter.schedule;
+    this.cancelOverlayRepaint = painter.cancel;
     this.redrawOverlay = redraw;
-    redraw();
+    paint();
 
     // Overlay geometry, read fresh so it survives layout/rotation changes. The
     // rotated overlay's AABB preserves its centre; its unrotated client size is
@@ -243,8 +248,12 @@ export class MapExploreModal extends Modal {
         y: (r.y / uh + 0.5) * this.fogCanvas.height,
       };
     };
-    const deltaToMap = (dx: number, dy: number) => {
+    // An overlay that cannot be measured (the modal closing under a live drag)
+    // would divide by zero and clamp every marker to the map edge, so the
+    // conversion refuses instead of returning a non-finite point.
+    const deltaToMap = (dx: number, dy: number): { x: number; y: number } | null => {
       const { uw, uh } = overlayGeom();
+      if (!(uw > 0) || !(uh > 0)) return null;
       const r = rotatePoint(dx, dy, invRotation);
       return { x: (r.x / uw) * nw, y: (r.y / uh) * nh };
     };
@@ -258,6 +267,12 @@ export class MapExploreModal extends Modal {
       this.buildViewportRect(markers, nw, nh, deltaToMap, redraw);
     };
     this.renderMarkers = renderMarkers;
+    // Size, width and opacity edits made in the sidebar repaint the map in
+    // place rather than rebuilding it (aoe-overlays.md requirement 8).
+    this.disposeOverlayRepaint = this.panel.registerOverlayRepaint(() => {
+      renderMarkers();
+      redraw();
+    });
 
     // Full refresh after any structural edit made in the side panel: rebuild the
     // AoE/vision rows, the on-map markers, and repaint the overlay footprints.
@@ -388,7 +403,7 @@ export class MapExploreModal extends Modal {
     nh: number,
     rotation: MapRotation,
     overlayGeom: () => { cx: number; cy: number; uw: number; uh: number },
-    deltaToMap: (dx: number, dy: number) => { x: number; y: number },
+    deltaToMap: (dx: number, dy: number) => { x: number; y: number } | null,
     redraw: () => void
   ) {
     const ftToPx = this.panel.state.pxPerSquare / 5;
@@ -435,6 +450,7 @@ export class MapExploreModal extends Modal {
         this.beginDrag(
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
+            if (!d) return;
             aoe.x = Math.max(0, Math.min(nw, startAoeX + d.x));
             aoe.y = Math.max(0, Math.min(nh, startAoeY + d.y));
             position();
@@ -452,6 +468,7 @@ export class MapExploreModal extends Modal {
         this.beginDrag(
           (me) => {
             const { cx, cy, uw } = overlayGeom();
+            if (!(uw > 0)) return;
             const s = uw / nw;
             const r = rotatePoint(aoe.x - nw / 2, aoe.y - nh / 2, rotation);
             const centerX = cx + r.x * s;
@@ -473,7 +490,7 @@ export class MapExploreModal extends Modal {
     layer: HTMLElement,
     nw: number,
     nh: number,
-    deltaToMap: (dx: number, dy: number) => { x: number; y: number },
+    deltaToMap: (dx: number, dy: number) => { x: number; y: number } | null,
     redraw: () => void
   ) {
     for (const vision of this.panel.visions) {
@@ -495,6 +512,7 @@ export class MapExploreModal extends Modal {
         this.beginDrag(
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
+            if (!d) return;
             vision.x = Math.max(0, Math.min(nw, startVX + d.x));
             vision.y = Math.max(0, Math.min(nh, startVY + d.y));
             position();
@@ -516,7 +534,7 @@ export class MapExploreModal extends Modal {
     layer: HTMLElement,
     nw: number,
     nh: number,
-    deltaToMap: (dx: number, dy: number) => { x: number; y: number },
+    deltaToMap: (dx: number, dy: number) => { x: number; y: number } | null,
     redraw: () => void
   ) {
     if (this.panel.state.mode !== "physical") return;
@@ -545,6 +563,7 @@ export class MapExploreModal extends Modal {
       const startPanY = this.panel.state.panY;
       const step = (me: MouseEvent, immediate: boolean) => {
         const d = deltaToMap(me.clientX - startX, me.clientY - startY);
+        if (!d) return;
         this.panel.applyExplorePan(startPanX + d.x, startPanY + d.y, immediate);
         position();
         // A bound vision moved with the view — repaint its footprint (overlay)
@@ -561,10 +580,14 @@ export class MapExploreModal extends Modal {
     });
   }
 
+  private disposeOverlayRepaint: (() => void) | null = null;
+  private cancelOverlayRepaint: (() => void) | null = null;
+
   private beginDrag(onMove: (e: MouseEvent) => void, onUp?: (e: MouseEvent) => void) {
     // Tear down any prior drag whose mouseup was missed (e.g. released off-window)
     // so its document listeners can't outlive this one or the modal.
     this.activeDrag?.();
+    const release = this.panel.beginPanelDrag();
     const move = (e: MouseEvent) => onMove(e);
     const up = (e: MouseEvent) => {
       cleanup();
@@ -573,6 +596,7 @@ export class MapExploreModal extends Modal {
     const cleanup = () => {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
+      release();
       this.activeDrag = null;
     };
     document.addEventListener("mousemove", move);
@@ -617,6 +641,10 @@ export class MapExploreModal extends Modal {
     this.hoverRegion = null;
     this.blockedCache = null;
     this.redrawOverlay = null;
+    this.cancelOverlayRepaint?.();
+    this.cancelOverlayRepaint = null;
+    this.disposeOverlayRepaint?.();
+    this.disposeOverlayRepaint = null;
     this.panel.refreshPanel();
     this.contentEl.empty();
   }

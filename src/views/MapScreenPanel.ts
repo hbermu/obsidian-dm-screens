@@ -19,8 +19,10 @@ import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, Stor
 import { renderAoe } from "../map/aoe";
 import { eraseVisionWithWalls } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
+import { finiteScale, fitScale } from "./mapStage";
+import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
-import { debug } from "../debug";
+import { debug, debugWarn } from "../debug";
 import { buildJoinUrl } from "../auth";
 
 export interface ActiveMap {
@@ -31,6 +33,12 @@ export interface ActiveMap {
 }
 
 const VIEW_BROADCAST_THROTTLE_MS = 80;
+
+const PAN_START_THRESHOLD_PX = 3;
+
+const PREVIEW_MAX_HEIGHT_PX = 340;
+
+const PREVIEW_THUMB_MAX_PX = 2048;
 
 const AOE_SHAPES: AoeShape[] = ["circle", "square", "cone", "line", "ring"];
 
@@ -56,11 +64,18 @@ export class MapScreenPanel {
   private viewBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
   private aoeBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
   private visionBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
-  private redrawPreviewAoes: (() => void) | null = null;
   private previewZoom = 1;
   private previewPanX = 0;
   private previewPanY = 0;
   private previewLocked = false;
+  private previewResizeObserver: ResizeObserver | null = null;
+  private overlayRepaints = new Set<() => void>();
+  private activeDrag: (() => void) | null = null;
+  private cancelPreviewRepaint: (() => void) | null = null;
+  private previewThumbUrl: string | null = null;
+  private previewThumbMapUrl: string | null = null;
+  private previewThumbPending = false;
+  private disposeOverlayRepaint: (() => void) | null = null;
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
 
@@ -215,6 +230,37 @@ export class MapScreenPanel {
     }, VIEW_BROADCAST_THROTTLE_MS);
   }
 
+  // The Exploration modal owns its own listener plumbing (it has to tear down a
+  // drag whose mouseup was missed), so it takes the lock directly.
+  beginPanelDrag(): () => void {
+    return this.host.beginDrag();
+  }
+
+  // Every preview drag goes through here: it holds the panel's drag lock for
+  // the gesture, so a background render cannot empty the container and detach
+  // the stage the drag's closures measure against.
+  trackDrag(onMove: (e: MouseEvent) => void, onEnd?: () => void) {
+    // A mouseup released outside the window never arrives. Without this the
+    // lock would leak and the panel would stop taking background renders for
+    // the rest of its life, so a new drag tears down any prior one first.
+    this.activeDrag?.();
+    const release = this.beginPanelDrag();
+    const move = (e: MouseEvent) => onMove(e);
+    const cleanup = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      release();
+      this.activeDrag = null;
+    };
+    const up = () => {
+      cleanup();
+      onEnd?.();
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+    this.activeDrag = cleanup;
+  }
+
   private clampStateToViewport() {
     if (!this.activeMap || this.state.mode !== "physical") return;
     const client = this.effectiveMapClient();
@@ -289,6 +335,7 @@ export class MapScreenPanel {
       ? { ...stored }
       : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
+    this.releasePreviewThumb();
     this.fogDataUrl = await loadFogSidecar(this.fogAdapter(), url);
     this.walls = await loadWallsSidecar(this.fogAdapter(), url);
     this.aoes = [];
@@ -311,6 +358,8 @@ export class MapScreenPanel {
 
   stopMap() {
     debug("MapScreenPanel: stopMap");
+    this.disconnectPreviewObserver();
+    this.releasePreviewThumb();
     this.activeMap = null;
     this.aoes = [];
     this.visions = [];
@@ -564,7 +613,80 @@ export class MapScreenPanel {
     });
   }
 
+  registerOverlayRepaint(repaint: () => void): () => void {
+    this.overlayRepaints.add(repaint);
+    return () => this.overlayRepaints.delete(repaint);
+  }
+
+  // A size or width edit moves the rotation handle, so repainting the canvas is
+  // not enough on its own — the DOM markers have to be re-placed with it.
+  repaintOverlays() {
+    for (const repaint of this.overlayRepaints) repaint();
+  }
+
+  // A full-resolution battlemap is tens of megapixels — a 4480x7000 export is
+  // about 125 MB decoded, at the edge of the renderer's decoded-image cache, so
+  // every panel rebuild risks decoding it again. The three DM-side previews
+  // share one downscaled copy; the map screen keeps the original, where the
+  // resolution is the whole point.
+  previewMediaSrc(map: ActiveMap, resourceUrl: string): string {
+    if (map.mediaType === "video") return resourceUrl;
+    if (this.previewThumbMapUrl === map.url) return this.previewThumbUrl ?? resourceUrl;
+    this.buildPreviewThumb(map, resourceUrl);
+    return resourceUrl;
+  }
+
+  private releasePreviewThumb() {
+    if (this.previewThumbUrl) URL.revokeObjectURL(this.previewThumbUrl);
+    this.previewThumbUrl = null;
+    this.previewThumbMapUrl = null;
+  }
+
+  private buildPreviewThumb(map: ActiveMap, resourceUrl: string) {
+    if (this.previewThumbPending) return;
+    const longest = Math.max(map.naturalWidth, map.naturalHeight);
+    if (!(longest > PREVIEW_THUMB_MAX_PX)) {
+      this.releasePreviewThumb();
+      this.previewThumbMapUrl = map.url;
+      return;
+    }
+    this.previewThumbPending = true;
+    const img = new Image();
+    img.onload = () => {
+      const scale = PREVIEW_THUMB_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        this.previewThumbPending = false;
+        if (!blob || this.activeMap?.url !== map.url) return;
+        this.releasePreviewThumb();
+        this.previewThumbUrl = URL.createObjectURL(blob);
+        this.previewThumbMapUrl = map.url;
+        debug("MapScreenPanel: preview thumbnail", `${canvas.width}x${canvas.height}`, "from", `${map.naturalWidth}x${map.naturalHeight}`);
+        this.host.render();
+      }, "image/png");
+    };
+    img.onerror = () => {
+      this.previewThumbPending = false;
+      debugWarn("MapScreenPanel: preview thumbnail failed to decode the map");
+    };
+    img.src = resourceUrl;
+  }
+
+  disconnectPreviewObserver() {
+    this.activeDrag?.();
+    this.cancelPreviewRepaint?.();
+    this.cancelPreviewRepaint = null;
+    this.previewResizeObserver?.disconnect();
+    this.previewResizeObserver = null;
+    this.disposeOverlayRepaint?.();
+    this.disposeOverlayRepaint = null;
+  }
+
   private renderPanPreview(section: HTMLElement, map: ActiveMap) {
+    this.disconnectPreviewObserver();
     const nw = map.naturalWidth;
     const nh = map.naturalHeight;
     if (!(nw > 0) || !(nh > 0)) return;
@@ -580,16 +702,23 @@ export class MapScreenPanel {
     const stage = preview.createDiv("dm-map-preview-stage");
     const aoeCanvas = stage.createEl("canvas", { cls: "dm-map-aoe-canvas" });
 
-    const effectiveScale = () => (stage.offsetWidth / nw) * this.previewZoom;
-    const screenToMap = (clientX: number, clientY: number) => {
+    // A detached or hidden stage measures zero, and dividing by it yields
+    // ±Infinity, which the map-bounds clamp below turns into "snap to the map
+    // edge". That is the same failure requirement 11 guards against inside
+    // transform.ts, at the panel boundary that was left outside it, so the
+    // conversions refuse rather than return a non-finite point.
+    const effectiveScale = (): number | null => finiteScale((stage.offsetWidth / nw) * this.previewZoom);
+    const screenToMap = (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const s = effectiveScale();
+      if (s === null) return null;
       const b = stage.getBoundingClientRect();
       const r = rotatePoint(clientX - (b.left + b.width / 2), clientY - (b.top + b.height / 2), invRotation);
-      const s = effectiveScale();
       return { x: nw / 2 + r.x / s, y: nh / 2 + r.y / s };
     };
-    const deltaToMap = (dx: number, dy: number) => {
-      const r = rotatePoint(dx, dy, invRotation);
+    const deltaToMap = (dx: number, dy: number): { x: number; y: number } | null => {
       const s = effectiveScale();
+      if (s === null) return null;
+      const r = rotatePoint(dx, dy, invRotation);
       return { x: r.x / s, y: r.y / s };
     };
 
@@ -600,13 +729,12 @@ export class MapScreenPanel {
       stage.style.setProperty("--dm-map-zoom", String(this.previewZoom));
     };
 
-    const redrawAoes = () => {
+    const paintAoes = () => {
       const w = stage.clientWidth;
       const h = stage.clientHeight;
       if (!w || !h) return;
       const z = this.previewZoom;
-      aoeCanvas.width = Math.round(w * z);
-      aoeCanvas.height = Math.round(h * z);
+      sizeCanvas(aoeCanvas, w * z, h * z);
       const ctx = aoeCanvas.getContext("2d")!;
       ctx.clearRect(0, 0, aoeCanvas.width, aoeCanvas.height);
       const s = (w * z) / nw;
@@ -630,6 +758,10 @@ export class MapScreenPanel {
       }
       ctx.setLineDash([]);
     };
+    // Pointer moves outrun frames; one repaint per frame is enough and keeps the
+    // measurement above ahead of the style writes the markers make.
+    const aoePainter = createRepaintScheduler(paintAoes);
+    const redrawAoes = aoePainter.schedule;
 
     const sideways = rotation % 180 !== 0;
     const client = this.effectiveMapClient();
@@ -646,20 +778,24 @@ export class MapScreenPanel {
     if (this.previewZoom > zoomMax) this.previewZoom = zoomMax;
 
     const layoutStage = () => {
-      const availW = preview.clientWidth;
-      if (!availW) return;
       const rotW = sideways ? nh : nw;
       const rotH = sideways ? nw : nh;
-      const s = Math.min(availW / rotW, 340 / rotH);
+      const s = fitScale(preview.clientWidth, PREVIEW_MAX_HEIGHT_PX, rotW, rotH);
+      if (s === null) return;
       stage.style.width = `${nw * s}px`;
       stage.style.height = `${nh * s}px`;
       preview.style.height = `${rotH * s}px`;
       applyTransform();
       redrawAoes();
     };
-    this.redrawPreviewAoes = redrawAoes;
     layoutStage();
     requestAnimationFrame(layoutStage);
+    // A collapsed section is display:none, so the first layout measures zero and
+    // bails, leaving the stage with no size. makeCollapsible only flips a CSS
+    // class, so nothing re-renders on expand and the preview would stay a
+    // zero-height box until some unrelated render happened to run while visible.
+    this.previewResizeObserver = new ResizeObserver(() => layoutStage());
+    this.previewResizeObserver.observe(preview);
 
     const zoomControls = preview.createDiv("dm-map-zoom-controls");
     // Clicks on the overlay controls must never fall through to the preview's
@@ -733,17 +869,11 @@ export class MapScreenPanel {
       const startY = e.clientY;
       const startPanX = this.previewPanX;
       const startPanY = this.previewPanY;
-      const onMove = (ev: MouseEvent) => {
+      this.trackDrag((ev: MouseEvent) => {
         this.previewPanX = startPanX + (ev.clientX - startX);
         this.previewPanY = startPanY + (ev.clientY - startY);
         applyTransform();
-      };
-      const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      });
     };
 
     preview.addEventListener("mousedown", (e: MouseEvent) => {
@@ -766,10 +896,12 @@ export class MapScreenPanel {
         v.play().catch(() => {});
       } else {
         const img = stage.createEl("img");
-        img.src = resourceUrl;
+        img.src = this.previewMediaSrc(map, resourceUrl);
         img.alt = "";
       }
     }
+
+    const repositionMarkers: Array<() => void> = [];
 
     for (const aoe of this.aoes) {
       const dot = stage.createDiv("dm-map-aoe-dot");
@@ -798,6 +930,7 @@ export class MapScreenPanel {
         }
       };
       positionMarkers();
+      repositionMarkers.push(positionMarkers);
 
       dot.addEventListener("mousedown", (ev: MouseEvent) => {
         if (ev.button !== 0) return;
@@ -808,47 +941,40 @@ export class MapScreenPanel {
         const startY = ev.clientY;
         const startAoeX = aoe.x;
         const startAoeY = aoe.y;
-        const onMove = (me: MouseEvent) => {
-          const d = deltaToMap(me.clientX - startX, me.clientY - startY);
-          aoe.x = Math.max(0, Math.min(nw, startAoeX + d.x));
-          aoe.y = Math.max(0, Math.min(nh, startAoeY + d.y));
-          positionMarkers();
-          redrawAoes();
-          this.broadcastAoes();
-        };
-        const onUp = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          this.broadcastAoes(true);
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+        this.trackDrag(
+          (me: MouseEvent) => {
+            const d = deltaToMap(me.clientX - startX, me.clientY - startY);
+            if (!d) return;
+            aoe.x = Math.max(0, Math.min(nw, startAoeX + d.x));
+            aoe.y = Math.max(0, Math.min(nh, startAoeY + d.y));
+            positionMarkers();
+            redrawAoes();
+            this.broadcastAoes();
+          },
+          () => this.broadcastAoes(true)
+        );
       });
 
       handle?.addEventListener("mousedown", (ev: MouseEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
-        const onMove = (me: MouseEvent) => {
-          const b = stage.getBoundingClientRect();
-          if (!b.width) return;
-          const s = effectiveScale();
-          const r = rotatePoint(aoe.x - nw / 2, aoe.y - nh / 2, rotation);
-          const centerX = b.left + b.width / 2 + r.x * s;
-          const centerY = b.top + b.height / 2 + r.y * s;
-          const deg = (Math.atan2(me.clientY - centerY, me.clientX - centerX) * 180) / Math.PI - rotation;
-          aoe.rotation = ((Math.round(deg / 5) * 5) % 360 + 360) % 360;
-          positionMarkers();
-          redrawAoes();
-          this.broadcastAoes();
-        };
-        const onUp = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          this.broadcastAoes(true);
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+        this.trackDrag(
+          (me: MouseEvent) => {
+            const s = effectiveScale();
+            if (s === null) return;
+            const b = stage.getBoundingClientRect();
+            const r = rotatePoint(aoe.x - nw / 2, aoe.y - nh / 2, rotation);
+            const centerX = b.left + b.width / 2 + r.x * s;
+            const centerY = b.top + b.height / 2 + r.y * s;
+            const deg = (Math.atan2(me.clientY - centerY, me.clientX - centerX) * 180) / Math.PI - rotation;
+            aoe.rotation = ((Math.round(deg / 5) * 5) % 360 + 360) % 360;
+            positionMarkers();
+            redrawAoes();
+            this.broadcastAoes();
+          },
+          () => this.broadcastAoes(true)
+        );
       });
     }
 
@@ -865,6 +991,7 @@ export class MapScreenPanel {
       };
       positionVisionDot();
       repositionVisionDots.push(positionVisionDot);
+      repositionMarkers.push(positionVisionDot);
       dot.addEventListener("mousedown", (ev: MouseEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
@@ -874,23 +1001,26 @@ export class MapScreenPanel {
         const startY = ev.clientY;
         const startVX = vision.x;
         const startVY = vision.y;
-        const onMove = (me: MouseEvent) => {
-          const d = deltaToMap(me.clientX - startX, me.clientY - startY);
-          vision.x = Math.max(0, Math.min(nw, startVX + d.x));
-          vision.y = Math.max(0, Math.min(nh, startVY + d.y));
-          positionVisionDot();
-          redrawAoes();
-          this.broadcastVisions();
-        };
-        const onUp = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          this.broadcastVisions(true);
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+        this.trackDrag(
+          (me: MouseEvent) => {
+            const d = deltaToMap(me.clientX - startX, me.clientY - startY);
+            if (!d) return;
+            vision.x = Math.max(0, Math.min(nw, startVX + d.x));
+            vision.y = Math.max(0, Math.min(nh, startVY + d.y));
+            positionVisionDot();
+            redrawAoes();
+            this.broadcastVisions();
+          },
+          () => this.broadcastVisions(true)
+        );
       });
     }
+
+    this.cancelPreviewRepaint = aoePainter.cancel;
+    this.disposeOverlayRepaint = this.registerOverlayRepaint(() => {
+      redrawAoes();
+      for (const reposition of repositionMarkers) reposition();
+    });
 
     if (this.state.mode !== "physical") return;
 
@@ -932,27 +1062,32 @@ export class MapScreenPanel {
       const startX = e.clientX;
       const startY = e.clientY;
       const fromRect = e.target === rect;
-      if (!fromRect) {
-        const m = screenToMap(e.clientX, e.clientY);
-        applyPan(m.x, m.y);
-      }
-      const onMove = (ev: MouseEvent) => {
-        if (fromRect) {
-          const d = deltaToMap(ev.clientX - startX, ev.clientY - startY);
-          applyPan(startPanX + d.x, startPanY + d.y);
-        } else {
-          const m = screenToMap(ev.clientX, ev.clientY);
-          applyPan(m.x, m.y);
+      // A bare click used to re-centre on mousedown, so a near miss on a marker
+      // moved what the players see. The pan waits for real movement; a drag that
+      // starts on the rectangle is already deliberate and starts immediately.
+      let panStarted = fromRect;
+      this.trackDrag(
+        (ev: MouseEvent) => {
+          if (!panStarted) {
+            if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < PAN_START_THRESHOLD_PX) return;
+            panStarted = true;
+          }
+          if (fromRect) {
+            const d = deltaToMap(ev.clientX - startX, ev.clientY - startY);
+            if (!d) return;
+            applyPan(startPanX + d.x, startPanY + d.y);
+          } else {
+            const m = screenToMap(ev.clientX, ev.clientY);
+            if (!m) return;
+            applyPan(m.x, m.y);
+          }
+        },
+        () => {
+          if (!panStarted) return;
+          this.broadcastView(true);
+          this.persistState();
         }
-      };
-      const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        this.broadcastView(true);
-        this.persistState();
-      };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      );
     });
   }
 
@@ -1017,7 +1152,7 @@ export class MapScreenPanel {
       if (!Number.isFinite(v) || v <= 0) return;
       aoe.sizeFt = v;
       this.broadcastAoes(true);
-      onChange();
+      this.repaintOverlays();
     });
     row.createSpan({ text: "ft", cls: "dm-status-detail" });
 
@@ -1032,7 +1167,7 @@ export class MapScreenPanel {
         if (!Number.isFinite(v) || v <= 0) return;
         aoe.widthFt = v;
         this.broadcastAoes(true);
-        onChange();
+        this.repaintOverlays();
       });
       row.createSpan({ text: aoe.shape === "ring" ? "thick" : "wide", cls: "dm-status-detail" });
     }
@@ -1054,12 +1189,12 @@ export class MapScreenPanel {
     opacityInput.addEventListener("input", () => {
       aoe.opacity = parseFloat(opacityInput.value);
       this.broadcastAoes();
-      onChange();
+      this.repaintOverlays();
     });
     opacityInput.addEventListener("change", () => {
       aoe.opacity = parseFloat(opacityInput.value);
       this.broadcastAoes(true);
-      onChange();
+      this.repaintOverlays();
     });
 
     const rotInput = row.createEl("input", { type: "number" });

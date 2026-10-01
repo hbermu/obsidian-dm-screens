@@ -103,7 +103,7 @@ export class MapFogModal extends Modal {
         v.play().catch(() => {});
       } else {
         const img = stage.createEl("img");
-        img.src = resourceUrl;
+        img.src = this.panel.previewMediaSrc(this.map, resourceUrl);
         img.alt = "";
       }
     } else {

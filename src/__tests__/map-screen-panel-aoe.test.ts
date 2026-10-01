@@ -25,10 +25,18 @@ function makePanel() {
     broadcastMapCalibration: () => {},
     app: { vault: { adapter: { exists: () => Promise.resolve(false) } } },
   };
-  const host = { render: vi.fn() };
+  const releases: Array<ReturnType<typeof vi.fn>> = [];
+  const host = {
+    render: vi.fn(),
+    beginDrag: vi.fn(() => {
+      const release = vi.fn();
+      releases.push(release);
+      return release;
+    }),
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panel = new MapScreenPanel(plugin as any, host as any);
-  return { panel, broadcasts, host };
+  return { panel, broadcasts, host, releases };
 }
 
 const AOE: MapAoe = {
@@ -56,6 +64,52 @@ function cacheWith(view: Record<string, unknown>): Record<string, string> {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("MapScreenPanel drag tracking", () => {
+  it("releases the panel's drag lock on mouseup", () => {
+    const { panel, releases } = makePanel();
+    panel.trackDrag(() => {});
+    expect(releases[0]).not.toHaveBeenCalled();
+
+    document.dispatchEvent(new MouseEvent("mouseup"));
+    expect(releases[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it("tears down a prior drag whose mouseup was missed", () => {
+    const { panel, releases } = makePanel();
+    panel.trackDrag(() => {});
+    panel.trackDrag(() => {});
+
+    // Without this the lock would leak and the panel would stop accepting
+    // background renders for the rest of its life.
+    expect(releases[0]).toHaveBeenCalledTimes(1);
+    expect(releases[1]).not.toHaveBeenCalled();
+
+    document.dispatchEvent(new MouseEvent("mouseup"));
+    expect(releases[1]).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run the drag's onEnd when it is torn down by a newer drag", () => {
+    const { panel } = makePanel();
+    const onEnd = vi.fn();
+    panel.trackDrag(() => {}, onEnd);
+    panel.trackDrag(() => {});
+
+    expect(onEnd).not.toHaveBeenCalled();
+    document.dispatchEvent(new MouseEvent("mouseup"));
+  });
+
+  it("stops moving a torn-down drag", () => {
+    const { panel } = makePanel();
+    const firstMove = vi.fn();
+    panel.trackDrag(firstMove);
+    panel.trackDrag(() => {});
+
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 50 }));
+    expect(firstMove).not.toHaveBeenCalled();
+    document.dispatchEvent(new MouseEvent("mouseup"));
+  });
 });
 
 describe("MapScreenPanel AoE lifecycle", () => {

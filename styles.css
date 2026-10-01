@@ -1980,6 +1980,18 @@
   z-index: 5;
 }
 
+/* The markers counter-scale so they stay visually small at high preview zoom,
+   which also shrinks what the pointer can hit — at 3x a 10px dot offers about
+   3px of target, and a near miss used to re-centre the players' view. The
+   pseudo element restores a constant target without changing what is drawn. */
+.dm-map-aoe-dot::before,
+.dm-map-vision-dot::before,
+.dm-map-aoe-rot-handle::before {
+  content: "";
+  position: absolute;
+  inset: calc(-9px * var(--dm-map-zoom, 1));
+}
+
 .dm-map-aoe-section {
   margin-top: 8px;
 }
