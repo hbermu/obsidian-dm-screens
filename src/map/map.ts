@@ -104,8 +104,11 @@ class MapScreen {
     const video = document.getElementById("map-video") as HTMLVideoElement;
     const image = document.getElementById("map-image") as HTMLImageElement;
     const waitingScreen = document.getElementById("waiting-screen");
+    // showMap and clearMap blank the inactive element with src = "", which fires
+    // an error of its own; only a failure of the media on screen counts.
     if (video) {
       video.addEventListener("error", () => {
+        if (video.style.display === "none" || !video.getAttribute("src")) return;
         console.warn("[Map Screen] Map video failed to load");
         video.style.display = "none";
         video.src = "";
@@ -115,6 +118,7 @@ class MapScreen {
     }
     if (image) {
       image.addEventListener("error", () => {
+        if (image.style.display === "none" || !image.getAttribute("src")) return;
         console.warn("[Map Screen] Map image failed to load");
         image.style.display = "none";
         image.src = "";

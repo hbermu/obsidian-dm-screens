@@ -143,8 +143,11 @@ class PlayerScreen {
     const video = document.getElementById("video-background") as HTMLVideoElement;
     const image = document.getElementById("image-background") as HTMLImageElement;
     const waitingScreen = document.getElementById("waiting-screen");
+    // Swapping media blanks the inactive element with src = "", which fires an
+    // error of its own; only a failure of the media on screen counts.
     if (video) {
       video.addEventListener("error", () => {
+        if (video.style.display === "none" || !video.getAttribute("src")) return;
         video.style.display = "none";
         video.src = "";
         if (waitingScreen) waitingScreen.style.display = "flex";
@@ -152,6 +155,7 @@ class PlayerScreen {
     }
     if (image) {
       image.addEventListener("error", () => {
+        if (image.style.display === "none" || !image.getAttribute("src")) return;
         image.style.display = "none";
         image.src = "";
         if (waitingScreen) waitingScreen.style.display = "flex";
