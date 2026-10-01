@@ -12,7 +12,7 @@ import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydru
 import { recoverVaultImage } from "../hydrus/recoverImage";
 import { sortByInitiative, clampTrackerScale, advanceTurn, applyRound1Reveal } from "../combat/tracker";
 import { encodeForVaultUrl, uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
-import { resolveSourceLabel } from "../sourceLabel";
+import { resolveSourceLabel, type SourceLabel } from "../sourceLabel";
 import { debug, debugWarn, debugError } from "../debug";
 import { CONDITIONS, decodeStatus, encodeExhaustion } from "../conditions";
 import { buildJoinUrl } from "../auth";
@@ -127,6 +127,18 @@ export class DmControlPanel extends ItemView {
 
   getIcon(): string {
     return "monitor";
+  }
+
+  setBackgroundLabel(label: SourceLabel | null) {
+    if (!this.plugin.settings.lastSourceLabels) {
+      this.plugin.settings.lastSourceLabels = {};
+    }
+    if (label) {
+      this.plugin.settings.lastSourceLabels.background = label;
+    } else {
+      delete this.plugin.settings.lastSourceLabels.background;
+    }
+    void this.plugin.saveSettings();
   }
 
   private escHandler = (e: KeyboardEvent) => {
@@ -250,9 +262,7 @@ export class DmControlPanel extends ItemView {
     new Notice(`Background "${label}" is no longer available`);
     this.activeBackgroundUrl = null;
     this.activeVideoPath = null;
-    if (this.plugin.settings.lastSourceLabels) {
-      delete this.plugin.settings.lastSourceLabels.background;
-    }
+    this.setBackgroundLabel(null);
 
     if (this.plugin.server) {
       this.plugin.server.forgetCached(["show-background-media"]);
@@ -608,10 +618,7 @@ export class DmControlPanel extends ItemView {
       if (this.activeBackgroundUrl) {
         this.activeBackgroundUrl = null;
         this.activeVideoPath = null;
-        if (this.plugin.settings.lastSourceLabels) {
-          delete this.plugin.settings.lastSourceLabels.background;
-        }
-        void this.plugin.saveSettings();
+        this.setBackgroundLabel(null);
         if (this.plugin.server) {
           this.plugin.server.broadcast({ type: "hide-background-media", payload: {} });
         }
@@ -1063,10 +1070,7 @@ export class DmControlPanel extends ItemView {
           this.nextZIndex = 1;
           this.activeBackgroundUrl = null;
           this.activeVideoPath = null;
-          if (this.plugin.settings.lastSourceLabels) {
-            delete this.plugin.settings.lastSourceLabels.background;
-          }
-          void this.plugin.saveSettings();
+          this.setBackgroundLabel(null);
           new Notice("Player screen cleared");
           this.render();
         }
@@ -2006,11 +2010,7 @@ export class DmControlPanel extends ItemView {
           hydrusHash: ref.hash,
           knownTags: entry.knownTags,
         });
-        if (!this.plugin.settings.lastSourceLabels) {
-          this.plugin.settings.lastSourceLabels = {};
-        }
-        this.plugin.settings.lastSourceLabels.background = sourceLabel;
-        void this.plugin.saveSettings();
+        this.setBackgroundLabel(sourceLabel);
 
         this.plugin.server?.broadcast({
           type: "show-background-media",
@@ -2213,11 +2213,7 @@ export class DmControlPanel extends ItemView {
       url,
       noteBasename: activeFile?.basename,
     });
-    if (!this.plugin.settings.lastSourceLabels) {
-      this.plugin.settings.lastSourceLabels = {};
-    }
-    this.plugin.settings.lastSourceLabels.background = sourceLabel;
-    void this.plugin.saveSettings();
+    this.setBackgroundLabel(sourceLabel);
 
     if (this.plugin.server) {
       this.plugin.server.broadcast({

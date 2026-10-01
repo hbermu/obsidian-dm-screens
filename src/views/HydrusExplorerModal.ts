@@ -463,6 +463,10 @@ export class HydrusExplorerModal extends Modal {
       const panel = await this.plugin.findOpenDmControlPanel();
       if (panel) {
         panel.activeBackgroundUrl = url;
+        panel.setBackgroundLabel({
+          label: layerLabelFromTags(entry.knownTags, entry.hash),
+          title: entry.hash,
+        });
         panel.render();
       }
       await this.cache.markUsed(entry.hash);
@@ -485,7 +489,10 @@ export class HydrusExplorerModal extends Modal {
         return;
       }
       debug("HydrusExplorer: handleSetMap", entry.hash.slice(0, 12), entry.vaultPath);
-      await panel.mapPanel.setVaultMap(entry.vaultPath, mediaTypeOf(entry.mime));
+      await panel.mapPanel.setVaultMap(entry.vaultPath, mediaTypeOf(entry.mime), {
+        hydrusHash: entry.hash,
+        knownTags: entry.knownTags,
+      });
       await this.cache.markUsed(entry.hash);
       this.close();
     } catch (err) {

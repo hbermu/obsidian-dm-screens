@@ -68,7 +68,7 @@ describe("DmControlPanel restore with missing non-Hydrus background", () => {
     expect(panel.activeBackgroundUrl).toBeNull();
     expect((panel as any).activeVideoPath).toBeNull();
     expect(plugin.server.forgetCached).toHaveBeenCalledWith(["show-background-media"]);
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1); // setBackgroundLabel(null) saves
     expect((panel as any).render).toHaveBeenCalledTimes(1);
   });
 
@@ -93,7 +93,7 @@ describe("DmControlPanel restore with missing non-Hydrus background", () => {
     expect(panel.activeBackgroundUrl).toBeNull();
     expect((panel as any).activeVideoPath).toBeNull();
     expect(plugin.settings.lastBroadcastCache).toEqual({});
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(2); // setBackgroundLabel(null) + cache clear
     expect((panel as any).render).toHaveBeenCalledTimes(1);
   });
 
