@@ -3,6 +3,7 @@ import type DmScreenPlugin from "./main";
 import type { WebhookConfig } from "./webhooks/types";
 import type { ScreenProfile, StoredMapState } from "./map/types";
 import type { SourceLabel } from "./sourceLabel";
+import type { WindowState } from "./views/FloatingWindow";
 import { generateAccessToken } from "./auth";
 
 export type { WebhookConfig } from "./webhooks/types";
@@ -84,6 +85,7 @@ export interface DmScreenSettings {
   mapConfigs: Record<string, StoredMapState>; // map /vault/ URL → remembered grid/view state
   mapDefaultPxPerSquare: number; // map pixels per grid square for maps without a remembered config
   mapFogTvOpacity: number; // fog opacity rendered on the map screen (1 = players see nothing beneath)
+  exploreWindows: Record<string, WindowState>; // window id → position and minimized state
   // Server limits
   maxClients: number;
   // Waiting screen (player-side)
@@ -131,6 +133,7 @@ export const DEFAULT_SETTINGS: DmScreenSettings = {
   mapConfigs: {},
   mapDefaultPxPerSquare: 140,
   mapFogTvOpacity: 1,
+  exploreWindows: {},
   maxClients: 10,
   waitingTitle: "Player Screen",
   waitingSubtitle: "Waiting for DM to push content...",

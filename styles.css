@@ -2218,11 +2218,62 @@
   background: var(--background-secondary);
 }
 /* The AoE/Vision control panel, reusing the DM panel's row layout. */
-.dm-explore-sidebar {
-  width: 280px;
-  flex-shrink: 0;
+.dm-floating-window {
+  position: absolute;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--dm-radius-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+.dm-floating-window-minimized .dm-floating-window-body {
+  display: none;
+}
+.dm-floating-window-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: var(--dm-radius-lg) var(--dm-radius-lg) 0 0;
+  cursor: move;
+  user-select: none;
+}
+.dm-floating-window-minimized .dm-floating-window-header {
+  border-radius: var(--dm-radius-lg);
+}
+.dm-floating-window-title {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+.dm-floating-window-extra {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+.dm-floating-window-minimize {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--dm-radius);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.dm-floating-window-minimize:hover {
+  background: var(--background-modifier-hover);
+}
+.dm-floating-window-body {
+  padding: 12px;
   overflow-y: auto;
-  padding-right: 4px;
+  overflow-x: hidden;
+  max-height: calc(100vh - 100px);
 }
 .dm-explore-lock-btn.dm-fog-active,
 .dm-map-vision-bind.dm-fog-active {

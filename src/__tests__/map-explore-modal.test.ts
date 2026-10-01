@@ -127,7 +127,7 @@ function openModal(
 } {
   const modal = new MapExploreModal(
     appStub as never,
-    { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+    { app: appStub, settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
     panelStub as never,
     mapStub
   );
@@ -544,13 +544,17 @@ describe("MapExploreModal — AoE and vision markers", () => {
     modal.onClose();
   });
 
-  it("renders the AoE + Vision control sidebar by reusing the panel sections", () => {
+  it("renders the AoE + Vision floating windows by reusing the panel sections", () => {
     const panel = makePanelStub();
     const { modal, contentEl } = openModal(panel);
-    const sidebar = contentEl.querySelector(".dm-explore-sidebar") as HTMLElement;
-    expect(sidebar).not.toBeNull();
-    expect(panel.renderAoeSection).toHaveBeenCalledWith(sidebar, mapStub, expect.any(Function));
-    expect(panel.renderVisionSection).toHaveBeenCalledWith(sidebar, mapStub, expect.any(Function));
+    const aoesWindow = contentEl.querySelector(".dm-floating-window") as HTMLElement;
+    expect(aoesWindow).not.toBeNull();
+    const aoesBody = aoesWindow.querySelector(".dm-floating-window-body") as HTMLElement;
+    const visionWindow = contentEl.querySelectorAll(".dm-floating-window")[1] as HTMLElement;
+    expect(visionWindow).not.toBeNull();
+    const visionBody = visionWindow.querySelector(".dm-floating-window-body") as HTMLElement;
+    expect(panel.renderAoeSection).toHaveBeenCalledWith(aoesBody, mapStub, expect.any(Function));
+    expect(panel.renderVisionSection).toHaveBeenCalledWith(visionBody, mapStub, expect.any(Function));
     modal.onClose();
   });
 
