@@ -26,6 +26,7 @@ import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
 import { buildJoinUrl } from "../auth";
+import { renderControlCard } from "./controlCard";
 
 export interface ActiveMap {
   url: string;
@@ -78,6 +79,8 @@ export class MapScreenPanel {
   private previewThumbMapUrl: string | null = null;
   private previewThumbPending = false;
   private disposeOverlayRepaint: (() => void) | null = null;
+  private expandedAoeId: string | null = null;
+  private expandedVisionId: string | null = null;
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
 
@@ -1200,99 +1203,138 @@ export class MapScreenPanel {
   }
 
   private renderAoeRow(container: HTMLElement, aoe: MapAoe, onChange: () => void) {
-    const row = container.createDiv("dm-map-aoe-row");
-    if (aoe.label) {
-      row.createSpan({ text: aoe.label, cls: "dm-map-aoe-label" });
-    }
+    const shapeIcons: Record<AoeShape, string> = {
+      circle: "○",
+      square: "□",
+      cone: "△",
+      line: "―",
+      ring: "◯",
+    };
 
-    const shapeSelect = row.createEl("select");
-    for (const shape of AOE_SHAPES) {
-      shapeSelect.createEl("option", { text: shape, value: shape });
-    }
-    shapeSelect.value = aoe.shape;
-    shapeSelect.addEventListener("change", () => {
-      aoe.shape = shapeSelect.value as AoeShape;
-      this.broadcastAoes(true);
-      onChange();
-    });
+    const summaryText =
+      aoe.shape === "line" || aoe.shape === "ring"
+        ? `${aoe.sizeFt}×${aoe.widthFt} ft`
+        : `${aoe.sizeFt} ft`;
 
-    const sizeInput = row.createEl("input", { type: "number" });
-    sizeInput.value = String(aoe.sizeFt);
-    sizeInput.min = "5";
-    sizeInput.step = "5";
-    sizeInput.title =
-      aoe.shape === "circle" || aoe.shape === "ring"
-        ? "Radius (ft)"
-        : aoe.shape === "line"
-          ? "Length (ft)"
-          : "Size (ft)";
-    sizeInput.addEventListener("change", () => {
-      const v = parseFloat(sizeInput.value);
-      if (!Number.isFinite(v) || v <= 0) return;
-      aoe.sizeFt = v;
-      this.broadcastAoes(true);
-      this.repaintOverlays();
-    });
-    row.createSpan({ text: "ft", cls: "dm-status-detail" });
-
-    if (aoe.shape === "line" || aoe.shape === "ring") {
-      const widthInput = row.createEl("input", { type: "number" });
-      widthInput.value = String(aoe.widthFt);
-      widthInput.min = "5";
-      widthInput.step = "5";
-      widthInput.title = aoe.shape === "ring" ? "Band thickness (ft)" : "Width (ft)";
-      widthInput.addEventListener("change", () => {
-        const v = parseFloat(widthInput.value);
-        if (!Number.isFinite(v) || v <= 0) return;
-        aoe.widthFt = v;
+    renderControlCard(container, {
+      id: aoe.id,
+      color: aoe.color,
+      label: aoe.label || aoe.shape,
+      summary: summaryText,
+      icon: shapeIcons[aoe.shape],
+      expanded: this.expandedAoeId === aoe.id,
+      onToggle: () => {
+        this.expandedAoeId = this.expandedAoeId === aoe.id ? null : aoe.id;
+        onChange();
+      },
+      onRemove: () => {
+        this.aoes = this.aoes.filter((a) => a.id !== aoe.id);
         this.broadcastAoes(true);
-        this.repaintOverlays();
-      });
-      row.createSpan({ text: aoe.shape === "ring" ? "thick" : "wide", cls: "dm-status-detail" });
-    }
+        onChange();
+      },
+      renderDetails: (body) => {
+        const row1 = body.createDiv({ cls: "dm-control-card-row" });
 
-    const colorSwatch = row.createEl("input", { type: "color" });
-    colorSwatch.value = aoe.color;
-    colorSwatch.addEventListener("change", () => {
-      aoe.color = colorSwatch.value;
-      this.broadcastAoes(true);
-      onChange();
-    });
+        row1.createSpan({ text: "Shape", cls: "dm-status-detail" });
+        const shapeSelect = row1.createEl("select");
+        for (const shape of AOE_SHAPES) {
+          shapeSelect.createEl("option", { text: shape, value: shape });
+        }
+        shapeSelect.value = aoe.shape;
+        shapeSelect.addEventListener("change", () => {
+          aoe.shape = shapeSelect.value as AoeShape;
+          this.broadcastAoes(true);
+          onChange();
+        });
 
-    const opacityInput = row.createEl("input", { type: "range" });
-    opacityInput.min = "0.05";
-    opacityInput.max = "0.8";
-    opacityInput.step = "0.05";
-    opacityInput.value = String(aoe.opacity);
-    opacityInput.title = "Opacity";
-    opacityInput.addEventListener("input", () => {
-      aoe.opacity = parseFloat(opacityInput.value);
-      this.broadcastAoes();
-      this.repaintOverlays();
-    });
-    opacityInput.addEventListener("change", () => {
-      aoe.opacity = parseFloat(opacityInput.value);
-      this.broadcastAoes(true);
-      this.repaintOverlays();
-    });
+        const row2 = body.createDiv({ cls: "dm-control-card-row" });
+        row2.createSpan({ text: "Size", cls: "dm-status-detail" });
+        const sizeInput = row2.createEl("input", { type: "number" });
+        sizeInput.value = String(aoe.sizeFt);
+        sizeInput.min = "5";
+        sizeInput.step = "5";
+        sizeInput.title =
+          aoe.shape === "circle" || aoe.shape === "ring"
+            ? "Radius (ft)"
+            : aoe.shape === "line"
+              ? "Length (ft)"
+              : "Size (ft)";
+        sizeInput.addEventListener("change", () => {
+          const v = parseFloat(sizeInput.value);
+          if (!Number.isFinite(v) || v <= 0) return;
+          aoe.sizeFt = v;
+          this.broadcastAoes(true);
+          this.repaintOverlays();
+        });
+        row2.createSpan({ text: "ft", cls: "dm-status-detail" });
 
-    const rotInput = row.createEl("input", { type: "number" });
-    rotInput.value = String(aoe.rotation);
-    rotInput.min = "0";
-    rotInput.max = "359";
-    rotInput.step = "15";
-    rotInput.title = "Rotation (°)";
-    rotInput.addEventListener("change", () => {
-      aoe.rotation = parseInt(rotInput.value, 10) || 0;
-      this.broadcastAoes(true);
-      onChange();
-    });
+        if (aoe.shape === "line" || aoe.shape === "ring") {
+          const row3 = body.createDiv({ cls: "dm-control-card-row" });
+          row3.createSpan({
+            text: aoe.shape === "ring" ? "Thickness" : "Width",
+            cls: "dm-status-detail",
+          });
+          const widthInput = row3.createEl("input", { type: "number" });
+          widthInput.value = String(aoe.widthFt);
+          widthInput.min = "5";
+          widthInput.step = "5";
+          widthInput.title = aoe.shape === "ring" ? "Band thickness (ft)" : "Width (ft)";
+          widthInput.addEventListener("change", () => {
+            const v = parseFloat(widthInput.value);
+            if (!Number.isFinite(v) || v <= 0) return;
+            aoe.widthFt = v;
+            this.broadcastAoes(true);
+            this.repaintOverlays();
+          });
+          row3.createSpan({ text: "ft", cls: "dm-status-detail" });
+        }
 
-    const removeBtn = row.createEl("button", { text: "✕" });
-    removeBtn.addEventListener("click", () => {
-      this.aoes = this.aoes.filter((a) => a.id !== aoe.id);
-      this.broadcastAoes(true);
-      onChange();
+        const row4 = body.createDiv({ cls: "dm-control-card-row" });
+        row4.createSpan({ text: "Color", cls: "dm-status-detail" });
+        const colorSwatch = row4.createEl("input", { type: "color" });
+        colorSwatch.value = aoe.color;
+        colorSwatch.addEventListener("change", () => {
+          aoe.color = colorSwatch.value;
+          this.broadcastAoes(true);
+          onChange();
+        });
+
+        const row5 = body.createDiv({ cls: "dm-control-card-row" });
+        row5.createSpan({ text: "Opacity", cls: "dm-status-detail" });
+        const opacityInput = row5.createEl("input", { type: "range" });
+        opacityInput.min = "0.05";
+        opacityInput.max = "0.8";
+        opacityInput.step = "0.05";
+        opacityInput.value = String(aoe.opacity);
+        opacityInput.title = "Opacity";
+        opacityInput.addEventListener("input", () => {
+          aoe.opacity = parseFloat(opacityInput.value);
+          this.broadcastAoes();
+          this.repaintOverlays();
+        });
+        opacityInput.addEventListener("change", () => {
+          aoe.opacity = parseFloat(opacityInput.value);
+          this.broadcastAoes(true);
+          this.repaintOverlays();
+        });
+
+        if (aoe.shape !== "circle" && aoe.shape !== "ring") {
+          const row6 = body.createDiv({ cls: "dm-control-card-row" });
+          row6.createSpan({ text: "Rotation", cls: "dm-status-detail" });
+          const rotInput = row6.createEl("input", { type: "number" });
+          rotInput.value = String(aoe.rotation);
+          rotInput.min = "0";
+          rotInput.max = "359";
+          rotInput.step = "15";
+          rotInput.title = "Rotation (°)";
+          rotInput.addEventListener("change", () => {
+            aoe.rotation = parseInt(rotInput.value, 10) || 0;
+            this.broadcastAoes(true);
+            onChange();
+          });
+          row6.createSpan({ text: "°", cls: "dm-status-detail" });
+        }
+      },
     });
   }
 
@@ -1455,70 +1497,93 @@ export class MapScreenPanel {
     });
 
     for (const vision of this.visions) {
-      const row = wrap.createDiv("dm-map-aoe-row");
+      const shapeIcons: Record<"circle" | "square", string> = {
+        circle: "○",
+        square: "□",
+      };
 
-      const shapeSelect = row.createEl("select");
-      for (const shape of ["circle", "square"] as Array<"circle" | "square">) {
-        shapeSelect.createEl("option", { text: shape, value: shape });
-      }
-      shapeSelect.value = vision.shape;
-      shapeSelect.addEventListener("change", () => {
-        vision.shape = shapeSelect.value as "circle" | "square";
-        this.broadcastVisions(true);
-        onChange();
-      });
+      const summaryText = `${vision.sizeFt} ft`;
 
-      const sizeInput = row.createEl("input", { type: "number" });
-      sizeInput.value = String(vision.sizeFt);
-      sizeInput.min = "5";
-      sizeInput.step = "5";
-      sizeInput.title = "Vision range (ft)";
-      sizeInput.addEventListener("change", () => {
-        const v = parseFloat(sizeInput.value);
-        if (!Number.isFinite(v) || v <= 0) return;
-        vision.sizeFt = v;
-        this.broadcastVisions(true);
-        onChange();
-      });
-      row.createSpan({ text: "ft", cls: "dm-status-detail" });
+      renderControlCard(wrap, {
+        id: vision.id,
+        color: "#ffd23f",
+        label: vision.shape,
+        summary: summaryText,
+        icon: shapeIcons[vision.shape],
+        expanded: this.expandedVisionId === vision.id,
+        onToggle: () => {
+          this.expandedVisionId = this.expandedVisionId === vision.id ? null : vision.id;
+          onChange();
+        },
+        onRemove: () => {
+          this.visions = this.visions.filter((v) => v.id !== vision.id);
+          this.broadcastVisions(true);
+          onChange();
+        },
+        renderDetails: (body) => {
+          const row1 = body.createDiv({ cls: "dm-control-card-row" });
+          row1.createSpan({ text: "Shape", cls: "dm-status-detail" });
+          const shapeSelect = row1.createEl("select");
+          for (const shape of ["circle", "square"] as Array<"circle" | "square">) {
+            shapeSelect.createEl("option", { text: shape, value: shape });
+          }
+          shapeSelect.value = vision.shape;
+          shapeSelect.addEventListener("change", () => {
+            vision.shape = shapeSelect.value as "circle" | "square";
+            this.broadcastVisions(true);
+            onChange();
+          });
 
-      const featherInput = row.createEl("input", { type: "number" });
-      featherInput.value = String(vision.featherFt);
-      featherInput.min = "0";
-      featherInput.step = "5";
-      featherInput.title = "Feather (ft)";
-      featherInput.addEventListener("change", () => {
-        const v = parseFloat(featherInput.value);
-        if (!Number.isFinite(v) || v < 0) return;
-        vision.featherFt = v;
-        this.broadcastVisions(true);
-      });
-      row.createSpan({ text: "feather", cls: "dm-status-detail" });
+          const row2 = body.createDiv({ cls: "dm-control-card-row" });
+          row2.createSpan({ text: "Range", cls: "dm-status-detail" });
+          const sizeInput = row2.createEl("input", { type: "number" });
+          sizeInput.value = String(vision.sizeFt);
+          sizeInput.min = "5";
+          sizeInput.step = "5";
+          sizeInput.title = "Vision range (ft)";
+          sizeInput.addEventListener("change", () => {
+            const v = parseFloat(sizeInput.value);
+            if (!Number.isFinite(v) || v <= 0) return;
+            vision.sizeFt = v;
+            this.broadcastVisions(true);
+            onChange();
+          });
+          row2.createSpan({ text: "ft", cls: "dm-status-detail" });
 
-      // Bind-to-view toggle: a lit vision that tracks the players' viewport
-      // centre, so panning the view during exploration drags the light with it.
-      const bindBtn = row.createEl("button", {
-        text: "⦿",
-        cls: vision.followsView ? "dm-map-vision-bind dm-fog-active" : "dm-map-vision-bind",
-      });
-      bindBtn.title = vision.followsView
-        ? "Bound to the players' view — moves with it. Click to unbind."
-        : "Bind to the players' view so it moves with what the players see";
-      bindBtn.addEventListener("click", () => {
-        vision.followsView = !vision.followsView;
-        if (vision.followsView) {
-          vision.x = this.state.panX;
-          vision.y = this.state.panY;
-        }
-        this.broadcastVisions(true);
-        onChange();
-      });
+          const row3 = body.createDiv({ cls: "dm-control-card-row" });
+          row3.createSpan({ text: "Feather", cls: "dm-status-detail" });
+          const featherInput = row3.createEl("input", { type: "number" });
+          featherInput.value = String(vision.featherFt);
+          featherInput.min = "0";
+          featherInput.step = "5";
+          featherInput.title = "Feather (ft)";
+          featherInput.addEventListener("change", () => {
+            const v = parseFloat(featherInput.value);
+            if (!Number.isFinite(v) || v < 0) return;
+            vision.featherFt = v;
+            this.broadcastVisions(true);
+          });
+          row3.createSpan({ text: "ft", cls: "dm-status-detail" });
 
-      const removeBtn = row.createEl("button", { text: "✕" });
-      removeBtn.addEventListener("click", () => {
-        this.visions = this.visions.filter((v) => v.id !== vision.id);
-        this.broadcastVisions(true);
-        onChange();
+          const row4 = body.createDiv({ cls: "dm-control-card-row" });
+          row4.createSpan({ text: "Follow view", cls: "dm-status-detail" });
+          const bindBtn = row4.createEl("button", {
+            text: "⦿",
+            cls: vision.followsView ? "dm-map-vision-bind dm-fog-active" : "dm-map-vision-bind",
+          });
+          bindBtn.title = vision.followsView
+            ? "Bound to the players' view — moves with it. Click to unbind."
+            : "Bind to the players' view so it moves with what the players see";
+          bindBtn.addEventListener("click", () => {
+            vision.followsView = !vision.followsView;
+            if (vision.followsView) {
+              vision.x = this.state.panX;
+              vision.y = this.state.panY;
+            }
+            this.broadcastVisions(true);
+            onChange();
+          });
+        },
       });
     }
   }

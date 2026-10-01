@@ -31,7 +31,7 @@ describe("aoe overlays and vision", function () {
     expect(typeof aoe.sizeFt).toBe("number");
     expect(typeof aoe.x).toBe("number");
 
-    await expect(browser.$(".dm-control-panel .dm-map-aoe-row")).toExist();
+    await expect(browser.$(".dm-control-panel .dm-control-card")).toExist();
     await expect(browser.$(".dm-control-panel .dm-map-aoe-dot")).toExist();
   });
 
@@ -61,7 +61,7 @@ describe("aoe overlays and vision", function () {
 
   it("removing the aoe empties the sync", async function () {
     const seen = rec.count("map-aoe-sync");
-    await browser.$(".dm-control-panel .dm-map-aoe-row").$("button=✕").click();
+    await browser.$(".dm-control-panel .dm-control-card").$(".dm-control-card-remove").click();
     await rec.waitFor("map-aoe-sync", {
       skip: seen,
       where: (m) => (m.payload.aoes as unknown[]).length === 0,
@@ -77,6 +77,9 @@ describe("aoe overlays and vision", function () {
       where: (m) => (m.payload.visions as unknown[]).length === 1,
     });
     await expect(browser.$(".dm-control-panel .dm-map-vision-dot")).toExist();
+
+    const card = browser.$(".dm-control-panel .dm-control-card");
+    await card.$(".dm-control-card-header").click();
 
     const seen = rec.count("map-vision");
     await browser.$(".dm-control-panel .dm-map-vision-bind").click();
