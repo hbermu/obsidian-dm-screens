@@ -12,8 +12,14 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # Dependency bumps are dev-only and must not publish a release.
     labels:
       - dependencies
+      - release:skip
+    # @types/node tracks the node:22 runtime images, so its majors stay put.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     # vitest and @vitest/* peer on the exact same version, so they move as one;
     # majors otherwise stay one per PR, since they are what needs code changes.
     groups:
@@ -36,8 +42,10 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # Dependency bumps are dev-only and must not publish a release.
     labels:
       - dependencies
+      - release:skip
     # One PR for all actions: the codeql-action steps must move in lockstep.
     groups:
       github-actions:
