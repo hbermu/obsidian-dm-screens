@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { openPanel, openFixtureNote, startServer, panelButton, addMap, DEFAULT_PORT } from "../helpers/obsidian";
+import { openPanel, openFixtureNote, startServer, panelButton, addMap, closeModal, DEFAULT_PORT } from "../helpers/obsidian";
 import { WsRecorder, WsMessage } from "../helpers/ws";
 
 const MAP_W = 560;
@@ -208,9 +208,6 @@ describe("fog drawing tools and walls tab", function () {
     await clickCanvas(140, 90); // near the top seeded plain segment
     await rec.waitFor("map-walls", { skip: before, where: (m) => walls(m).length === 4 });
 
-    await browser.executeObsidian(() => {
-      (document.querySelector(".dm-fog-modal .modal-close-button") as HTMLElement | null)?.click();
-    });
-    await browser.waitUntil(async () => !(await fogModal().isExisting()));
+    await closeModal(".dm-fog-modal");
   });
 });

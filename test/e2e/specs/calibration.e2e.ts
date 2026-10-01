@@ -1,5 +1,13 @@
 import { browser, expect } from "@wdio/globals";
-import { openPanel, openFixtureNote, startServer, addMap, DEFAULT_PORT } from "../helpers/obsidian";
+import {
+  openPanel,
+  openFixtureNote,
+  startServer,
+  addMap,
+  closeModal,
+  closeModalIfOpen,
+  DEFAULT_PORT,
+} from "../helpers/obsidian";
 import { WsRecorder, WsMessage } from "../helpers/ws";
 
 // map-controls.e2e.ts covers the calibration modal's test-pattern toggle. This
@@ -19,11 +27,6 @@ async function openModal(): Promise<void> {
   await badge().waitForExist();
   await badge().click();
   await browser.$(".modal input[type='text']").waitForExist();
-}
-
-async function closeModal(): Promise<void> {
-  await browser.$(".modal-close-button").click();
-  await browser.$(".modal-close-button").waitForExist({ reverse: true });
 }
 
 async function setDiagonal(value: string): Promise<void> {
@@ -69,15 +72,7 @@ describe("map screen physical calibration", function () {
     rec.close();
   });
 
-  // Safety net: if a test throws before closeModal, don't let the backdrop
-  // intercept the next test's badge click.
-  afterEach(async function () {
-    const close = browser.$(".modal-close-button");
-    if (await close.isExisting()) {
-      await close.click();
-      await close.waitForExist({ reverse: true });
-    }
-  });
+  afterEach(closeModalIfOpen);
 
   it("entering a diagonal saves the profile and broadcasts map-calibration", async function () {
     await openModal();

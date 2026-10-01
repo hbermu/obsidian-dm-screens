@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { openPanel, openFixtureNote, startServer, panelButton, addMap, DEFAULT_PORT } from "../helpers/obsidian";
+import { openPanel, openFixtureNote, startServer, panelButton, addMap, closeModal, DEFAULT_PORT } from "../helpers/obsidian";
 import { WsRecorder } from "../helpers/ws";
 
 async function fogOverlayRect(): Promise<{ left: number; top: number; width: number; height: number }> {
@@ -72,8 +72,7 @@ describe("fog of war on the real canvas", function () {
   });
 
   it("fog replays from the sidecar after Stop Map and re-Add Map", async function () {
-    await browser.$(".dm-fog-modal .modal-close-button").click();
-    await browser.waitUntil(async () => !(await browser.$(".dm-fog-modal").isExisting()));
+    await closeModal(".dm-fog-modal");
 
     await (await panelButton("Stop Map")).click();
     await rec.waitFor("map-clear");

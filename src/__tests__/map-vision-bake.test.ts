@@ -9,7 +9,7 @@ function polyfillHTMLElement() {
     HTMLElement.prototype.addClass = function (cls: string) { this.classList.add(cls); };
   }
   if (!HTMLElement.prototype.createDiv) {
-    (HTMLElement.prototype as unknown as Record<string, unknown>).createDiv = function (arg?: string | { cls?: string; text?: string }) {
+    (HTMLElement.prototype as unknown as Record<string, unknown>).createDiv = function (this: HTMLElement, arg?: string | { cls?: string; text?: string }) {
       const div = document.createElement("div");
       if (typeof arg === "string") div.className = arg;
       else if (arg) { if (arg.cls) div.className = arg.cls; if (arg.text) div.textContent = arg.text; }
@@ -18,7 +18,7 @@ function polyfillHTMLElement() {
     };
   }
   if (!HTMLElement.prototype.createEl) {
-    (HTMLElement.prototype as unknown as Record<string, unknown>).createEl = function (tag: string, opts?: { text?: string; cls?: string; type?: string }) {
+    (HTMLElement.prototype as unknown as Record<string, unknown>).createEl = function (this: HTMLElement, tag: string, opts?: { text?: string; cls?: string; type?: string }) {
       const el = document.createElement(tag);
       if (opts?.cls) el.className = opts.cls;
       if (opts?.text) el.textContent = opts.text;
@@ -28,7 +28,7 @@ function polyfillHTMLElement() {
     };
   }
   if (!HTMLElement.prototype.createSpan) {
-    (HTMLElement.prototype as unknown as Record<string, unknown>).createSpan = function (opts?: { text?: string; cls?: string }) {
+    (HTMLElement.prototype as unknown as Record<string, unknown>).createSpan = function (this: HTMLElement, opts?: { text?: string; cls?: string }) {
       const el = document.createElement("span");
       if (opts?.cls) el.className = opts.cls;
       if (opts?.text) el.textContent = opts.text;
@@ -37,7 +37,7 @@ function polyfillHTMLElement() {
     };
   }
   if (!HTMLElement.prototype.empty) {
-    (HTMLElement.prototype as unknown as Record<string, unknown>).empty = function () { this.innerHTML = ""; };
+    (HTMLElement.prototype as unknown as Record<string, unknown>).empty = function (this: HTMLElement) { this.innerHTML = ""; };
   }
 }
 
