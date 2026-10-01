@@ -299,3 +299,84 @@ describe("dim-light visions", () => {
     expect(outside[3]).toBe(255);
   });
 });
+
+describe("DM-side vision marker rendering", () => {
+  it("draws dim ring with dashed line when dimFt > 0", () => {
+    const mockCtx = {
+      arc: vi.fn(),
+      beginPath: vi.fn(),
+      stroke: vi.fn(),
+      setLineDash: vi.fn(),
+      strokeStyle: "#ffd23f",
+      lineWidth: 2,
+    };
+
+    const vision: MapVision = {
+      id: "v1",
+      shape: "circle",
+      x: 100,
+      y: 100,
+      sizeFt: 20,
+      dimFt: 10,
+      featherFt: 0,
+    };
+
+    const ftToPx = 2;
+    const scale = 1;
+
+    const brightR = vision.sizeFt * ftToPx;
+    const dimR = (vision.sizeFt + vision.dimFt) * ftToPx;
+
+    mockCtx.beginPath();
+    mockCtx.arc(vision.x * scale, vision.y * scale, brightR, 0, Math.PI * 2);
+    mockCtx.stroke();
+
+    if (vision.dimFt > 0) {
+      mockCtx.strokeStyle = "#ffd23f88";
+      mockCtx.setLineDash([3, 3]);
+      mockCtx.beginPath();
+      mockCtx.arc(vision.x * scale, vision.y * scale, dimR, 0, Math.PI * 2);
+      mockCtx.stroke();
+    }
+
+    expect(mockCtx.arc).toHaveBeenCalledWith(100, 100, 40, 0, Math.PI * 2);
+    expect(mockCtx.arc).toHaveBeenCalledWith(100, 100, 60, 0, Math.PI * 2);
+    expect(mockCtx.setLineDash).toHaveBeenCalledWith([3, 3]);
+    expect(mockCtx.beginPath).toHaveBeenCalledTimes(2);
+    expect(mockCtx.stroke).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws only bright ring when dimFt is 0", () => {
+    const mockCtx = {
+      arc: vi.fn(),
+      beginPath: vi.fn(),
+      stroke: vi.fn(),
+      setLineDash: vi.fn(),
+      strokeStyle: "#ffd23f",
+      lineWidth: 2,
+    };
+
+    const vision: MapVision = {
+      id: "v1",
+      shape: "circle",
+      x: 100,
+      y: 100,
+      sizeFt: 20,
+      dimFt: 0,
+      featherFt: 0,
+    };
+
+    const ftToPx = 2;
+    const scale = 1;
+    const brightR = vision.sizeFt * ftToPx;
+
+    mockCtx.beginPath();
+    mockCtx.arc(vision.x * scale, vision.y * scale, brightR, 0, Math.PI * 2);
+    mockCtx.stroke();
+
+    expect(mockCtx.arc).toHaveBeenCalledTimes(1);
+    expect(mockCtx.arc).toHaveBeenCalledWith(100, 100, 40, 0, Math.PI * 2);
+    expect(mockCtx.beginPath).toHaveBeenCalledTimes(1);
+    expect(mockCtx.stroke).toHaveBeenCalledTimes(1);
+  });
+});

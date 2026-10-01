@@ -190,14 +190,29 @@ export class MapExploreModal extends Modal {
       octx.lineWidth = 2;
       const ftToPxScaled = (this.panel.state.pxPerSquare / 5) * fogScale;
       for (const v of this.panel.visions) {
-        const radius = v.sizeFt * ftToPxScaled;
+        const brightR = v.sizeFt * ftToPxScaled;
         octx.beginPath();
         if (v.shape === "circle") {
-          octx.arc(v.x * fogScale, v.y * fogScale, radius, 0, Math.PI * 2);
+          octx.arc(v.x * fogScale, v.y * fogScale, brightR, 0, Math.PI * 2);
         } else {
-          octx.rect(v.x * fogScale - radius, v.y * fogScale - radius, radius * 2, radius * 2);
+          octx.rect(v.x * fogScale - brightR, v.y * fogScale - brightR, brightR * 2, brightR * 2);
         }
         octx.stroke();
+
+        if (v.dimFt > 0) {
+          const dimR = (v.sizeFt + v.dimFt) * ftToPxScaled;
+          octx.strokeStyle = "#ffd23f88";
+          octx.setLineDash([3, 3]);
+          octx.beginPath();
+          if (v.shape === "circle") {
+            octx.arc(v.x * fogScale, v.y * fogScale, dimR, 0, Math.PI * 2);
+          } else {
+            octx.rect(v.x * fogScale - dimR, v.y * fogScale - dimR, dimR * 2, dimR * 2);
+          }
+          octx.stroke();
+          octx.strokeStyle = "#ffd23f";
+          octx.setLineDash([6, 4]);
+        }
       }
       octx.restore();
 

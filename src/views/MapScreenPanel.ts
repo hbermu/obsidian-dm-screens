@@ -813,15 +813,31 @@ export class MapScreenPanel {
       ctx.lineWidth = 2;
       const ftToPxScaled = (this.state.pxPerSquare / 5) * s;
       for (const v of this.visions) {
-        const radius = v.sizeFt * ftToPxScaled;
+        const brightR = v.sizeFt * ftToPxScaled;
         ctx.beginPath();
         if (v.shape === "circle") {
-          ctx.arc(v.x * s, v.y * s, radius, 0, Math.PI * 2);
+          ctx.arc(v.x * s, v.y * s, brightR, 0, Math.PI * 2);
         } else {
-          const half = radius;
+          const half = brightR;
           ctx.rect(v.x * s - half, v.y * s - half, half * 2, half * 2);
         }
         ctx.stroke();
+
+        if (v.dimFt > 0) {
+          const dimR = (v.sizeFt + v.dimFt) * ftToPxScaled;
+          ctx.strokeStyle = "#ffd23f88";
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          if (v.shape === "circle") {
+            ctx.arc(v.x * s, v.y * s, dimR, 0, Math.PI * 2);
+          } else {
+            const half = dimR;
+            ctx.rect(v.x * s - half, v.y * s - half, half * 2, half * 2);
+          }
+          ctx.stroke();
+          ctx.strokeStyle = "#ffd23f";
+          ctx.setLineDash([6, 4]);
+        }
       }
       ctx.setLineDash([]);
     };
