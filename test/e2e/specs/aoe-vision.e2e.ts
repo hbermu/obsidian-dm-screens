@@ -111,11 +111,10 @@ describe("aoe overlays and vision", function () {
     await browser.$(".menu-item-title=Circle 30 ft").click();
 
     await rec.waitFor("map-vision", {
-      where: (m) => (m.payload.visions as unknown[]).length === 2,
+      where: (m) => (m.payload.visions as unknown[]).length === 1,
     });
 
-    const cards = await browser.$$(".dm-control-panel .dm-control-card");
-    const card = cards[cards.length - 1];
+    const card = await browser.$(".dm-control-panel .dm-control-card");
     await card.$(".dm-control-card-header").click();
 
     const inputs = await card.$$("input[type='number']");
@@ -129,10 +128,11 @@ describe("aoe overlays and vision", function () {
       skip: seen,
       where: (m) => {
         const visions = m.payload.visions as Record<string, unknown>[];
-        return visions.length === 2 && (visions[1]?.dimFt as number) === 20;
+        return visions.length === 1 && (visions[0]?.dimFt as number) === 20;
       },
     });
-    const vision = (msg.payload.visions as Record<string, unknown>[])[1];
+    const visions = msg.payload.visions as Record<string, unknown>[];
+    const vision = visions[0];
     expect(vision.dimFt).toBe(20);
 
     const summary = await card.$(".dm-control-card-summary").getText();
