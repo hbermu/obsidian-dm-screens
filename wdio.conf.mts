@@ -44,4 +44,22 @@ export const config: WebdriverIO.Config = {
   outputDir: "wdio-logs",
   logLevel: "warn",
   injectGlobals: false,
+  // webdriverio 9.31+ scrolls via a wheel action dispatched at the element's
+  // centre; when the Obsidian status bar covers that point the wheel lands
+  // outside the panel's scroll container and nothing moves, so click()'s
+  // intercepted-click retry never uncovers the button. Native scrollIntoView
+  // scrolls the right container regardless of what is painted on top.
+  before(_capabilities, _specs, browser: WebdriverIO.Browser) {
+    browser.overwriteCommand(
+      "scrollIntoView",
+      async function (this: WebdriverIO.Element, _orig, options?: ScrollIntoViewOptions | boolean) {
+        await browser.execute(
+          (el: HTMLElement, opts?: ScrollIntoViewOptions | boolean) => el.scrollIntoView(opts),
+          this as unknown as HTMLElement,
+          options,
+        );
+      },
+      true,
+    );
+  },
 };
