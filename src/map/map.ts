@@ -78,9 +78,6 @@ class MapScreen {
   private fogOpacity = 1;
   private visions: MapVision[] = [];
   private walls: MapWall[] = [];
-  private layoutPainter = createRepaintScheduler(() =>
-    this.layoutPerf.sample(() => this.paintLayout())
-  );
   private layoutPerf = new PerfSampler(
     "applyLayout",
     () => `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio || 1}, ${this.aoes.length} AoEs, grid ${this.config.showGrid ? "on" : "off"}`
@@ -88,6 +85,9 @@ class MapScreen {
   private fogPerf = new PerfSampler(
     "recompositeFog",
     () => `${this.visions.length} visions, ${this.walls.length} walls`
+  );
+  private layoutPainter = createRepaintScheduler(() =>
+    this.layoutPerf.sample(() => this.paintLayout())
   );
 
   constructor() {
