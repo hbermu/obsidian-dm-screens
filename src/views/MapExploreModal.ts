@@ -7,6 +7,7 @@ import { vaultPathFromUrl } from "../server";
 import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
+import { DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
 import { rotatePoint } from "../map/transform";
 import { debug } from "../debug";
 import { fitScale } from "./mapStage";
@@ -185,11 +186,12 @@ export class MapExploreModal extends Modal {
 
       // Vision range outlines.
       octx.save();
-      octx.setLineDash([6, 4]);
-      octx.strokeStyle = "#ffd23f";
       octx.lineWidth = 2;
       const ftToPxScaled = (this.panel.state.pxPerSquare / 5) * fogScale;
       for (const v of this.panel.visions) {
+        const color = v.color ?? DEFAULT_VISION_COLOR;
+        octx.strokeStyle = color;
+        octx.setLineDash([6, 4]);
         const brightR = v.sizeFt * ftToPxScaled;
         octx.beginPath();
         if (v.shape === "circle") {
@@ -201,7 +203,7 @@ export class MapExploreModal extends Modal {
 
         if (v.dimFt > 0) {
           const dimR = (v.sizeFt + v.dimFt) * ftToPxScaled;
-          octx.strokeStyle = "#ffd23f88";
+          octx.strokeStyle = `${color}88`;
           octx.setLineDash([3, 3]);
           octx.beginPath();
           if (v.shape === "circle") {
@@ -210,8 +212,6 @@ export class MapExploreModal extends Modal {
             octx.rect(v.x * fogScale - dimR, v.y * fogScale - dimR, dimR * 2, dimR * 2);
           }
           octx.stroke();
-          octx.strokeStyle = "#ffd23f";
-          octx.setLineDash([6, 4]);
         }
       }
       octx.restore();
@@ -552,29 +552,31 @@ export class MapExploreModal extends Modal {
     deltaToMap: (dx: number, dy: number) => { x: number; y: number } | null,
     redraw: () => void
   ) {
+    const positions: Array<() => void> = [];
     for (const vision of this.panel.visions) {
       const dot = layer.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const position = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
         dot.style.top = `${(vision.y / nh) * 100}%`;
       };
       position();
+      positions.push(position);
       dot.addEventListener("mousedown", (ev: MouseEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         const startX = ev.clientX;
         const startY = ev.clientY;
-        const startVX = vision.x;
-        const startVY = vision.y;
+        const targets = visionDragTargets(this.panel.visions, vision, this.panel.visionGroup);
+        const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.beginDrag(
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
-            vision.x = Math.max(0, Math.min(nw, startVX + d.x));
-            vision.y = Math.max(0, Math.min(nh, startVY + d.y));
-            position();
+            moveVisions(targets, starts, d.x, d.y, nw, nh);
+            for (const reposition of positions) reposition();
             redraw();
             this.panel.broadcastVisions();
           },

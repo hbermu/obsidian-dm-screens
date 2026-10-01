@@ -8,6 +8,33 @@ export function normalizeVision(v: MapVision): MapVision {
   };
 }
 
+export const DEFAULT_VISION_COLOR = "#ffd23f";
+
+// In group mode a drag moves every vision that is not bound to the view; a
+// bound vision is re-placed by the next pan anyway, so it always moves alone.
+export function visionDragTargets(visions: MapVision[], dragged: MapVision, group: boolean): MapVision[] {
+  if (!group || dragged.followsView) return [dragged];
+  return visions.filter((v) => !v.followsView);
+}
+
+// The delta is clamped once for the whole set so the formation keeps its shape
+// at the map edge instead of the members piling up against it.
+export function moveVisions(
+  targets: MapVision[],
+  starts: Array<{ x: number; y: number }>,
+  dx: number,
+  dy: number,
+  nw: number,
+  nh: number
+): void {
+  const cdx = Math.max(Math.max(...starts.map((s) => -s.x)), Math.min(dx, Math.min(...starts.map((s) => nw - s.x))));
+  const cdy = Math.max(Math.max(...starts.map((s) => -s.y)), Math.min(dy, Math.min(...starts.map((s) => nh - s.y))));
+  targets.forEach((v, i) => {
+    v.x = starts[i].x + cdx;
+    v.y = starts[i].y + cdy;
+  });
+}
+
 // Fully revealed out to sizeFt (bright zone); dim zone from sizeFt to sizeFt+dimFt
 // is revealed but darkened; alpha fades to 0 across the feather band beyond
 // the outermost zone. dimAlpha controls the dim zone opacity: 1.0 for full erase

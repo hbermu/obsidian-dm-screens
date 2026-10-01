@@ -114,15 +114,15 @@ describe("aoe overlays and vision", function () {
       where: (m) => (m.payload.visions as unknown[]).length === 1,
     });
 
+    await browser.$(".dm-control-panel .dm-control-card .dm-control-card-header").click();
     const card = await browser.$(".dm-control-panel .dm-control-card");
-    await card.$(".dm-control-card-header").click();
 
     const inputs = await card.$$("input[type='number']");
     const dimInput = inputs[1];
 
     const seen = rec.count("map-vision");
     await dimInput.setValue("20");
-    await browser.pause(500);
+    await browser.keys(["Tab"]);
 
     const msg = await rec.waitFor("map-vision", {
       skip: seen,
@@ -137,5 +137,62 @@ describe("aoe overlays and vision", function () {
 
     const summary = await card.$(".dm-control-card-summary").getText();
     expect(summary).toContain("30/+20 ft");
+  });
+
+  it("Add Vision > Lights… > Torch adds a labelled 20/+20 ft vision", async function () {
+    const seen = rec.count("map-vision");
+    await (await panelButton("Add Vision")).click();
+    await browser.$(".menu").waitForExist();
+    await browser.$(".menu-item-title*=Lights").click();
+
+    await browser.$(".prompt-input").waitForExist();
+    await browser.keys("Torch");
+    await browser.waitUntil(async () => {
+      const first = browser.$(".suggestion-item");
+      return (await first.isExisting()) && (await first.getText()).startsWith("Torch —");
+    });
+    await browser.keys("Enter");
+
+    const msg = await rec.waitFor("map-vision", {
+      skip: seen,
+      where: (m) => (m.payload.visions as Record<string, unknown>[]).some((v) => v.label === "Torch"),
+    });
+    const torch = (msg.payload.visions as Record<string, unknown>[]).find((v) => v.label === "Torch")!;
+    expect(torch.sizeFt).toBe(20);
+    expect(torch.dimFt).toBe(20);
+
+    const labels = await browser.$$(".dm-control-panel .dm-map-aoe-section .dm-control-card-label").map((el) => el.getText());
+    expect(labels).toContain("Torch");
+  });
+
+  it("group mode drags every unbound vision together", async function () {
+    const groupBtn = browser.$(".dm-control-panel .dm-map-vision-group");
+    await groupBtn.click();
+    await expect(browser.$(".dm-control-panel .dm-map-vision-group")).toHaveAttribute("aria-pressed", "true");
+
+    const before = await rec.waitFor("map-vision", { skip: rec.count("map-vision") - 1 });
+    const startXs = (before.payload.visions as Record<string, unknown>[]).map((v) => v.x as number);
+    expect(startXs.length).toBe(2);
+
+    const r = await browser.executeObsidian(() => {
+      const rect = document.querySelector(".dm-control-panel .dm-map-vision-dot")!.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    });
+    const seen = rec.count("map-vision");
+    await browser
+      .action("pointer", { parameters: { pointerType: "mouse" } })
+      .move({ x: Math.round(r.x), y: Math.round(r.y) })
+      .down()
+      .move({ x: Math.round(r.x) + 30, y: Math.round(r.y) })
+      .up()
+      .perform();
+
+    await rec.waitFor("map-vision", {
+      skip: seen,
+      where: (m) => {
+        const visions = m.payload.visions as Record<string, unknown>[];
+        return visions.length === 2 && visions.every((v, i) => (v.x as number) > startXs[i]);
+      },
+    });
   });
 });

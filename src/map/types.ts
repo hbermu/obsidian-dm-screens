@@ -68,6 +68,9 @@ export interface MapVision {
   // When true the vision centre tracks the players' viewport centre (panX/panY),
   // so moving the view during exploration drags the lit area with it.
   followsView?: boolean;
+  // DM-side name and marker colour; the map screen ignores both.
+  label?: string;
+  color?: string;
 }
 
 export interface MapWall {

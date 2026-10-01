@@ -19,8 +19,9 @@ import {
 } from "../map/transform";
 import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, StoredMapState } from "../map/types";
 import { renderAoe } from "../map/aoe";
-import { eraseVisionWithWalls, normalizeVision } from "../map/vision";
+import { DEFAULT_VISION_COLOR, eraseVisionWithWalls, moveVisions, normalizeVision, visionDragTargets } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
+import { LightSourceModal } from "./LightSourceModal";
 import { finiteScale, fitScale } from "./mapStage";
 import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
@@ -62,6 +63,7 @@ export class MapScreenPanel {
   mapClients: ClientInfo[] = [];
   aoes: MapAoe[] = [];
   visions: MapVision[] = [];
+  visionGroup = false;
   walls: MapWall[] = [];
   fogDataUrl: string | null = null;
   private viewBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -808,11 +810,12 @@ export class MapScreenPanel {
       for (const aoe of this.aoes) {
         renderAoe(ctx, aoe, s, 0, 0, this.state.pxPerSquare, 0);
       }
-      ctx.setLineDash([6, 4]);
-      ctx.strokeStyle = "#ffd23f";
       ctx.lineWidth = 2;
       const ftToPxScaled = (this.state.pxPerSquare / 5) * s;
       for (const v of this.visions) {
+        const color = v.color ?? DEFAULT_VISION_COLOR;
+        ctx.strokeStyle = color;
+        ctx.setLineDash([6, 4]);
         const brightR = v.sizeFt * ftToPxScaled;
         ctx.beginPath();
         if (v.shape === "circle") {
@@ -825,7 +828,7 @@ export class MapScreenPanel {
 
         if (v.dimFt > 0) {
           const dimR = (v.sizeFt + v.dimFt) * ftToPxScaled;
-          ctx.strokeStyle = "#ffd23f88";
+          ctx.strokeStyle = `${color}88`;
           ctx.setLineDash([3, 3]);
           ctx.beginPath();
           if (v.shape === "circle") {
@@ -835,8 +838,6 @@ export class MapScreenPanel {
             ctx.rect(v.x * s - half, v.y * s - half, half * 2, half * 2);
           }
           ctx.stroke();
-          ctx.strokeStyle = "#ffd23f";
-          ctx.setLineDash([6, 4]);
         }
       }
       ctx.setLineDash([]);
@@ -1083,7 +1084,8 @@ export class MapScreenPanel {
     const repositionVisionDots: Array<() => void> = [];
     for (const vision of this.visions) {
       const dot = stage.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const positionVisionDot = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
         dot.style.top = `${(vision.y / nh) * 100}%`;
@@ -1098,15 +1100,14 @@ export class MapScreenPanel {
         if (!stage.offsetWidth) return;
         const startX = ev.clientX;
         const startY = ev.clientY;
-        const startVX = vision.x;
-        const startVY = vision.y;
+        const targets = visionDragTargets(this.visions, vision, this.visionGroup);
+        const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.trackDrag(
           (me: MouseEvent) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
-            vision.x = Math.max(0, Math.min(nw, startVX + d.x));
-            vision.y = Math.max(0, Math.min(nh, startVY + d.y));
-            positionVisionDot();
+            moveVisions(targets, starts, d.x, d.y, nw, nh);
+            for (const reposition of repositionVisionDots) reposition();
             redrawAoes();
             this.broadcastVisions();
           },
@@ -1498,10 +1499,42 @@ export class MapScreenPanel {
           })
         );
       }
+      menu.addItem((item) =>
+        item.setTitle("Lights…").onClick(() => {
+          new LightSourceModal(this.plugin.app, (source) => {
+            debug("MapScreenPanel: light preset —", source.name);
+            this.visions.push({
+              id: `vision-${nextVisionId++}`,
+              shape: "circle",
+              x: map.naturalWidth / 2,
+              y: map.naturalHeight / 2,
+              sizeFt: source.brightFt,
+              dimFt: source.dimFt,
+              featherFt: 5,
+              label: source.name,
+            });
+            this.broadcastVisions(true);
+            onChange();
+          }).open();
+        })
+      );
       menu.showAtMouseEvent(evt);
     });
 
     if (this.visions.length === 0) return;
+
+    const groupBtn = header.createEl("button", {
+      text: "🔗",
+      cls: this.visionGroup ? "dm-map-vision-group dm-fog-active" : "dm-map-vision-group",
+    });
+    groupBtn.setAttribute("aria-pressed", String(this.visionGroup));
+    groupBtn.title = this.visionGroup
+      ? "Group mode on — dragging any vision moves every unbound vision. Click to drag them one by one."
+      : "Group mode — drag every unbound vision together";
+    groupBtn.addEventListener("click", () => {
+      this.visionGroup = !this.visionGroup;
+      onChange();
+    });
 
     const bakeBtn = header.createEl("button", { text: "Bake into fog" });
     bakeBtn.title = "Burns current vision into the persistent mask and clears the live layer";
@@ -1524,8 +1557,8 @@ export class MapScreenPanel {
 
       renderControlCard(wrap, {
         id: vision.id,
-        color: "#ffd23f",
-        label: vision.shape,
+        color: vision.color ?? DEFAULT_VISION_COLOR,
+        label: vision.label || vision.shape,
         summary: summaryText,
         icon: shapeIcons[vision.shape],
         expanded: this.expandedVisionId === vision.id,
@@ -1539,6 +1572,25 @@ export class MapScreenPanel {
           onChange();
         },
         renderDetails: (body) => {
+          const row0 = body.createDiv({ cls: "dm-control-card-row" });
+          row0.createSpan({ text: "Label", cls: "dm-status-detail" });
+          const labelInput = row0.createEl("input", { type: "text", cls: "dm-map-vision-label" });
+          labelInput.value = vision.label ?? "";
+          labelInput.placeholder = vision.shape;
+          labelInput.addEventListener("change", () => {
+            vision.label = labelInput.value.trim() || undefined;
+            this.broadcastVisions(true);
+            onChange();
+          });
+          const colorInput = row0.createEl("input", { type: "color", cls: "dm-map-vision-color" });
+          colorInput.value = vision.color ?? DEFAULT_VISION_COLOR;
+          colorInput.title = "Marker colour (DM only)";
+          colorInput.addEventListener("change", () => {
+            vision.color = colorInput.value;
+            this.broadcastVisions(true);
+            onChange();
+          });
+
           const row1 = body.createDiv({ cls: "dm-control-card-row" });
           row1.createSpan({ text: "Shape", cls: "dm-status-detail" });
           const shapeSelect = row1.createEl("select");
@@ -1556,12 +1608,12 @@ export class MapScreenPanel {
           row2.createSpan({ text: "Bright", cls: "dm-status-detail" });
           const sizeInput = row2.createEl("input", { type: "number" });
           sizeInput.value = String(vision.sizeFt);
-          sizeInput.min = "5";
+          sizeInput.min = "0";
           sizeInput.step = "5";
           sizeInput.title = "Bright vision range (ft)";
           sizeInput.addEventListener("change", () => {
             const v = parseFloat(sizeInput.value);
-            if (!Number.isFinite(v) || v <= 0) return;
+            if (!Number.isFinite(v) || v < 0) return;
             vision.sizeFt = v;
             this.broadcastVisions(true);
             onChange();
