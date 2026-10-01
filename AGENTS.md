@@ -88,7 +88,7 @@ All targets run inside Docker; the container manages `node_modules`.
 | `make down` | stop containers |
 | `make clean` | remove build artefacts and Obsidian local state (keeps vault notes) |
 
-Run `make typecheck && make test` before every commit. CI runs the same targets plus `make build`; all three must pass on every PR. The bundle smoke test (`bundle-smoke.integration.test.ts`) re-builds `main.js` inside the test run, so changes that break the production build also fail tests.
+Run `make typecheck && make test` before every commit. CI runs the same targets plus `make build`; all three must pass on every PR. The bundle smoke test (`bundle-smoke.integration.test.ts`) does not build anything: it loads an existing `main.js` under a CJS shim and is skipped when that file is absent, which is always the case in CI's `test` job (the production build is guarded by the separate `build` job). Run `make build` before `make test` to exercise it locally.
 
 ### Visual tests
 
