@@ -2,6 +2,7 @@ import { App, Menu, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DmScreenPlugin from "./main";
 import type { WebhookConfig } from "./webhooks/types";
 import type { ScreenProfile, StoredMapState } from "./map/types";
+import type { SourceLabel } from "./sourceLabel";
 import { generateAccessToken } from "./auth";
 
 export type { WebhookConfig } from "./webhooks/types";
@@ -56,6 +57,7 @@ export interface DmScreenSettings {
   lastPlayerScreenHeight: number;
   lastImageLayers: string; // JSON-serialized ImageLayer[] (without dataUrl to save space)
   lastBroadcastCache: Record<string, string>; // message type → JSON payload (for late joiners)
+  lastSourceLabels: { background?: SourceLabel; map?: SourceLabel };
   // Hydrus integration
   hydrusEnabled: boolean;
   hydrusApiUrl: string;
@@ -103,6 +105,7 @@ export const DEFAULT_SETTINGS: DmScreenSettings = {
   lastPlayerScreenHeight: 0,
   lastImageLayers: "[]",
   lastBroadcastCache: {},
+  lastSourceLabels: {},
   hydrusEnabled: false,
   hydrusApiUrl: "",
   hydrusApiKey: "",

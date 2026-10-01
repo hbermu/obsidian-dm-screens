@@ -1,8 +1,9 @@
 import { Menu, Notice, setIcon } from "obsidian";
 import type DmScreenPlugin from "../main";
 import type { DmControlPanel } from "./DmControlPanel";
-import { encodeForVaultUrl } from "./HydrusExplorerModal";
+import { encodeForVaultUrl, layerLabelFromTags } from "./HydrusExplorerModal";
 import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
+import { resolveSourceLabel } from "../sourceLabel";
 import { recoverVaultImage } from "../hydrus/recoverImage";
 import { vaultPathFromUrl, type ClientInfo } from "../server";
 import { fogCanvasSize, loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
@@ -153,14 +154,17 @@ export class MapScreenPanel {
       return;
     }
 
-    const vaultPath = vaultPathFromUrl(this.activeMap.url);
-    const filename = vaultPath?.split("/").pop() || "map";
-    new Notice(`Map "${filename}" is no longer available`);
+    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url }).label;
+    new Notice(`Map "${label}" is no longer available`);
     this.activeMap = null;
     this.aoes = [];
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
+    if (this.plugin.settings.lastSourceLabels) {
+      delete this.plugin.settings.lastSourceLabels.map;
+    }
 
     const mapTypes = ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"];
     if (this.plugin.server) {
@@ -359,7 +363,7 @@ export class MapScreenPanel {
     this.host.render();
   }
 
-  async setVaultMap(vaultPath: string, mediaType: "image" | "video") {
+  async setVaultMap(vaultPath: string, mediaType: "image" | "video", opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string }) {
     const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
     const resourceUrl = adapter.getResourcePath?.(vaultPath);
     const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
@@ -373,6 +377,19 @@ export class MapScreenPanel {
       ? { ...stored }
       : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
+
+    const sourceLabel = resolveSourceLabel({
+      url,
+      hydrusHash: opts?.hydrusHash,
+      knownTags: opts?.knownTags,
+      noteBasename: opts?.noteBasename,
+    });
+    if (!this.plugin.settings.lastSourceLabels) {
+      this.plugin.settings.lastSourceLabels = {};
+    }
+    this.plugin.settings.lastSourceLabels.map = sourceLabel;
+    void this.plugin.saveSettings();
+
     this.releasePreviewThumb();
     this.fogDataUrl = await loadFogSidecar(this.fogAdapter(), url);
     this.walls = await loadWallsSidecar(this.fogAdapter(), url);
@@ -403,6 +420,10 @@ export class MapScreenPanel {
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
+    if (this.plugin.settings.lastSourceLabels) {
+      delete this.plugin.settings.lastSourceLabels.map;
+    }
+    void this.plugin.saveSettings();
     this.plugin.server?.broadcast({ type: "map-clear", payload: {} });
     this.host.render();
   }
@@ -410,7 +431,10 @@ export class MapScreenPanel {
   private async applyHydrusRefAsMap(ref: ResolvedHydrusRef) {
     try {
       const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
-      await this.setVaultMap(entry.vaultPath, ref.mediaType === "video" ? "video" : "image");
+      await this.setVaultMap(entry.vaultPath, ref.mediaType === "video" ? "video" : "image", {
+        hydrusHash: ref.hash,
+        knownTags: entry.knownTags,
+      });
       await this.plugin.hydrusCache!.markUsed(ref.hash);
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
@@ -436,7 +460,7 @@ export class MapScreenPanel {
 
     if (images.length + hydrusActionable.length === 1 && disabled.length === 0) {
       if (images.length === 1) {
-        void this.setVaultMap(images[0].path, "image");
+        void this.setVaultMap(images[0].path, "image", { noteBasename: activeFile.basename });
       } else {
         void this.applyHydrusRefAsMap(hydrusActionable[0]);
       }
@@ -447,7 +471,7 @@ export class MapScreenPanel {
     for (const img of images) {
       menu.addItem((item: any) => {
         item.setTitle(img.label);
-        item.onClick(() => void this.setVaultMap(img.path, "image"));
+        item.onClick(() => void this.setVaultMap(img.path, "image", { noteBasename: activeFile.basename }));
       });
     }
     for (const ref of hydrus) {
@@ -947,6 +971,12 @@ export class MapScreenPanel {
           placeholder.textContent = "Image unavailable";
         });
       }
+
+      const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+      const sourceLabel = savedLabel || resolveSourceLabel({ url: map.url });
+      const labelChip = stage.createDiv("dm-source-label");
+      labelChip.textContent = sourceLabel.label;
+      labelChip.title = sourceLabel.title;
     }
 
     const repositionMarkers: Array<() => void> = [];

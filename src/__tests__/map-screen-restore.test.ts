@@ -147,6 +147,6 @@ describe("MapScreenPanel restore with missing non-Hydrus map", () => {
 
     await (panel as any).checkAndRecoverMap();
 
-    expect(Notice).toHaveBeenCalledWith('Map "map" is no longer available');
+    expect(Notice).toHaveBeenCalledWith('Map "/vault/" is no longer available');
   });
 });

@@ -11,11 +11,13 @@
 - `src/map/canvas.ts` — `sizeCanvas`, `createRepaintScheduler`: canvas plumbing shared by the map client and both previews
 - `src/map/types.ts` — `MapMediaPayload`, `MapView`, `MapGridConfig`, `ScreenProfile`, `StoredMapState`, `AoeShape`, `MapAoe`, `AoePreset`
 - `src/map/aoe.ts`, `src/map/spellAoes.ts`, `src/views/SpellAoeModal.ts` — AoE overlays (see `aoe-overlays.md`)
+- `src/sourceLabel.ts` — `resolveSourceLabel` computes human labels for maps from Hydrus name tags, note basenames or file names
 - `src/server.ts` — `/map`, `/map.js`, `/map.css` routes; per-connection channel tagging and channel-filtered broadcast/replay; `map-show`/`map-clear` slots in `VaultServeAllowlist`
 - `src/views/MapScreenPanel.ts` — DM-side section: picker, mode/grid controls, pan preview, per-map config persistence, fog lifecycle (`fogDataUrl`, `broadcastFog`, `commitFog`)
 - `src/views/MapFogModal.ts` — fog editing modal (brush, rectangle, grid-cell tools; reveal/cover modes; sidecar persistence)
 - `src/map/fog.ts` — fog canvas sizing, sidecar path derivation, vault adapter load/save
 - `src/views/MapCalibrationModal.ts` — per-screen physical calibration (diagonal + fine-tune + test pattern)
+- `src/views/MapExploreModal.ts` — table-play exploration modal; the bar's title attribute shows the map label
 - `src/views/HydrusExplorerModal.ts` — `handleSetMap` behind the tile menu's Set as map action
 - `src/main.ts` — `broadcastMapCalibration()` on server start; channel-split client lists forwarded to the DM panel
 
@@ -27,6 +29,7 @@
 - `mapFogTvOpacity` — fog layer opacity sent to the map screen in every `map-fog` broadcast (0.3–1, default 1)
 - `hydrusDefaultLoop`, `hydrusDefaultMuted` — forwarded in `map-show` for video maps
 - `tvWidth`, `tvHeight` — fallback screen used by the DM pan preview when no map client is connected
+- `lastSourceLabels.map` — persisted label for the active map, shown in the DM preview chip, the Exploration Mode bar title, and used in missing-file Notices; cleared when the map is stopped
 
 ## Requirements
 
@@ -48,9 +51,13 @@
 15b. The map client shall report its own repaint cost through `console` on a fixed interval (`PERF_REPORT_INTERVAL_MS`), summarising `applyLayout` and `recompositeFog` as a call count, an average and a maximum over the interval plus the viewport, AoE, vision and wall counts that explain it, and shall report nothing for an interval with no calls. The map bundle cannot reach the plugin's Debug setting, and logging each call would itself dominate the cost at the rate these run, so the sampler accumulates rather than logging per frame.
 
 16. The map bundle shall build all DOM with DOM APIs and text nodes — including the disconnect overlay of requirement 12 — and shall not assign markup strings into `innerHTML`, `outerHTML`, or `insertAdjacentHTML`. Clearing a container with `innerHTML = ""` is permitted. The bundle renders payloads that arrive over an unauthenticated LAN socket, so it keeps no markup-parsing sink available to be reached later.
-17. When the MapScreenPanel restores state from `lastBroadcastCache`, it shall check whether the restored map file exists via `vault.adapter.exists(vaultPath)` before marking it active. If the file is missing and the URL matches a Hydrus cache path, the panel shall attempt to re-download it from Hydrus. If the file is still missing, the panel shall delete the map-channel cache entries (`map-show`, `map-view`, `map-config`, `map-aoe-sync`, `map-vision`, `map-fog`, `map-walls`), clear `activeMap`, reset the AoE/vision/wall lists and fog data, show a Notice `Map "<filename>" is no longer available`, persist the cleared state, and call `host.render()` so the UI reflects the cleared state.
+17. When the MapScreenPanel restores state from `lastBroadcastCache`, it shall check whether the restored map file exists via `vault.adapter.exists(vaultPath)` before marking it active. If the file is missing and the URL matches a Hydrus cache path, the panel shall attempt to re-download it from Hydrus. If the file is still missing, the panel shall delete the map-channel cache entries (`map-show`, `map-view`, `map-config`, `map-aoe-sync`, `map-vision`, `map-fog`, `map-walls`), clear `activeMap`, reset the AoE/vision/wall lists and fog data, show a Notice `Map "<label>" is no longer available` where `<label>` is the stored label from `lastSourceLabels.map` or resolved from the URL, persist the cleared state, and call `host.render()` so the UI reflects the cleared state.
 18. The DM map preview `<img>` and `<video>` shall handle the `error` event by replacing themselves with a `.dm-image-unavailable` placeholder element reading "Image unavailable", styled consistently with the background preview placeholder.
 19. The map-side `<img id="map-image">` and `<video id="map-video">` shall handle the `error` event by logging a warning via `console.warn`, hiding the broken media element, showing the waiting screen, and clearing the `media` field.
+20. When a map is set, the panel shall resolve a source label from the URL, Hydrus hash and known tags (for Hydrus maps), or the active note's basename (for note maps), store it in `lastSourceLabels.map`, and persist the settings. The label is resolved in order: the first `name:` tag (namespace stripped), the first 8 hex chars of the Hydrus hash, the note basename, or the decoded filename from the URL.
+21. When Stop Map is clicked, the panel shall delete `lastSourceLabels.map` and persist the settings.
+22. The DM map preview shall render a `.dm-source-label` chip at its top-left corner displaying the label from `lastSourceLabels.map` (or resolved from the URL when restoring state), with the full hash or filename in the `title` attribute. The chip is absolutely positioned, ellipsised, and never wider than the preview.
+23. The Exploration Mode bar shall set its `title` attribute to the map label from `lastSourceLabels.map` (or resolved from the URL).
 
 ## Broadcast / IPC
 
@@ -61,11 +68,12 @@ All map traffic uses the `map` channel (types prefixed `map-`); the full table l
 - `src/__tests__/map-transform.test.ts` — scale, translation, viewport-aware pan clamping, grid phase, calibration math
 - `src/__tests__/map-screen-panel-aoe.test.ts` — pan re-clamp on restore (requirement 13); AoE lifecycle per `aoe-overlays.md`; `republish` broadcast sequence
 - `src/__tests__/map-fog-panel.test.ts` — fog lifecycle: `broadcastFog`, `commitFog`, `stopMap` clear, `restoreFromCache` recovery, `republish` re-broadcast
-- `src/__tests__/map-screen-restore.test.ts` — unit tests for requirement 17: missing non-Hydrus map → Notice + state cleared + all map cache entries deleted, covering both server-running (`forgetCached`) and server-null (manual `settings.lastBroadcastCache` delete + `saveSettings`) cases
+- `src/__tests__/map-screen-restore.test.ts` — unit tests for requirement 17: missing non-Hydrus map → Notice + state cleared + all map cache entries deleted, covering both server-running (`forgetCached`) and server-null (manual `settings.lastBroadcastCache` delete + `saveSettings`) cases; Notice uses the label
+- `src/__tests__/source-label.test.ts` — requirement 20: label resolution from name tags, Hydrus hash, note basename and filename
 - `src/__tests__/server-map-channel.test.ts` — channel-filtered broadcast and replay, channel-scoped cache purge (including `map-fog`), allowlist map slot
 - `src/__tests__/bundle-smoke.integration.test.ts` — production build inlines the map bundle
-- `test/e2e/specs/map.e2e.ts` — real Obsidian: Add Map broadcasts `map-show`/`map-view`/`map-config` and the `/vault/` allowlist serves the file; Rotate updates `map-view`; Stop Map purges the map channel cache
-- `test/e2e/specs/explore.e2e.ts` — real Obsidian: Explore modal renders near-fullscreen, Shift toggles the `dm-explore-focus` class, a Shift-click on a door marker opens the door and broadcasts `map-walls`; a room click toggles its fog and commits `map-fog`
+- `test/e2e/specs/map.e2e.ts` — real Obsidian: Add Map broadcasts `map-show`/`map-view`/`map-config` and the `/vault/` allowlist serves the file; Rotate updates `map-view`; Stop Map purges the map channel cache; requirement 22: the preview chip exists
+- `test/e2e/specs/explore.e2e.ts` — real Obsidian: Explore modal renders near-fullscreen, Shift toggles the `dm-explore-focus` class, a Shift-click on a door marker opens the door and broadcasts `map-walls`; a room click toggles its fog and commits `map-fog`; requirement 23: the bar title is set
 - `test/e2e/specs/restore.e2e.ts` — real Obsidian: add map, stop map, reload plugin → map is not restored; add temp map, delete file, reload → map dropped with Notice (requirement 17 integration tests)
 
 ## Non-goals

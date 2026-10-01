@@ -11,7 +11,8 @@ import { buildLayerContextMenu } from "./layerContextMenu";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { recoverVaultImage } from "../hydrus/recoverImage";
 import { sortByInitiative, clampTrackerScale, advanceTurn, applyRound1Reveal } from "../combat/tracker";
-import { encodeForVaultUrl, uniqueLayerLabel } from "./HydrusExplorerModal";
+import { encodeForVaultUrl, uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
+import { resolveSourceLabel } from "../sourceLabel";
 import { debug, debugWarn, debugError } from "../debug";
 import { CONDITIONS, decodeStatus, encodeExhaustion } from "../conditions";
 import { buildJoinUrl } from "../auth";
@@ -244,11 +245,14 @@ export class DmControlPanel extends ItemView {
       return;
     }
 
-    const vaultPath = vaultPathFromUrl(this.activeBackgroundUrl);
-    const filename = vaultPath?.split("/").pop() || "image";
-    new Notice(`Background "${filename}" is no longer available`);
+    const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+    const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeBackgroundUrl }).label;
+    new Notice(`Background "${label}" is no longer available`);
     this.activeBackgroundUrl = null;
     this.activeVideoPath = null;
+    if (this.plugin.settings.lastSourceLabels) {
+      delete this.plugin.settings.lastSourceLabels.background;
+    }
 
     if (this.plugin.server) {
       this.plugin.server.forgetCached(["show-background-media"]);
@@ -604,6 +608,10 @@ export class DmControlPanel extends ItemView {
       if (this.activeBackgroundUrl) {
         this.activeBackgroundUrl = null;
         this.activeVideoPath = null;
+        if (this.plugin.settings.lastSourceLabels) {
+          delete this.plugin.settings.lastSourceLabels.background;
+        }
+        void this.plugin.saveSettings();
         if (this.plugin.server) {
           this.plugin.server.broadcast({ type: "hide-background-media", payload: {} });
         }
@@ -674,6 +682,12 @@ export class DmControlPanel extends ItemView {
             placeholder.textContent = "Image unavailable";
           });
         }
+
+        const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+        const sourceLabel = savedLabel || resolveSourceLabel({ url: this.activeBackgroundUrl });
+        const labelChip = bgWrap.createDiv("dm-source-label");
+        labelChip.textContent = sourceLabel.label;
+        labelChip.title = sourceLabel.title;
       }
     }
 
@@ -1049,6 +1063,10 @@ export class DmControlPanel extends ItemView {
           this.nextZIndex = 1;
           this.activeBackgroundUrl = null;
           this.activeVideoPath = null;
+          if (this.plugin.settings.lastSourceLabels) {
+            delete this.plugin.settings.lastSourceLabels.background;
+          }
+          void this.plugin.saveSettings();
           new Notice("Player screen cleared");
           this.render();
         }
@@ -1982,6 +2000,18 @@ export class DmControlPanel extends ItemView {
         debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), ref.mediaType);
         this.activeBackgroundUrl = url;
         this.activeVideoPath = ref.mediaType === "video" ? entry.vaultPath : null;
+
+        const sourceLabel = resolveSourceLabel({
+          url,
+          hydrusHash: ref.hash,
+          knownTags: entry.knownTags,
+        });
+        if (!this.plugin.settings.lastSourceLabels) {
+          this.plugin.settings.lastSourceLabels = {};
+        }
+        this.plugin.settings.lastSourceLabels.background = sourceLabel;
+        void this.plugin.saveSettings();
+
         this.plugin.server?.broadcast({
           type: "show-background-media",
           payload: {
@@ -2177,6 +2207,18 @@ export class DmControlPanel extends ItemView {
     debug("DmControlPanel: setImageAsBackground", img.path);
     this.activeBackgroundUrl = url;
     this.activeVideoPath = null;
+
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    const sourceLabel = resolveSourceLabel({
+      url,
+      noteBasename: activeFile?.basename,
+    });
+    if (!this.plugin.settings.lastSourceLabels) {
+      this.plugin.settings.lastSourceLabels = {};
+    }
+    this.plugin.settings.lastSourceLabels.background = sourceLabel;
+    void this.plugin.saveSettings();
+
     if (this.plugin.server) {
       this.plugin.server.broadcast({
         type: "show-background-media",

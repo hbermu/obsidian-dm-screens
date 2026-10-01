@@ -4,6 +4,7 @@ import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize } from "../map/fog";
 import { buildBlockedMask, floodRegion, regionToCanvas } from "../map/walls";
 import { vaultPathFromUrl } from "../server";
+import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
 import { rotatePoint } from "../map/transform";
@@ -80,6 +81,9 @@ export class MapExploreModal extends Modal {
     const doorRadius = Math.max(10, this.panel.state.pxPerSquare * fogScale * 0.35);
 
     const bar = contentEl.createDiv("dm-explore-bar");
+    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const sourceLabel = savedLabel || resolveSourceLabel({ url: this.map.url });
+    bar.title = sourceLabel.label;
     const revealAll = bar.createEl("button", { text: "Reveal All" });
     const coverAll = bar.createEl("button", { text: "Cover All", cls: "mod-warning" });
     const lockBtn = bar.createEl("button", { cls: "dm-explore-lock-btn" });

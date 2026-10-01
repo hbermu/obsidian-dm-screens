@@ -110,7 +110,7 @@ describe("DmControlPanel restore with missing non-Hydrus background", () => {
     expect(Notice).toHaveBeenCalledWith('Background "entrance.webp" is no longer available');
   });
 
-  it("falls back to 'image' when filename cannot be extracted", async () => {
+  it("uses URL when filename cannot be extracted", async () => {
     const { recoverVaultImage } = await import("../hydrus/recoverImage");
     vi.mocked(recoverVaultImage).mockResolvedValue("missing");
 
@@ -120,6 +120,6 @@ describe("DmControlPanel restore with missing non-Hydrus background", () => {
 
     await (panel as any).checkAndRecoverBackground();
 
-    expect(Notice).toHaveBeenCalledWith('Background "image" is no longer available');
+    expect(Notice).toHaveBeenCalledWith('Background "/vault/" is no longer available');
   });
 });

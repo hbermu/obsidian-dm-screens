@@ -5,7 +5,10 @@
 ## Source files
 
 - `src/views/DmControlPanel.ts` — `renderPlayerScreenSection` builds the preview area, `setupPreviewPanZoom` binds middle-click pan handlers (no wheel zoom — see `pan-zoom.md`), `resetDmView`, `getEffectiveResolution`, `getPlayerViewport`
+- `src/views/MapScreenPanel.ts` — the map pan preview renders a source label chip
+- `src/sourceLabel.ts` — `resolveSourceLabel` computes human labels shown in the preview chips
 - `src/player/player.ts` — `updateViewport` consumes `viewport-update` payloads (the player-side analogue to DM pan/zoom; currently used only via the broadcaster, not bound to a DM control)
+- `styles.css` — `.dm-preview-bg`, `.dm-map-preview-stage`, `.dm-source-label` chip styling
 
 ## Settings used
 
@@ -22,6 +25,7 @@
 7. The green viewport indicator (when exactly one client is connected) is specified in `viewport-indicator.md`.
 8. `render()` shall preserve the panel's scroll position across full rebuilds: the container's `scrollTop` is captured before emptying and re-applied after the rebuild (and once more on the next animation frame, since the map pan preview sizes itself a frame later).
 9. Each top-level panel section (Player Screen Server, Player Screen, Map Screen, COMBAT) shall be collapsible by clicking its title: `makeCollapsible` adds a ▾/▸ chevron to the title, and while collapsed only the section's first child (the title, or COMBAT's header row with the Live indicator) stays visible. The state lives in the in-memory `collapsedSections` set — it survives re-renders (toggling flips a CSS class without re-rendering) but resets when the panel reopens; all sections start expanded. The Media from Hydrus bar between the first two sections is not a section and never collapses (`../hydrus-integration/overview.md` requirement 1).
+10. The background preview overlay and the map preview stage shall each render a `.dm-source-label` chip at their top-left corner (see `../background-media/overview.md` requirement 22 and `../map-screen/overview.md` requirement 22). The chip displays the resolved label with ellipsis overflow, is absolutely positioned, never wider than the preview, and shows the full hash or filename in its `title` attribute.
 
 ## Tests covering this
 
