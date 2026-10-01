@@ -30,7 +30,7 @@ describe("background media from a real note", function () {
     const label = await browser.$(".dm-preview-bg .dm-source-label");
     await expect(label).toExist();
     const text = await label.getText();
-    expect(text).toBe("fixtures");
+    expect(text).toBe("Home");
   });
 
   it("Stop BG broadcasts hide-background-media", async function () {

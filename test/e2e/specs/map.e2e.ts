@@ -62,7 +62,7 @@ describe("map screen", function () {
     const label = await browser.$(".dm-map-preview-stage .dm-source-label");
     await expect(label).toExist();
     const text = await label.getText();
-    expect(text).toBe("fixtures");
+    expect(text).toBe("Home");
   });
 
   it("Rotate broadcasts an updated map-view", async function () {

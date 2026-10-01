@@ -57,7 +57,7 @@ describe("exploration mode", function () {
     const label = await modal.$(".dm-explore-bar .dm-explore-title.dm-source-label");
     await expect(label).toExist();
     const text = await label.getText();
-    expect(text).toBe("fixtures");
+    expect(text).toBe("Home");
   });
 
   it("holding Shift toggles the exploration focus class", async function () {
