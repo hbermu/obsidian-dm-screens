@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "http";
 import type { AddressInfo } from "net";
-import { PlayerScreenServer } from "../server";
+import { PlayerScreenServer, ReplayCache } from "../server";
 
 const TEST_TOKEN = "0123456789abcdef0123456789abcdef";
 
@@ -27,11 +27,11 @@ function makePlugin(spies: Spies, bytes: ArrayBuffer) {
   } as any;
 }
 
-async function startServer(spies: Spies, bytes: ArrayBuffer): Promise<{
+async function startServer(spies: Spies, bytes: ArrayBuffer, cache?: ReplayCache): Promise<{
   server: PlayerScreenServer;
   port: number;
 }> {
-  const server = new PlayerScreenServer(makePlugin(spies, bytes));
+  const server = new PlayerScreenServer(makePlugin(spies, bytes), cache);
   server.start(0);
   const httpServer = (server as any).httpServer as {
     address(): AddressInfo | string | null;
@@ -249,5 +249,27 @@ describe("PlayerScreenServer /vault/ display allowlist", () => {
     const bg = await fetch(port, "/vault/bg.webm");
     expect(bg.status).toBe(404);
     expect(spies.readBinary).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlayerScreenServer allowlist seeded from the replay cache", () => {
+  it("serves a background and map recorded while the server was stopped", async () => {
+    const bytes = new TextEncoder().encode("OFFLINE").buffer;
+    const spies = {
+      getAbstractFileByPath: vi.fn(() => null),
+      exists: vi.fn(async () => true),
+      readBinary: vi.fn(async () => bytes),
+    };
+    const cache = new ReplayCache();
+    cache.record({ type: "show-background-media", payload: { url: "/vault/bg.png", mediaType: "image" } });
+    cache.record({ type: "map-show", payload: { url: "/vault/map.png", mediaType: "image" } });
+    const { server, port } = await startServer(spies, bytes, cache);
+    try {
+      expect((await fetch(port, "/vault/bg.png")).status).toBe(200);
+      expect((await fetch(port, "/vault/map.png")).status).toBe(200);
+      expect((await fetch(port, "/vault/other.png")).status).toBe(404);
+    } finally {
+      server.stop();
+    }
   });
 });

@@ -96,7 +96,7 @@ describe("channel-scoped cache purge", () => {
     server.broadcast({ type: "map-view", payload: { mode: "physical", panX: 1, panY: 2 } });
     server.broadcast({ type: "clear", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("show-background-media")).toBe(false);
     expect(cache.has("map-show")).toBe(true);
     expect(cache.has("map-view")).toBe(true);
@@ -111,7 +111,7 @@ describe("channel-scoped cache purge", () => {
     server.broadcast({ type: "map-walls", payload: { walls: [{ x1: 0, y1: 0, x2: 10, y2: 0 }] } });
     server.broadcast({ type: "map-clear", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("map-show")).toBe(false);
     expect(cache.has("map-config")).toBe(false);
     expect(cache.has("map-fog")).toBe(false);

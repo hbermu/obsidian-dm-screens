@@ -53,6 +53,7 @@ describe("DEFAULT_SETTINGS", () => {
   it("has empty persisted player screen state", () => {
     expect(DEFAULT_SETTINGS.lastPlayerScreenWidth).toBe(0);
     expect(DEFAULT_SETTINGS.lastPlayerScreenHeight).toBe(0);
+    expect(DEFAULT_SETTINGS.lastMapScreenClient).toBeNull();
     expect(DEFAULT_SETTINGS.lastImageLayers).toBe("[]");
     expect(DEFAULT_SETTINGS.lastBroadcastCache).toEqual({});
   });

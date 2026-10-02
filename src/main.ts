@@ -4,7 +4,8 @@ import {
   Notice,
 } from "obsidian";
 import { DmControlPanel, DM_CONTROL_VIEW_TYPE } from "./views/DmControlPanel";
-import { PlayerScreenServer } from "./server";
+import { PlayerScreenServer, ReplayCache } from "./server";
+import type { PlayerMessage } from "./server";
 import { DmScreenSettingTab, DmScreenSettings, DEFAULT_SETTINGS } from "./settings";
 import type { InitiativeViewState, TrackerCombatant } from "./types";
 import { HydrusCache } from "./hydrus/cache";
@@ -18,6 +19,8 @@ import { redactUrl } from "./redact";
 export default class DmScreenPlugin extends Plugin {
   settings: DmScreenSettings = DEFAULT_SETTINGS;
   server: PlayerScreenServer | null = null;
+  replayCache: ReplayCache = new ReplayCache();
+  private replayCacheSaveTimer: number | null = null;
   hydrusCache: HydrusCache | null = null;
   ddbImageCache: DdbImageCache | null = null;
   private hydrusSweepInterval: number | null = null;
@@ -49,6 +52,7 @@ export default class DmScreenPlugin extends Plugin {
     await this.loadSettings();
     initDebug(this.settings);
     debug("Plugin loading. Version:", this.manifest?.version ?? "unknown");
+    this.initReplayCache();
     this.initHydrusCache();
 
     // Register views
@@ -110,7 +114,40 @@ export default class DmScreenPlugin extends Plugin {
         (view as any).saveState();
       }
     }
+    if (this.replayCacheSaveTimer !== null) {
+      window.clearTimeout(this.replayCacheSaveTimer);
+      this.replayCacheSaveTimer = null;
+      await this.saveSettings();
+    }
     this.stopServer();
+  }
+
+  // Coalesces bursty state changes (drags, sliders) into one data.json write.
+  // The write must not wait for the DM panel to close: quitting Obsidian does
+  // not reliably unload plugins, and a Stop BG lost there comes back on restart.
+  initReplayCache() {
+    this.replayCache = new ReplayCache(this.settings.lastBroadcastCache);
+    debug("initReplayCache: entries=", this.replayCache.entries.size);
+    this.replayCache.onChange(() => {
+      this.settings.lastBroadcastCache = this.replayCache.toRecord();
+      if (this.replayCacheSaveTimer !== null) return;
+      this.replayCacheSaveTimer = window.setTimeout(() => {
+        this.replayCacheSaveTimer = null;
+        debug("replay cache persisted: entries=", this.replayCache.entries.size);
+        void this.saveSettings();
+      }, 1000);
+    });
+  }
+
+  // Every state broadcast goes through here so the replay cache stays current
+  // while the server is stopped; the server replays it to clients on start.
+  broadcast(message: PlayerMessage) {
+    if (this.server) {
+      this.server.broadcast(message);
+      return;
+    }
+    debug("broadcast (server stopped, cached only):", message.type);
+    this.replayCache.record(message);
   }
 
   async loadSettings() {
@@ -175,7 +212,7 @@ export default class DmScreenPlugin extends Plugin {
   startServer() {
     if (this.server) return;
     debug("startServer: port=", this.settings.serverPort, "maxClients=", this.settings.maxClients);
-    this.server = new PlayerScreenServer(this);
+    this.server = new PlayerScreenServer(this, this.replayCache);
     this.server.maxClients = this.settings.maxClients;
     this.server.onClientInfo = (info) => this.onPlayerClientInfo(info);
     this.server.onClientCountChanged = () => {
@@ -189,15 +226,6 @@ export default class DmScreenPlugin extends Plugin {
         view.debouncedRender?.();
       }
     };
-    this.server.onStateChange(() => {
-      const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-      for (const leaf of leaves) {
-        const view = leaf.view;
-        if (view instanceof DmControlPanel) {
-          view.scheduleSaveState();
-        }
-      }
-    });
     this.server.start(this.settings.serverPort);
     this.broadcastWaitingScreen();
     this.broadcastInspirationStyle();

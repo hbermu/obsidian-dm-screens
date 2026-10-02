@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { DmControlPanel } from "../views/DmControlPanel";
+import { ReplayCache } from "../server";
 
 beforeAll(() => {
   // Polyfill the few HTMLElement extensions used by DmControlPanel render paths
@@ -21,6 +22,10 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       ...((overrides.settings as object) ?? {}),
     },
     server: null,
+    replayCache: new ReplayCache(),
+    broadcast(msg: unknown) {
+      this.server?.broadcast(msg);
+    },
     sendInitiativeUpdate: vi.fn(),
     broadcastMapCalibration: vi.fn(),
     saveSettings: vi.fn(async () => {}),
@@ -170,19 +175,7 @@ describe("DmControlPanel.addImageLayer dedup", () => {
 
 describe("DmControlPanel.restoreState rebroadcast", () => {
   function makeServerStub() {
-    const broadcasts: any[] = [];
-    const lastState = new Map<string, string>();
-    return {
-      lastState,
-      broadcast: vi.fn((msg: any) => {
-        broadcasts.push(msg);
-      }),
-      forgetCached: vi.fn((types: string[]) => {
-        for (const type of types) lastState.delete(type);
-      }),
-      cachedEntries: vi.fn(() => [...lastState.entries()]),
-      _broadcasts: broadcasts,
-    };
+    return { broadcast: vi.fn() };
   }
 
   it("re-broadcasts image-layers-sync after restoring layers when the server is running", async () => {
@@ -256,10 +249,7 @@ describe("DmControlPanel.restoreState rebroadcast", () => {
 
 describe("DmControlPanel.republishToServer", () => {
   it("broadcasts the current image layers when called and the server is running", () => {
-    const serverStub = {
-      lastState: new Map<string, string>(),
-      broadcast: vi.fn(),
-    };
+    const serverStub = { broadcast: vi.fn() };
     const plugin = makePlugin({
       settings: {
         lastImageLayers: "[]",
@@ -305,10 +295,7 @@ describe("DmControlPanel.republishToServer", () => {
   });
 
   it("broadcasts show-background-media when activeBackgroundUrl is set", () => {
-    const serverStub = {
-      lastState: new Map<string, string>(),
-      broadcast: vi.fn(),
-    };
+    const serverStub = { broadcast: vi.fn() };
     const plugin = makePlugin({
       settings: {
         lastImageLayers: "[]",
@@ -331,10 +318,7 @@ describe("DmControlPanel.republishToServer", () => {
   });
 
   it("broadcasts show-background-media with mediaType video for video URLs", () => {
-    const serverStub = {
-      lastState: new Map<string, string>(),
-      broadcast: vi.fn(),
-    };
+    const serverStub = { broadcast: vi.fn() };
     const plugin = makePlugin({
       settings: {
         lastImageLayers: "[]",

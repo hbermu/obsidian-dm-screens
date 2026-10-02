@@ -144,4 +144,49 @@ describe("state persistence and recovery", function () {
     });
     expect(cache["map-show"]).toBeUndefined();
   });
+
+  // Quitting Obsidian does not reliably unload the plugin, so these read
+  // data.json from disk without a disable/enable in between.
+  it("Server stopped: Stop BG and Stop Map reach data.json, and an offline pick replays on start", async function () {
+    await (await panelButton("Add BG")).click();
+    await playerRec.waitFor("show-background-media");
+    await addMap();
+    mapRec.close();
+    playerRec.close();
+
+    await browser.executeObsidian(({ app }) => {
+      (app as any).plugins.plugins["dm-screen"].stopServer();
+    });
+    await (await panelButton("Stop BG")).click();
+    await (await panelButton("Stop Map")).click();
+
+    await browser.waitUntil(
+      async () => {
+        const persisted = await browser.executeObsidian(async ({ app }) => {
+          const data = await (app as any).plugins.plugins["dm-screen"].loadData();
+          return data?.lastBroadcastCache ?? {};
+        });
+        return !("show-background-media" in persisted) && !("map-show" in persisted);
+      },
+      { timeout: 5000, timeoutMsg: "Stop BG / Stop Map with the server stopped never reached data.json" }
+    );
+
+    await (await panelButton("Add BG")).click();
+    await expect(panelButton("Stop BG")).toExist();
+    await browser.waitUntil(
+      async () => {
+        const persisted = await browser.executeObsidian(async ({ app }) => {
+          const data = await (app as any).plugins.plugins["dm-screen"].loadData();
+          return data?.lastBroadcastCache ?? {};
+        });
+        return "show-background-media" in persisted;
+      },
+      { timeout: 5000, timeoutMsg: "Add BG with the server stopped never reached data.json" }
+    );
+
+    await startServer();
+    playerRec = await WsRecorder.connect(DEFAULT_PORT, "player");
+    mapRec = await WsRecorder.connect(DEFAULT_PORT, "map");
+    await playerRec.waitFor("show-background-media");
+  });
 });

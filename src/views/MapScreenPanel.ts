@@ -173,14 +173,7 @@ export class MapScreenPanel {
     }
 
     const mapTypes = ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"];
-    if (this.plugin.server) {
-      this.plugin.server.forgetCached(mapTypes);
-    } else {
-      for (const type of mapTypes) {
-        delete this.plugin.settings.lastBroadcastCache?.[type];
-      }
-      await this.plugin.saveSettings();
-    }
+    this.plugin.replayCache.forget(mapTypes);
     this.host.render();
   }
 
@@ -202,7 +195,7 @@ export class MapScreenPanel {
 
   private broadcastShow() {
     if (!this.activeMap) return;
-    this.plugin.server?.broadcast({
+    this.plugin.broadcast({
       type: "map-show",
       payload: {
         ...this.activeMap,
@@ -214,7 +207,7 @@ export class MapScreenPanel {
 
   private broadcastConfig() {
     const { pxPerSquare, gridOffsetX, gridOffsetY, showGrid, gridColor, gridOpacity } = this.state;
-    this.plugin.server?.broadcast({
+    this.plugin.broadcast({
       type: "map-config",
       payload: { pxPerSquare, gridOffsetX, gridOffsetY, showGrid, gridColor, gridOpacity },
     });
@@ -223,7 +216,7 @@ export class MapScreenPanel {
   private broadcastView(immediate = false) {
     const send = () => {
       const { mode, panX, panY, rotation } = this.state;
-      this.plugin.server?.broadcast({ type: "map-view", payload: { mode, panX, panY, rotation: rotation ?? 0 } });
+      this.plugin.broadcast({ type: "map-view", payload: { mode, panX, panY, rotation: rotation ?? 0 } });
     };
     if (immediate) {
       if (this.viewBroadcastTimer) {
@@ -242,7 +235,7 @@ export class MapScreenPanel {
 
   broadcastAoes(immediate = false) {
     const send = () => {
-      this.plugin.server?.broadcast({ type: "map-aoe-sync", payload: { aoes: this.aoes } });
+      this.plugin.broadcast({ type: "map-aoe-sync", payload: { aoes: this.aoes } });
     };
     if (immediate) {
       if (this.aoeBroadcastTimer) {
@@ -261,7 +254,7 @@ export class MapScreenPanel {
 
   broadcastVisions(immediate = false) {
     const send = () => {
-      this.plugin.server?.broadcast({ type: "map-vision", payload: { visions: this.visions } });
+      this.plugin.broadcast({ type: "map-vision", payload: { visions: this.visions } });
     };
     if (immediate) {
       if (this.visionBroadcastTimer) {
@@ -338,7 +331,7 @@ export class MapScreenPanel {
   }
 
   broadcastFog() {
-    this.plugin.server?.broadcast({
+    this.plugin.broadcast({
       type: "map-fog",
       payload: { dataUrl: this.fogDataUrl, opacity: this.plugin.settings.mapFogTvOpacity },
     });
@@ -351,7 +344,7 @@ export class MapScreenPanel {
   }
 
   broadcastWalls() {
-    this.plugin.server?.broadcast({ type: "map-walls", payload: { walls: this.walls } });
+    this.plugin.broadcast({ type: "map-walls", payload: { walls: this.walls } });
   }
 
   async commitWalls(walls: MapWall[]) {
@@ -431,7 +424,7 @@ export class MapScreenPanel {
       delete this.plugin.settings.lastSourceLabels.map;
     }
     void this.plugin.saveSettings();
-    this.plugin.server?.broadcast({ type: "map-clear", payload: {} });
+    this.plugin.broadcast({ type: "map-clear", payload: {} });
     this.host.render();
   }
 
@@ -496,6 +489,7 @@ export class MapScreenPanel {
 
   private effectiveMapClient(): { width: number; height: number; devicePixelRatio: number } {
     if (this.mapClients.length > 0) return this.mapClients[0];
+    if (this.plugin.settings.lastMapScreenClient) return this.plugin.settings.lastMapScreenClient;
     return {
       width: this.plugin.settings.tvWidth || 1920,
       height: this.plugin.settings.tvHeight || 1080,

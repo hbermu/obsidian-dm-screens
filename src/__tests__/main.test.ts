@@ -9,9 +9,10 @@ vi.mock("obsidian", async () => {
 });
 
 // Mock dependent modules to isolate main.ts logic
-vi.mock("../server", () => ({
-  PlayerScreenServer: vi.fn(),
-}));
+vi.mock("../server", async () => {
+  const actual = await vi.importActual<typeof import("../server")>("../server");
+  return { ReplayCache: actual.ReplayCache, PlayerScreenServer: vi.fn() };
+});
 
 vi.mock("../hydrus/cache", () => ({
   HydrusCache: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock("../debug", () => ({
 
 import DmScreenPlugin from "../main";
 import { DEFAULT_SETTINGS } from "../settings";
-import { PlayerScreenServer } from "../server";
+import { PlayerScreenServer, ReplayCache } from "../server";
 import { HydrusClient } from "../hydrus/client";
 import { HydrusCache } from "../hydrus/cache";
 import { DdbImageCache } from "../dndbeyond/imageCache";
@@ -54,7 +55,6 @@ function makeFakeServer() {
     maxClients: 10,
     onClientInfo: null as any,
     onClientCountChanged: null as any,
-    onStateChange: vi.fn(() => () => {}),
   };
 }
 
@@ -62,6 +62,8 @@ function makePlugin(settingsOverrides: Record<string, unknown> = {}): DmScreenPl
   const plugin = Object.create(DmScreenPlugin.prototype) as DmScreenPlugin;
   plugin.settings = { ...DEFAULT_SETTINGS, ...settingsOverrides } as any;
   plugin.server = null;
+  plugin.replayCache = new ReplayCache();
+  (plugin as any).replayCacheSaveTimer = null;
   plugin.hydrusCache = null;
   plugin.ddbImageCache = null;
   (plugin as any).hydrusSweepInterval = null;
@@ -219,7 +221,7 @@ describe("DmScreenPlugin", () => {
       const plugin = makePlugin({ serverPort: 4000, maxClients: 5 });
       plugin.startServer();
       expect(plugin.server).not.toBeNull();
-      expect(PlayerScreenServer).toHaveBeenCalledWith(plugin);
+      expect(PlayerScreenServer).toHaveBeenCalledWith(plugin, plugin.replayCache);
       expect(fakeServer.start).toHaveBeenCalledWith(4000);
       expect(fakeServer.maxClients).toBe(5);
       expect(Notice).toHaveBeenCalledWith("Player Screen server started on port 4000");
@@ -234,6 +236,56 @@ describe("DmScreenPlugin", () => {
       plugin.startServer();
       expect(plugin.server).toBe(firstServer);
       expect(PlayerScreenServer).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("broadcast and the replay cache", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("records into the replay cache and persists it when the server is stopped", () => {
+      vi.useFakeTimers();
+      const plugin = makePlugin({
+        lastBroadcastCache: { "show-background-media": '{"type":"show-background-media","payload":{}}' },
+      });
+      plugin.saveSettings = vi.fn(async () => {});
+      plugin.initReplayCache();
+
+      plugin.broadcast({ type: "hide-background-media", payload: {} });
+      plugin.broadcast({ type: "map-show", payload: { url: "/vault/map.png" } });
+
+      expect(plugin.settings.lastBroadcastCache).toEqual({
+        "map-show": '{"type":"map-show","payload":{"url":"/vault/map.png"}}',
+      });
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    });
+
+    it("forwards to the running server instead of recording directly", () => {
+      const plugin = makePlugin();
+      const fakeServer = makeFakeServer();
+      plugin.server = fakeServer as any;
+      const msg = { type: "map-clear", payload: {} };
+
+      plugin.broadcast(msg);
+
+      expect(fakeServer.broadcast).toHaveBeenCalledWith(msg);
+    });
+
+    it("flushes a pending replay-cache save on unload", async () => {
+      vi.useFakeTimers();
+      const plugin = makePlugin();
+      plugin.saveSettings = vi.fn(async () => {});
+      plugin.initReplayCache();
+      plugin.broadcast({ type: "map-clear", payload: {} });
+
+      await plugin.onunload();
+
+      expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1000);
+      expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
     });
   });
 
