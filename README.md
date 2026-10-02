@@ -8,7 +8,11 @@ DM Screen turns Obsidian into a local control center for tabletop play: it serve
 
 Built for in-person 5e games where the DM wants a clean visual layer for the players (maps, portraits, video backgrounds, an initiative tracker) without leaving Obsidian.
 
-![DM Control Panel](docs/screenshots/dm-control-panel.png)
+![The DM pushes a background and an image layer from the active note; the player screen follows live](docs/screenshots/live-push.gif)
+
+*Left: the DM Control Panel inside Obsidian. Right: the player screen on the TV. Images are added hidden and revealed with the eye toggle when the party should see them.*
+
+<p align="center"><img src="docs/screenshots/dm-control-panel.png" alt="DM Control Panel" width="360"></p>
 
 ## Features
 
@@ -47,6 +51,8 @@ A second endpoint dedicated to battlemaps for in-person play with miniatures on 
 
 1. With the server running, open the `/map` link on the table TV — the MAP SCREEN section in the DM panel has it, with a **Copy** button so you get the access token with it. Use the on-screen button to go fullscreen.
 2. The TV appears as a resolution badge in the panel. Click it and enter the screen's physical **diagonal in inches**; toggle the **test pattern** (a 6-inch ruler and a 1-inch square rendered on the TV) and fine-tune until a real ruler agrees. The calibration is stored per resolution and reused forever.
+
+   ![Calibration modal and the test pattern on the TV](docs/screenshots/map-calibration.png)
 3. Click **Add Map** — same sources as the background: images embedded in the active note and `hydrus://` references (images or videos, so animated maps just work). The Hydrus explorer also has a **Set as map** action.
 
 **At the table**
@@ -70,28 +76,32 @@ While a map is active, the MAP SCREEN section gains a **Fog** button (it reads `
 - **Fog tab** — a single mask over the map: black hides, transparent reveals. Paint with a sized **brush**, a **rectangle** marquee, a snapped **grid cell** or **grid rectangle**, or the **Room** tool (one click floods a whole walled room). Reveal and Cover are the two modes; **Reveal All** / **Cover All** reset the whole map. The mask is saved as a sidecar next to nothing you have to manage — it lives in `.dm-screen/fog/`, keyed to the map, and comes back whenever you show that map again (note images and Hydrus-cached files alike). TV opacity of the fog layer is adjustable in settings.
 - **Walls tab** — draw line-of-sight **walls** and **doors** (chained clicks or a rectangle drag), toggle a door open/closed, or erase. Walls power dynamic vision and the Room flood.
 
+![Dynamic vision on the panel and the TV](docs/screenshots/map-vision.png)
+
+*A torch (bright + dim ring) and a darkvision on the panel's preview; on the TV, walls cut the line of sight and only what the lights reach is revealed.*
+
 **Dynamic vision** lives in its own panel section: add a **Circle** or **Square** vision (range in feet, with a soft feather), drag it onto a token, and the fog carves out exactly what it can see. Each vision has a **bright** radius plus an optional **dim** ring that stays half-shrouded, and **Lights…** pre-fills both from the 5e catalog (torch 20/+20 ft, lantern, *light*, *daylight*, darkvision 60/120 ft …). Give a vision a name and a marker colour to tell the party's torches apart, and flip the 🔗 group toggle to drag them all together as the party moves. Where walls block the line of sight the reveal stops at the wall; an **open door** lets vision spill through while a closed one blocks it. **Bake into fog** burns the current vision permanently into the mask (for "we've explored this" areas) and clears the live layer.
 
 **Importing walls** — drawing walls by hand is optional. On the Walls tab:
 
-![Import walls from UVTT or Foundry](docs/screenshots/map-walls-import.png)
+![Importing a Foundry module zip fills in every wall and door](docs/screenshots/walls-import.gif)
 
 - **Import UVTT** — load a `.dd2vtt` / `.uvtt` / `.df2vtt` export (Dungeondraft and most VTT map packs). Walls, objects, and portals become walls and doors, and the map's grid size is set automatically.
 - **Import Foundry** — load a Foundry VTT module `.zip` (the format Czepeku and other creators ship). The scene's walls and doors are extracted and scaled to your map. Both old (NeDB) and new (LevelDB) Foundry module layouts are supported.
 
 ### Spell AoE overlays
 
-![AoE overlays on a map](docs/screenshots/map-aoe-overlays.png)
+![Searching Fireball and Burning Hands, placing them and aiming the cone](docs/screenshots/aoe.gif)
 
-*Templates render at true grid scale (1 square = 5 ft) on both the panel preview and the TV.*
+*Templates render at true grid scale (1 square = 5 ft) on both the DM's view and the TV (bottom-left inset). Shown here from Exploration Mode's AoEs window; the panel section works the same way.*
 
 The **AoE Overlays** section drops spell templates onto the map: **Circle**, **Square**, **Cone**, **Line**, and **Ring** presets, or a **Spells…** search over the 5e catalog that pre-fills the shape, size, and color for a chosen spell. Set size (and width, for lines and rings), color, opacity, and rotation per template; drag the anchor dot on the preview to place it and the diamond handle to aim it. AoEs are ephemeral combat state — they clear when you stop the map.
 
 ### Exploration Mode
 
-![Exploration Mode](docs/screenshots/map-explore-mode.png)
+![Exploration Mode: opening doors, revealing rooms and moving the players' view](docs/screenshots/explore.gif)
 
-*A table-play surface for running the map live: toggle doors and rooms, move the players' view, and light the way.*
+*Opening the hall door lets the torchlight spill in, a click reveals each room, and in physical scale the green rectangle is what the table TV (bottom-left inset) shows.*
 
 The **Explore** button, next to the Map Screen title (so it works even with the section collapsed), opens a near-fullscreen surface built for running the session, not editing it:
 
@@ -101,6 +111,8 @@ The **Explore** button, next to the Map Screen title (so it works even with the 
 - **Bind a vision to the view** — flip the ⦿ toggle on a vision and its lit circle/square follows the players' viewport as you pan, a moving pool of light that makes exploration feel alive.
 - **Scale** and **Grid** toggles in the top bar switch the TV between *fit screen* and *physical 1″* and show or hide the grid, which is drawn over the map here too.
 - Floating **AoEs**, **Vision** and **Combat** windows carry the full controls, so you can add, tweak, and place templates or run initiative (local, Initiative Tracker or D&D Beyond) without leaving the modal; drag them by the header out of the way or minimize them, and they remember where you left them.
+
+![Exploration Mode with the Combat, AoEs and Vision windows](docs/screenshots/map-explore-mode.png)
 
 Everything here reuses the same fog, walls, and vision the editor produced — Exploration Mode is where you *drive* them at the table.
 
@@ -128,6 +140,9 @@ Browse a self-hosted [Hydrus](https://hydrusnetwork.github.io/hydrus/) media lib
 
 - Click **Media from Hydrus** in the DM Control Panel to open the explorer.
 - Left-click a tile to open a full-resolution preview with action buttons (add as image layer, set as background, set as map, copy tags, copy reference).
+
+  ![Hydrus preview with its tags and actions](docs/screenshots/hydrus-preview.png)
+
 - Right-click a tile — or use its ⋮ button — for the same actions as a context menu, plus cache management (download / delete local copy).
 - Videos can be used as a background or map, not as an image layer.
 - Downloaded media is cached locally; the cache folder, retention, and tag filters are all configurable in settings.
@@ -148,6 +163,9 @@ To set it up:
 ### Webhook share (Telegram, Discord, …)
 
 Right-click any image layer in the DM Control Panel → **Send to image webhook…** → pick a target, edit the caption (defaults to the layer's label), hit Send. Anything that accepts a `multipart/form-data` upload works:
+
+<p align="center"><img src="docs/screenshots/webhook-send.png" alt="Send image to a webhook target" width="480"></p>
+
 
 - **[Telegram](https://core.telegram.org/bots/api#sendphoto) bot** — `sendPhoto` against a chat your bot is in, with the caption riding along.
 - **[Discord](https://discord.com/developers/docs/resources/webhook#execute-webhook) webhook** — drops the image into a channel; the caption becomes the message body.
@@ -191,7 +209,7 @@ The plugin does not collect telemetry, phone home, or transmit any data to third
 
 ## Credits & attribution
 
-The battlemap in the map-screen screenshots is by **[Czepeku](https://www.czepeku.com/)**. They make beautiful maps, a lot of them, and if you run games in person or online their packs are worth every penny.
+The battlemap in the map-screen screenshots and GIFs (*Adventurers' Guildhall*, walls imported from its Foundry module) and the scene art in the Hydrus screenshots are by **[Czepeku](https://www.czepeku.com/)**. They make beautiful maps, a lot of them, and if you run games in person or online their packs are worth every penny.
 
 - 🌐 Website & shop: [czepeku.com](https://www.czepeku.com/)
 - ❤️ Patreon: [patreon.com/czepeku](https://www.patreon.com/czepeku)
