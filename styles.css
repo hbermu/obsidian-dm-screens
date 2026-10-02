@@ -111,6 +111,11 @@
   margin: 0;
 }
 
+.dm-explore-open-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .dm-emit-toggle {
   display: inline-flex;
   align-items: center;
@@ -187,6 +192,13 @@
 .dm-add-combatant input {
   padding: 4px 6px;
   font-size: 0.85em;
+}
+
+/* The Explore Combat window is narrower than the sidebar: the name field
+   absorbs the squeeze instead of pushing the row past the window edge. */
+.dm-floating-window .dm-add-combatant input[type="text"] {
+  flex: 1;
+  min-width: 0;
 }
 
 .dm-initiative-list {

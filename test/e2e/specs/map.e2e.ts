@@ -83,6 +83,6 @@ describe("map screen", function () {
 
     await expect(panelButton("Add Map")).toExist();
     expect(await (await panelButton("Fog")).isExisting()).toBe(false);
-    expect(await (await panelButton("Explore")).isExisting()).toBe(false);
+    expect(await (await panelButton("Explore")).isEnabled()).toBe(false);
   });
 });

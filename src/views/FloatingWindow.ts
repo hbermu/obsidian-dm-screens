@@ -7,6 +7,7 @@ export interface WindowState {
 export interface FloatingWindowOptions {
   id: string;
   title: string;
+  width?: number;
   initial: WindowState;
   onChange(state: WindowState): void;
 }
@@ -28,7 +29,7 @@ export class FloatingWindow {
     this.state = { ...opts.initial };
     this.el = document.createElement("div");
     this.el.className = "dm-floating-window";
-    this.el.style.width = "260px";
+    this.el.style.width = `${opts.width ?? 260}px`;
 
     this.header = this.el.createDiv("dm-floating-window-header");
     this.header.createDiv({ cls: "dm-floating-window-title", text: opts.title });

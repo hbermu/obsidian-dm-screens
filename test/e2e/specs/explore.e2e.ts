@@ -229,4 +229,39 @@ describe("exploration mode", function () {
     await modal.$("button=Exit").click();
     await browser.waitUntil(async () => !(await modal.isExisting()));
   });
+
+  it("opens from the header of a collapsed Map Screen section and drives scale, grid and combat", async function () {
+    const sectionTitle = browser.$(".dm-control-panel").$("h3=Map Screen");
+    await sectionTitle.click();
+    await expect(panelButton("Rotate: 0°")).not.toBeDisplayed();
+    await expect(panelButton("Explore")).toBeDisplayed();
+
+    await (await panelButton("Explore")).click();
+    const modal = browser.$(".dm-explore-modal");
+    await expect(modal).toExist();
+    const combat = await browser.executeObsidian(() =>
+      Array.from(document.querySelectorAll(".dm-explore-modal .dm-floating-window-title")).some(
+        (t) => t.textContent === "Combat",
+      ),
+    );
+    expect(combat).toBe(true);
+    await expect(modal.$(".dm-floating-window .dm-combat-tabs")).toExist();
+
+    let seen = rec.count("map-view");
+    await modal.$("button=Scale: fit screen").click();
+    await rec.waitFor("map-view", { skip: seen, where: (m) => m.payload.mode === "physical" });
+    await expect(modal.$("button=Scale: physical 1″")).toExist();
+
+    seen = rec.count("map-config");
+    await modal.$("button=Grid: off").click();
+    await rec.waitFor("map-config", { skip: seen, where: (m) => m.payload.showGrid === true });
+    await expect(modal.$("button=Grid: on")).toExist();
+
+    await modal.$("button=Scale: physical 1″").click();
+    await modal.$("button=Grid: on").click();
+    await modal.$("button=Exit").click();
+    await browser.waitUntil(async () => !(await modal.isExisting()));
+    await sectionTitle.click();
+    await expect(panelButton("Rotate: 0°")).toBeDisplayed();
+  });
 });

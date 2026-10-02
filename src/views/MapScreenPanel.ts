@@ -1,6 +1,6 @@
 import { Menu, Notice, setIcon } from "obsidian";
 import type DmScreenPlugin from "../main";
-import type { DmControlPanel } from "./DmControlPanel";
+import type { CombatMirror, DmControlPanel } from "./DmControlPanel";
 import { encodeForVaultUrl, layerLabelFromTags } from "./HydrusExplorerModal";
 import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { resolveSourceLabel } from "../sourceLabel";
@@ -508,8 +508,22 @@ export class MapScreenPanel {
 
   renderSection(container: HTMLElement) {
     const section = container.createDiv("dm-section");
-    const title = section.createEl("h3", { text: "Map Screen" });
+    // Explore lives in the header, the one row a collapsed section keeps, so
+    // the table-play surface opens without unfolding the whole section.
+    const header = section.createDiv("dm-section-header");
+    const title = header.createEl("h3", { text: "Map Screen" });
     this.host.makeCollapsible(section, title, "map-screen");
+    const exploreBtn = header.createEl("button", { text: "Explore", cls: "dm-explore-open-btn" });
+    const exploreMap = this.activeMap;
+    if (exploreMap) {
+      exploreBtn.title = "Table-play exploration: toggle doors and reveal rooms";
+      exploreBtn.addEventListener("click", () => {
+        new MapExploreModal(this.plugin.app, this.plugin, this, exploreMap).open();
+      });
+    } else {
+      exploreBtn.disabled = true;
+      exploreBtn.title = "Add a map to explore it";
+    }
 
     const isRunning = !!this.plugin.server;
     if (isRunning) {
@@ -582,23 +596,12 @@ export class MapScreenPanel {
     const modeBtn = btnRow.createEl("button", {
       text: this.state.mode === "physical" ? "Scale: physical 1″" : "Scale: fit screen",
     });
-    modeBtn.addEventListener("click", () => {
-      this.state.mode = this.state.mode === "physical" ? "fit" : "physical";
-      this.clampStateToViewport();
-      this.broadcastView(true);
-      this.persistState();
-      this.host.render();
-    });
+    modeBtn.addEventListener("click", () => this.toggleScaleMode());
 
     const gridBtn = btnRow.createEl("button", {
       text: this.state.showGrid ? "Grid: on" : "Grid: off",
     });
-    gridBtn.addEventListener("click", () => {
-      this.state.showGrid = !this.state.showGrid;
-      this.broadcastConfig();
-      this.persistState();
-      this.host.render();
-    });
+    gridBtn.addEventListener("click", () => this.toggleGrid());
 
     const rotateBtn = btnRow.createEl("button", { text: `Rotate: ${this.state.rotation ?? 0}°` });
     rotateBtn.title = "Rotate the map on the screen in 90° steps";
@@ -616,16 +619,30 @@ export class MapScreenPanel {
       new MapFogModal(this.plugin.app, this.plugin, this, map).open();
     });
 
-    const exploreBtn = btnRow.createEl("button", { text: "Explore" });
-    exploreBtn.title = "Table-play exploration: toggle doors and reveal rooms";
-    exploreBtn.addEventListener("click", () => {
-      new MapExploreModal(this.plugin.app, this.plugin, this, map).open();
-    });
-
     this.renderGridControls(section);
     this.renderPanPreview(section, map);
     this.renderAoeControls(section, map);
     this.renderVisionControls(section, map);
+  }
+
+  // Shared by the section's buttons and the Explore modal's bar.
+  toggleScaleMode() {
+    this.state.mode = this.state.mode === "physical" ? "fit" : "physical";
+    this.clampStateToViewport();
+    this.broadcastView(true);
+    this.persistState();
+    this.host.render();
+  }
+
+  toggleGrid() {
+    this.state.showGrid = !this.state.showGrid;
+    this.broadcastConfig();
+    this.persistState();
+    this.host.render();
+  }
+
+  registerCombatMirror(mirror: CombatMirror): () => void {
+    return this.host.registerCombatMirror(mirror);
   }
 
   private renderGridControls(section: HTMLElement) {

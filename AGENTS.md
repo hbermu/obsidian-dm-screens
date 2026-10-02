@@ -175,7 +175,7 @@ src/
     MapScreenPanel.ts    # Map Screen section of the DM panel (picker, pan preview, grid controls)
     MapCalibrationModal.ts  # Per-screen physical calibration (diagonal + fine-tune + test pattern)
     MapFogModal.ts       # Fog and walls editor
-    MapExploreModal.ts   # Exploration Mode (room/door gestures, floating AoE and Vision windows)
+    MapExploreModal.ts   # Exploration Mode (room/door gestures, scale/grid toggles, floating AoE, Vision and Combat windows)
     FloatingWindow.ts    # Draggable, minimizable window used by Exploration Mode
     controlCard.ts       # Collapsible AoE/vision control card
     mapStage.ts          # fitScale / finiteScale shared stage math

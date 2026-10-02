@@ -93,13 +93,14 @@ The **AoE Overlays** section drops spell templates onto the map: **Circle**, **S
 
 *A table-play surface for running the map live: toggle doors and rooms, move the players' view, and light the way.*
 
-The **Explore** button opens a near-fullscreen surface built for running the session, not editing it:
+The **Explore** button, next to the Map Screen title (so it works even with the section collapsed), opens a near-fullscreen surface built for running the session, not editing it:
 
 - **Click a door** to open or close it — green means open, grey means closed. The players' TV recomputes line of sight instantly.
 - **Click a room** to reveal or hide its fog in one gesture; a green hover highlight shows which room you're about to toggle. Doors always bound a room here, so an open door lights up without merging rooms.
 - **Move the players' view** — in physical mode, drag the viewport rectangle to pan what the table sees. A **lock** button freezes it so you can't nudge it by accident; hold **Shift** to momentarily click straight through to doors and rooms without moving anything.
 - **Bind a vision to the view** — flip the ⦿ toggle on a vision and its lit circle/square follows the players' viewport as you pan, a moving pool of light that makes exploration feel alive.
-- Two floating **AoEs** and **Vision** windows carry the full controls, so you can add, tweak, and place templates without leaving the modal; drag them by the header out of the way or minimize them, and they remember where you left them.
+- **Scale** and **Grid** toggles in the top bar switch the TV between *fit screen* and *physical 1″* and show or hide the grid, which is drawn over the map here too.
+- Floating **AoEs**, **Vision** and **Combat** windows carry the full controls, so you can add, tweak, and place templates or run initiative (local, Initiative Tracker or D&D Beyond) without leaving the modal; drag them by the header out of the way or minimize them, and they remember where you left them.
 
 Everything here reuses the same fog, walls, and vision the editor produced — Exploration Mode is where you *drive* them at the table.
 
