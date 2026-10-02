@@ -109,6 +109,84 @@ export class VaultServeAllowlist {
   }
 }
 
+// The plugin owns this, not the server: state set while the server is stopped
+// must still reach settings.lastBroadcastCache and the next server start.
+export class ReplayCache {
+  readonly entries: Map<string, string>;
+  private changeCallbacks: Set<() => void> = new Set();
+
+  constructor(seed: Record<string, string> = {}) {
+    this.entries = new Map(Object.entries(seed));
+  }
+
+  onChange(callback: () => void): () => void {
+    this.changeCallbacks.add(callback);
+    return () => {
+      this.changeCallbacks.delete(callback);
+    };
+  }
+
+  private emitChange() {
+    for (const cb of this.changeCallbacks) {
+      cb();
+    }
+  }
+
+  record(message: PlayerMessage, data: string = JSON.stringify(message)) {
+    const channel = messageChannel(message.type);
+    if (message.type === "clear") {
+      for (const type of [...this.entries.keys()]) {
+        if (messageChannel(type) === channel) this.entries.delete(type);
+      }
+    } else if (message.type === "map-clear") {
+      for (const type of [...this.entries.keys()]) {
+        if (messageChannel(type) === channel && type !== "map-calibration") {
+          this.entries.delete(type);
+        }
+      }
+    } else if (message.type === "hide-background-media") {
+      this.entries.delete("show-background-media");
+    } else {
+      this.entries.set(message.type, data);
+      this.trim();
+    }
+    this.emitChange();
+  }
+
+  forget(types: string[]): void {
+    for (const type of types) {
+      this.entries.delete(type);
+    }
+    this.emitChange();
+  }
+
+  toRecord(): Record<string, string> {
+    return Object.fromEntries(this.entries);
+  }
+
+  // The cache is persisted as settings.lastBroadcastCache, so an unbounded one
+  // grows data.json as well as the heap. Evict the largest entry until it fits,
+  // but never drop the only entry — a single oversized map is still the scene a
+  // late joiner needs.
+  private trim() {
+    let total = 0;
+    for (const v of this.entries.values()) total += v.length;
+    while (total > MAX_REPLAY_CACHE_BYTES && this.entries.size > 1) {
+      let largestKey = "";
+      let largestLen = -1;
+      for (const [k, v] of this.entries) {
+        if (v.length > largestLen) {
+          largestLen = v.length;
+          largestKey = k;
+        }
+      }
+      this.entries.delete(largestKey);
+      total -= largestLen;
+      debugWarn("replay cache over budget — evicted", largestKey, largestLen, "bytes");
+    }
+  }
+}
+
 export class PlayerScreenServer {
   private plugin: DmScreenPlugin;
   private httpServer: Server | null = null;
@@ -118,37 +196,21 @@ export class PlayerScreenServer {
   maxClients = 10;
   onClientInfo: ((info: ClientInfo) => void) | null = null;
   onClientCountChanged: (() => void) | null = null;
-  // Cache last broadcast per message type for late-joining clients
-  private lastState = new Map<string, string>();
+  private cache: ReplayCache;
   private allowlist = new VaultServeAllowlist();
-  private stateChangeCallbacks: Set<() => void> = new Set();
 
-  constructor(plugin: DmScreenPlugin) {
+  constructor(plugin: DmScreenPlugin, cache: ReplayCache = new ReplayCache()) {
     this.plugin = plugin;
-  }
-
-  onStateChange(callback: () => void): () => void {
-    this.stateChangeCallbacks.add(callback);
-    return () => {
-      this.stateChangeCallbacks.delete(callback);
-    };
-  }
-
-  private emitStateChange() {
-    for (const cb of this.stateChangeCallbacks) {
-      cb();
+    this.cache = cache;
+    // Entries recorded while the server was stopped never passed through
+    // broadcast(), so their vault files must be allowlisted here.
+    for (const data of cache.entries.values()) {
+      try {
+        this.allowlist.observe(JSON.parse(data) as PlayerMessage);
+      } catch {
+        debugWarn("replay cache entry is not valid JSON — not allowlisted");
+      }
     }
-  }
-
-  forgetCached(types: string[]): void {
-    for (const type of types) {
-      this.lastState.delete(type);
-    }
-    this.emitStateChange();
-  }
-
-  cachedEntries(): [string, string][] {
-    return [...this.lastState.entries()];
   }
 
   get clientCount(): number {
@@ -300,31 +362,9 @@ export class PlayerScreenServer {
     }
   }
 
-  // The cache is persisted as settings.lastBroadcastCache, so an unbounded one
-  // grows data.json as well as the heap. Evict the largest entry until it fits,
-  // but never drop the only entry — a single oversized map is still the scene a
-  // late joiner needs.
-  private trimReplayCache() {
-    let total = 0;
-    for (const v of this.lastState.values()) total += v.length;
-    while (total > MAX_REPLAY_CACHE_BYTES && this.lastState.size > 1) {
-      let largestKey = "";
-      let largestLen = -1;
-      for (const [k, v] of this.lastState) {
-        if (v.length > largestLen) {
-          largestLen = v.length;
-          largestKey = k;
-        }
-      }
-      this.lastState.delete(largestKey);
-      total -= largestLen;
-      debugWarn("replay cache over budget — evicted", largestKey, largestLen, "bytes");
-    }
-  }
-
   // Replay cached broadcasts of the client's own channel to a late joiner.
   private replayCachedState(ws: WebSocketLike, channel: ClientChannel) {
-    for (const [type, data] of this.lastState.entries()) {
+    for (const [type, data] of this.cache.entries) {
       if (messageChannel(type) !== channel) continue;
       if (ws.readyState === 1) ws.send(data);
     }
@@ -336,24 +376,7 @@ export class PlayerScreenServer {
     const data = JSON.stringify(message);
     debug("broadcast:", message.type, "→ channel", channel, `(${data.length} bytes)`);
 
-    if (message.type === "clear") {
-      for (const type of [...this.lastState.keys()]) {
-        if (messageChannel(type) === channel) this.lastState.delete(type);
-      }
-    } else if (message.type === "map-clear") {
-      for (const type of [...this.lastState.keys()]) {
-        if (messageChannel(type) === channel && type !== "map-calibration") {
-          this.lastState.delete(type);
-        }
-      }
-    } else if (message.type === "hide-background-media") {
-      this.lastState.delete("show-background-media");
-    } else {
-      this.lastState.set(message.type, data);
-      this.trimReplayCache();
-    }
-
-    this.emitStateChange();
+    this.cache.record(message, data);
 
     for (const client of this.clients) {
       if ((this.clientChannels.get(client) ?? "player") !== channel) continue;

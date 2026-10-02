@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { MapScreenPanel } from "../views/MapScreenPanel";
 import { Notice } from "obsidian";
+import { ReplayCache } from "../server";
 
 beforeAll(() => {
   if (!HTMLElement.prototype.addClass) {
@@ -24,14 +25,6 @@ vi.mock("obsidian", async () => {
   };
 });
 
-function makeServerStub() {
-  return {
-    broadcast: vi.fn(),
-    forgetCached: vi.fn(),
-    cachedEntries: vi.fn(() => []),
-  };
-}
-
 function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
     settings: {
@@ -47,6 +40,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       ...((overrides.settings as object) ?? {}),
     },
     server: null,
+    replayCache: new ReplayCache(),
+    broadcast: vi.fn(),
     saveSettings: vi.fn(async () => {}),
     broadcastMapCalibration: vi.fn(),
     app: { vault: { adapter: { exists: vi.fn() } } },
@@ -64,11 +59,21 @@ function makePanel(plugin = makePlugin()) {
 }
 
 describe("MapScreenPanel restore with missing non-Hydrus map", () => {
-  it("drops the map, shows Notice, clears state, calls forgetCached when server is running", async () => {
+  it("drops the map, shows Notice, clears state and forgets every map cache entry", async () => {
     const { recoverVaultImage } = await import("../hydrus/recoverImage");
     vi.mocked(recoverVaultImage).mockResolvedValue("missing");
 
-    const { panel, host, plugin } = makePanel(makePlugin({ server: makeServerStub() }));
+    const replayCache = new ReplayCache({
+      "map-show": '{"type":"map-show","payload":{}}',
+      "map-view": '{"type":"map-view","payload":{}}',
+      "map-config": '{"type":"map-config","payload":{}}',
+      "map-aoe-sync": '{"type":"map-aoe-sync","payload":{}}',
+      "map-vision": '{"type":"map-vision","payload":{}}',
+      "map-fog": '{"type":"map-fog","payload":{}}',
+      "map-walls": '{"type":"map-walls","payload":{}}',
+      "map-calibration": '{"type":"map-calibration","payload":{}}',
+    });
+    const { panel, host } = makePanel(makePlugin({ replayCache }));
     panel.activeMap = { url: "/vault/.dm-screen/test.jpg", mediaType: "image", naturalWidth: 2000, naturalHeight: 3000 };
     panel.aoes = [{ id: "aoe-1", shape: "circle", sizeFt: 20, widthFt: 0, color: "#ff0000", opacity: 0.5, rotation: 0, x: 100, y: 200 }];
     panel.visions = [{ id: "v-1", shape: "circle", x: 500, y: 600, sizeFt: 30, dimFt: 0, featherFt: 5 }];
@@ -83,46 +88,7 @@ describe("MapScreenPanel restore with missing non-Hydrus map", () => {
     expect(panel.visions).toEqual([]);
     expect(panel.walls).toEqual([]);
     expect(panel.fogDataUrl).toBeNull();
-    expect(plugin.server.forgetCached).toHaveBeenCalledWith([
-      "map-show",
-      "map-view",
-      "map-config",
-      "map-aoe-sync",
-      "map-vision",
-      "map-fog",
-      "map-walls",
-    ]);
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-    expect(host.render).toHaveBeenCalledTimes(1);
-  });
-
-  it("drops the map, shows Notice, clears state, deletes cache entries and saves when server is null", async () => {
-    const { recoverVaultImage } = await import("../hydrus/recoverImage");
-    vi.mocked(recoverVaultImage).mockResolvedValue("missing");
-
-    const { panel, host, plugin } = makePanel(
-      makePlugin({
-        settings: {
-          lastBroadcastCache: {
-            "map-show": '{"type":"map-show","payload":{}}',
-            "map-view": '{"type":"map-view","payload":{}}',
-            "map-config": '{"type":"map-config","payload":{}}',
-            "map-aoe-sync": '{"type":"map-aoe-sync","payload":{}}',
-            "map-vision": '{"type":"map-vision","payload":{}}',
-            "map-fog": '{"type":"map-fog","payload":{}}',
-            "map-walls": '{"type":"map-walls","payload":{}}',
-          },
-        },
-      })
-    );
-    panel.activeMap = { url: "/vault/maps/missing.png", mediaType: "image", naturalWidth: 2000, naturalHeight: 3000 };
-
-    await (panel as any).checkAndRecoverMap();
-
-    expect(Notice).toHaveBeenCalledWith('Map "missing.png" is no longer available');
-    expect(panel.activeMap).toBeNull();
-    expect(plugin.settings.lastBroadcastCache).toEqual({});
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect([...replayCache.entries.keys()]).toEqual(["map-calibration"]);
     expect(host.render).toHaveBeenCalledTimes(1);
   });
 

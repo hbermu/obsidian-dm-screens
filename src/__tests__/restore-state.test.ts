@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { PlayerScreenServer } from "../server";
+import { PlayerScreenServer, ReplayCache } from "../server";
 
 function makePlugin() {
   return {
@@ -26,7 +26,7 @@ describe("Server: hide-background-media cache purge", () => {
   it("show-background-media is cached", () => {
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("show-background-media")).toBe(true);
   });
 
@@ -34,7 +34,7 @@ describe("Server: hide-background-media cache purge", () => {
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
     server.broadcast({ type: "hide-background-media", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("show-background-media")).toBe(false);
     expect(cache.has("hide-background-media")).toBe(false);
   });
@@ -42,7 +42,7 @@ describe("Server: hide-background-media cache purge", () => {
   it("hide-background-media with no prior show does nothing", () => {
     server.broadcast({ type: "hide-background-media", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.size).toBe(0);
   });
 });
@@ -64,7 +64,7 @@ describe("Server: map-clear preserves map-calibration", () => {
 
     server.broadcast({ type: "map-clear", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("map-show")).toBe(false);
     expect(cache.has("map-view")).toBe(false);
     expect(cache.has("map-config")).toBe(false);
@@ -80,29 +80,31 @@ describe("Server: map-clear preserves map-calibration", () => {
 
     server.broadcast({ type: "map-clear", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("show-background-media")).toBe(true);
     expect(cache.has("image-layers-sync")).toBe(true);
     expect(cache.has("map-show")).toBe(false);
   });
 });
 
-describe("Server: state-changed event", () => {
+describe("ReplayCache: change event", () => {
   let server: PlayerScreenServer;
+  let cache: ReplayCache;
 
   beforeEach(() => {
-    server = new PlayerScreenServer(makePlugin());
+    cache = new ReplayCache();
+    server = new PlayerScreenServer(makePlugin(), cache);
   });
 
-  it("onStateChange returns an unsubscribe function", () => {
+  it("onChange returns an unsubscribe function", () => {
     const cb = vi.fn();
-    const unsub = server.onStateChange(cb);
+    const unsub = cache.onChange(cb);
     expect(typeof unsub).toBe("function");
   });
 
   it("fires callback after a broadcast", () => {
     const cb = vi.fn();
-    server.onStateChange(cb);
+    cache.onChange(cb);
 
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
 
@@ -111,7 +113,7 @@ describe("Server: state-changed event", () => {
 
   it("fires callback after a clear", () => {
     const cb = vi.fn();
-    server.onStateChange(cb);
+    cache.onChange(cb);
 
     server.broadcast({ type: "clear", payload: {} });
 
@@ -120,7 +122,7 @@ describe("Server: state-changed event", () => {
 
   it("fires callback after map-clear", () => {
     const cb = vi.fn();
-    server.onStateChange(cb);
+    cache.onChange(cb);
 
     server.broadcast({ type: "map-clear", payload: {} });
 
@@ -129,7 +131,7 @@ describe("Server: state-changed event", () => {
 
   it("does not fire after unsubscribe", () => {
     const cb = vi.fn();
-    const unsub = server.onStateChange(cb);
+    const unsub = cache.onChange(cb);
 
     unsub();
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
@@ -140,8 +142,8 @@ describe("Server: state-changed event", () => {
   it("supports multiple subscribers", () => {
     const cb1 = vi.fn();
     const cb2 = vi.fn();
-    server.onStateChange(cb1);
-    server.onStateChange(cb2);
+    cache.onChange(cb1);
+    cache.onChange(cb2);
 
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
 

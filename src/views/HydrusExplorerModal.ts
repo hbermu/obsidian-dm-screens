@@ -439,10 +439,6 @@ export class HydrusExplorerModal extends Modal {
   }
 
   private async handleSetBackground(tile: Tile) {
-    if (!this.plugin.server) {
-      new Notice("Player Screen server is not running. Start it first.");
-      return;
-    }
     try {
       const entry = await this.ensureCached(tile);
       // Relative URL — the player browser resolves it against the plugin
@@ -451,7 +447,7 @@ export class HydrusExplorerModal extends Modal {
       const url = `/vault/${encodeForVaultUrl(entry.vaultPath)}`;
       const mediaType = mediaTypeOf(entry.mime);
       debug("HydrusExplorer: handleSetBackground", entry.hash.slice(0, 12), mediaType, entry.vaultPath);
-      this.plugin.server.broadcast({
+      this.plugin.broadcast({
         type: "show-background-media",
         payload: {
           url,
@@ -477,10 +473,6 @@ export class HydrusExplorerModal extends Modal {
   }
 
   private async handleSetMap(tile: Tile) {
-    if (!this.plugin.server) {
-      new Notice("Player Screen server is not running. Start it first.");
-      return;
-    }
     try {
       const entry = await this.ensureCached(tile);
       const panel = await this.plugin.findOpenDmControlPanel();

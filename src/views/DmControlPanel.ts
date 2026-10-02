@@ -217,12 +217,6 @@ export class DmControlPanel extends ItemView {
       }
     } catch { /* ignore */ }
 
-    // Restore broadcast cache to server for late joiners
-    if (this.plugin.server && s.lastBroadcastCache) {
-      for (const [type, data] of Object.entries(s.lastBroadcastCache)) {
-        (this.plugin.server as any).lastState?.set(type, data);
-      }
-    }
     const bgCache = s.lastBroadcastCache?.["show-background-media"];
     if (bgCache) {
       try {
@@ -264,12 +258,7 @@ export class DmControlPanel extends ItemView {
     this.activeVideoPath = null;
     this.setBackgroundLabel(null);
 
-    if (this.plugin.server) {
-      this.plugin.server.forgetCached(["show-background-media"]);
-    } else {
-      delete this.plugin.settings.lastBroadcastCache?.["show-background-media"];
-      await this.plugin.saveSettings();
-    }
+    this.plugin.replayCache.forget(["show-background-media"]);
     this.render();
   }
 
@@ -283,7 +272,7 @@ export class DmControlPanel extends ItemView {
     if (this.activeBackgroundUrl) {
       debug("DmControlPanel: republishToServer — background:", this.activeBackgroundUrl);
       const mediaType = isVideoBackgroundUrl(this.activeBackgroundUrl) ? "video" : "image";
-      this.plugin.server.broadcast({
+      this.plugin.broadcast({
         type: "show-background-media",
         payload: { url: this.activeBackgroundUrl, mediaType },
       });
@@ -297,17 +286,15 @@ export class DmControlPanel extends ItemView {
       this.saveStateTimer = null;
     }
     const s = this.plugin.settings;
-    s.lastPlayerScreenWidth = this.connectedClients[0]?.width ?? 0;
-    s.lastPlayerScreenHeight = this.connectedClients[0]?.height ?? 0;
-    s.lastImageLayers = JSON.stringify(this.imageLayers);
-    // Save broadcast cache
-    if (this.plugin.server) {
-      const cache: Record<string, string> = {};
-      for (const [type, data] of this.plugin.server.cachedEntries()) {
-        cache[type] = data;
-      }
-      s.lastBroadcastCache = cache;
+    // Last known, not current: an offline session previews at the size of the
+    // screen that was last seen, so a disconnect must not reset it.
+    if (this.connectedClients[0]) {
+      s.lastPlayerScreenWidth = this.connectedClients[0].width;
+      s.lastPlayerScreenHeight = this.connectedClients[0].height;
     }
+    const map = this.mapPanel.mapClients[0];
+    if (map) s.lastMapScreenClient = { width: map.width, height: map.height, devicePixelRatio: map.devicePixelRatio };
+    s.lastImageLayers = JSON.stringify(this.imageLayers);
     this.plugin.saveSettings();
   }
 
@@ -333,6 +320,7 @@ export class DmControlPanel extends ItemView {
     this.mapPanel.mapClients = maps;
     this.playerConnected = players.length > 0;
     debug("DmControlPanel: onPlayerConnected — players:", players.length, "maps:", maps.length, "was:", wasConnected);
+    if (clients.length > 0) this.scheduleSaveState();
     if ((!wasConnected && this.playerConnected) || mapCountChanged) {
       this.debouncedRender();
     } else {
@@ -456,8 +444,7 @@ export class DmControlPanel extends ItemView {
 
   private broadcastInitialScale() {
     if (this.hasBroadcastInitialScale) return;
-    if (!this.plugin.server) return;
-    this.plugin.server.broadcast({
+    this.plugin.broadcast({
       type: "combat-scale",
       payload: { scale: this.plugin.settings.combatTrackerScale },
     });
@@ -619,9 +606,7 @@ export class DmControlPanel extends ItemView {
         this.activeBackgroundUrl = null;
         this.activeVideoPath = null;
         this.setBackgroundLabel(null);
-        if (this.plugin.server) {
-          this.plugin.server.broadcast({ type: "hide-background-media", payload: {} });
-        }
+        this.plugin.broadcast({ type: "hide-background-media", payload: {} });
         this.render();
       } else {
         void this.showBackgroundPicker(evt);
@@ -637,12 +622,13 @@ export class DmControlPanel extends ItemView {
     const previewInner = previewArea.createDiv("dm-layer-preview-inner");
     previewInner.style.transform = `translate(${this.dmPanX}%, ${this.dmPanY}%) scale(${this.dmZoom})`;
 
-    // Background media preview — same geometry as the green viewport rect,
-    // only rendered when a connected client matches the effective resolution.
+    // Background media preview — same geometry as the green viewport rect.
+    // With no screen ever seen it previews at the configured TV size, so a
+    // background can be set up before the server or the TV is on.
     const effForBg = this.getEffectiveResolution();
-    const activeClient = this.connectedClients.find(
-      c => c.width === effForBg.width && c.height === effForBg.height
-    );
+    const activeClient = this.connectedClients.length === 0
+      ? effForBg
+      : this.connectedClients.find(c => c.width === effForBg.width && c.height === effForBg.height);
     if (this.activeBackgroundUrl && activeClient && activeClient.width > 0 && activeClient.height > 0) {
       const bgUrl = resolveBackgroundPreviewUrl(
         this.activeBackgroundUrl,
@@ -1064,16 +1050,14 @@ export class DmControlPanel extends ItemView {
       });
       const clearAllBtn = clearRow.createEl("button", { text: "Clear Player Screen" });
       clearAllBtn.addEventListener("click", () => {
-        if (this.plugin.server) {
-          this.plugin.server.broadcast({ type: "clear", payload: {} });
-          this.imageLayers = [];
-          this.nextZIndex = 1;
-          this.activeBackgroundUrl = null;
-          this.activeVideoPath = null;
-          this.setBackgroundLabel(null);
-          new Notice("Player screen cleared");
-          this.render();
-        }
+        this.plugin.broadcast({ type: "clear", payload: {} });
+        this.imageLayers = [];
+        this.nextZIndex = 1;
+        this.activeBackgroundUrl = null;
+        this.activeVideoPath = null;
+        this.setBackgroundLabel(null);
+        new Notice("Player screen cleared");
+        this.render();
       });
     }
   }
@@ -1211,12 +1195,10 @@ export class DmControlPanel extends ItemView {
     if (clamped === (this.plugin.settings.combatTrackerScale ?? 1)) return;
     this.plugin.settings.combatTrackerScale = clamped;
     await this.plugin.saveSettings();
-    if (this.plugin.server) {
-      this.plugin.server.broadcast({
-        type: "combat-scale",
-        payload: { scale: clamped },
-      });
-    }
+    this.plugin.broadcast({
+      type: "combat-scale",
+      payload: { scale: clamped },
+    });
   }
 
   private getActiveCombatLabel(): { text: string; ddbId: string | null } {
@@ -1808,9 +1790,8 @@ export class DmControlPanel extends ItemView {
   }
 
   private broadcastPlayerViewport() {
-    if (!this.plugin.server) return;
     const { width: tvW, height: tvH } = this.getEffectiveResolution();
-    this.plugin.server.broadcast({
+    this.plugin.broadcast({
       type: "viewport-update",
       payload: {
         panX: (this.playerPanX / 100) * tvW,
@@ -2013,7 +1994,7 @@ export class DmControlPanel extends ItemView {
         });
         this.setBackgroundLabel(sourceLabel);
 
-        this.plugin.server?.broadcast({
+        this.plugin.broadcast({
           type: "show-background-media",
           payload: {
             url,
@@ -2217,12 +2198,10 @@ export class DmControlPanel extends ItemView {
     });
     this.setBackgroundLabel(sourceLabel);
 
-    if (this.plugin.server) {
-      this.plugin.server.broadcast({
-        type: "show-background-media",
-        payload: { url, mediaType: "image" },
-      });
-    }
+    this.plugin.broadcast({
+      type: "show-background-media",
+      payload: { url, mediaType: "image" },
+    });
     this.render();
   }
 
@@ -2349,9 +2328,8 @@ export class DmControlPanel extends ItemView {
   }
 
   broadcastImageLayers() {
-    if (!this.plugin.server) return;
     debug("DmControlPanel: broadcastImageLayers —", this.imageLayers.length, "layer(s)");
-    this.plugin.server.broadcast({
+    this.plugin.broadcast({
       type: "image-layers-sync",
       payload: { layers: this.imageLayers },
     });
@@ -2366,9 +2344,8 @@ export class DmControlPanel extends ItemView {
   // full sync: geometry only, no base64 payloads, trailing-throttled. The
   // gesture's end still emits the full broadcastImageLayers().
   broadcastLayerGeometry(immediate = false) {
-    if (!this.plugin.server) return;
     const send = () => {
-      this.plugin.server?.broadcast({
+      this.plugin.broadcast({
         type: "image-layers-geometry",
         payload: {
           layers: this.imageLayers.map((l) => ({

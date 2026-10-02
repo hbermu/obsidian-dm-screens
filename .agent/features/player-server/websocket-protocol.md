@@ -4,21 +4,27 @@
 
 ## Source files
 
-- `src/server.ts` — `broadcast()`, late-joiner cache, message parsing (`PlayerMessage` interface)
-- `src/main.ts` — `sendInitiativeUpdate()` (the only broadcast call outside `DmControlPanel` and `HydrusExplorerModal`)
+- `src/server.ts` — `broadcast()`, `ReplayCache` (the late-joiner cache), message parsing (`PlayerMessage` interface)
+- `src/main.ts` — `broadcast()` (the entry point every DM-side state emitter uses), `initReplayCache()` (owns the cache and persists it); `sendInitiativeUpdate()`, `broadcastWaitingScreen()`, `broadcastInspirationStyle()`, `broadcastMapCalibration()` are live-only — they call the server directly and are re-sent on every server start
 - `src/views/DmControlPanel.ts` — emits `image-layers-sync`, `combat-scale`, `viewport-update`, `show-background-media`, `hide-background-media`, `clear`
+- `src/views/MapScreenPanel.ts` — emits every `map-*` type except `map-calibration` and `map-calibration-overlay`
+- `src/views/MapCalibrationModal.ts` — emits `map-calibration-overlay` (live-only: the test pattern is meaningless without a connected screen)
 - `src/views/HydrusExplorerModal.ts` — emits `show-background-media` for files chosen from the Hydrus library
 - `src/player/player.ts` — handles every DM → player message, emits `client-info`
 
 ## Settings used
 
-- `lastBroadcastCache` — persisted serialised messages so that a restart of Obsidian preserves the late-joiner cache
+- `lastBroadcastCache` — the persisted copy of the `ReplayCache`, so a restart of Obsidian preserves the late-joiner cache
 
 ## Requirements
 
 1. The protocol shall transport JSON-encoded objects of the form `{ type: string, payload: object }`.
 1b. When a WebSocket connection is established, the server shall tag it with channel `map` if the upgrade request path starts with `/map`, else `player` (`messageChannel(type)` maps a message type to its channel: `map-` prefix → `map`, everything else → `player`).
 2. The server shall send a serialised broadcast message exactly once per connected client of the message's channel whose `readyState` is `1` (OPEN); clients of the other channel shall not receive it.
+2b. The late-joiner cache shall be a `ReplayCache` owned by the plugin, not by the server: the plugin seeds it from `settings.lastBroadcastCache` on load (`initReplayCache`) and passes it to every `PlayerScreenServer` it constructs, so the cache outlives a server stop and start.
+2c. DM-side state emitters (`DmControlPanel`, `MapScreenPanel`, `HydrusExplorerModal`) shall send through `plugin.broadcast(message)`. While the server is running it shall forward to `server.broadcast(message)`; while it is stopped it shall apply the message to the `ReplayCache` with the same cache rules (requirements 4–5, 19) and send nothing. Setting, replacing or stopping a background or a map with the server stopped therefore changes what the next server start replays and what the next Obsidian start restores.
+2d. Every change to the `ReplayCache` shall copy it into `settings.lastBroadcastCache` and schedule one `saveSettings()` 1 s later, coalescing the changes in between; `onunload` shall flush a pending save. Persistence shall not depend on the DM Control Panel closing, because quitting Obsidian does not reliably close views or unload plugins.
+2e. When a `PlayerScreenServer` is constructed with a non-empty `ReplayCache`, it shall feed every cached message to its display allowlist (`vault-routing.md` requirement 3), so a background or map recorded while the server was stopped is servable from the first request.
 3. When a client connects, the server shall replay every cached message of the client's channel in insertion order before any new broadcast can be sent to that client.
 4. When a `clear` broadcast is sent, the server shall purge only the `player`-channel entries from the late-joiner cache before transmitting `clear` to player clients; `map-*` entries survive. Symmetrically, `map-clear` shall purge only the `map-*` entries except `map-calibration` and transmit to map clients only.
 4b. When a `hide-background-media` broadcast is sent, the server shall delete the `show-background-media` cache entry and shall not cache the `hide-background-media` message itself.
@@ -37,8 +43,8 @@
 16. Every payload field a bundle treats as a number shall be coerced with `finiteOr(value, default)` before it reaches a CSS transform, a canvas call, or stored state. A `NaN` or `Infinity` in a transform blanks the screen with nothing in the console, so the default wins silently instead. This covers the player's `panX`/`panY`/`zoom` and the map's `map-view` pan and `map-config` `pxPerSquare`/`gridOffsetX`/`gridOffsetY`/`gridOpacity` (opacity additionally clamped to 0–1).
 17. `map-view.mode` shall be accepted only as `fit` or `physical` and `map-view.rotation` only as 0, 90, 180 or 270; any other value falls back to `fit` and 0 respectively.
 18. Every payload array shall pass `boundedArray`, which returns `[]` for a non-array and truncates to 200 entries with a `console.warn`. This covers the player's `combatants` and both layer arrays and the map's `aoes`, `visions` and `walls`.
-19. When the late-joiner cache exceeds 2 MiB in total, the server shall evict its largest entry repeatedly until it fits, never dropping the last remaining entry. The cache is persisted as `settings.lastBroadcastCache`, so the budget bounds `data.json` as well as the heap.
-20. The server shall expose an `onStateChange(callback): () => void` method that subscribes to state mutations. The callback shall fire after any `lastState` mutation, including cache purges (`clear`, `map-clear`, `hide-background-media`), cache updates and replay-cache evictions. The returned unsubscribe function shall remove the callback.
+19. When the late-joiner cache exceeds 2 MiB in total, the `ReplayCache` shall evict its largest entry repeatedly until it fits, never dropping the last remaining entry. The cache is persisted as `settings.lastBroadcastCache`, so the budget bounds `data.json` as well as the heap.
+20. The `ReplayCache` shall expose an `onChange(callback): () => void` method. The callback shall fire after every `record(message)` — cache purges (`clear`, `map-clear`, `hide-background-media`), cache updates and evictions — and every `forget(types)`. The returned unsubscribe function shall remove the callback.
 
 ## Broadcast / IPC
 
@@ -69,6 +75,9 @@
 ## Tests covering this
 
 - `src/__tests__/server-broadcast.test.ts` — late-joiner replay; `readyState` filtering; `clear` cache purge
+- `src/__tests__/restore-state.test.ts` — `hide-background-media` and `map-clear` purge rules; `ReplayCache.onChange` subscribe/unsubscribe (requirement 20)
+- `src/__tests__/main.test.ts` — `plugin.broadcast` records into the cache and persists it debounced while the server is stopped, forwards to a running server, and `onunload` flushes a pending save (requirements 2c, 2d)
+- `src/__tests__/server-vault-allowlist.integration.test.ts` — a server built on a seeded `ReplayCache` serves the cached background and map (requirement 2e)
 - `src/__tests__/server-map-channel.test.ts` — channel tagging, channel-filtered broadcast/replay, channel-scoped `clear`/`map-clear` purges
 - `src/__tests__/server-combat-scale.test.ts` — `combat-scale` round-trip
 - `src/__tests__/server-bootstrap.integration.test.ts` — real `ws` client receives the cached state on connect

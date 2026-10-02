@@ -57,15 +57,11 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
       hydrusDefaultMuted: true,
       mapFogTvOpacity: 0.8,
     },
-    server: {
-      broadcast: (msg: { type: string; payload: Record<string, unknown> }) => {
-        broadcasts.push(msg);
-        server.broadcast(msg);
-      },
-      forgetCached: (types: string[]) => {
-        server.forgetCached(types);
-      },
-      cachedEntries: () => server.cachedEntries(),
+    server,
+    replayCache: (server as any).cache,
+    broadcast: (msg: { type: string; payload: Record<string, unknown> }) => {
+      broadcasts.push(msg);
+      server.broadcast(msg);
     },
     saveSettings: () => Promise.resolve(),
     broadcastMapCalibration: () => {},
@@ -205,7 +201,7 @@ describe("cross-session restore (panel B)", () => {
 
     // Serialize the server cache the same way DmControlPanel.saveState does
     const cache: Record<string, string> = {};
-    for (const [type, data] of (server as any).lastState.entries()) {
+    for (const [type, data] of (server as any).cache.entries.entries()) {
       cache[type] = data;
     }
 

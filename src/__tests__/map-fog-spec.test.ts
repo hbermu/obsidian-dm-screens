@@ -36,7 +36,9 @@ function makePanel(fogOpacity = 1) {
       hydrusDefaultMuted: true,
       mapFogTvOpacity: fogOpacity,
     },
-    server: { broadcast: (msg: Broadcast) => broadcasts.push(msg) },
+    server: {},
+    broadcast: (msg: Broadcast) => broadcasts.push(msg),
+    replayCache: { forget: () => {} },
     saveSettings: () => Promise.resolve(),
     broadcastMapCalibration: () => {},
     app: {

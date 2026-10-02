@@ -36,7 +36,7 @@ describe("PlayerScreenServer.broadcast", () => {
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png" } });
     server.broadcast({ type: "sync-image-layers", payload: { layers: [] } });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.size).toBe(2);
     expect(JSON.parse(cache.get("show-background-media")!).payload.url).toBe("/vault/a.png");
     expect(cache.has("sync-image-layers")).toBe(true);
@@ -46,7 +46,7 @@ describe("PlayerScreenServer.broadcast", () => {
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png" } });
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/b.png" } });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.size).toBe(1);
     expect(JSON.parse(cache.get("show-background-media")!).payload.url).toBe("/vault/b.png");
   });
@@ -56,7 +56,7 @@ describe("PlayerScreenServer.broadcast", () => {
     server.broadcast({ type: "sync-image-layers", payload: { layers: [] } });
     server.broadcast({ type: "clear", payload: {} });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.size).toBe(0);
   });
 
@@ -66,7 +66,7 @@ describe("PlayerScreenServer.broadcast", () => {
       payload: { title: "Calradia", subtitle: "The Battanians prepare..." },
     });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("waiting-screen")).toBe(true);
     expect(JSON.parse(cache.get("waiting-screen")!).payload).toEqual({
       title: "Calradia",
@@ -80,7 +80,7 @@ describe("PlayerScreenServer.broadcast", () => {
       payload: { pulse: false },
     });
 
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.has("inspiration-style")).toBe(true);
     expect(JSON.parse(cache.get("inspiration-style")!).payload).toEqual({ pulse: false });
   });
@@ -138,7 +138,7 @@ describe("PlayerScreenServer.broadcast", () => {
 
   it("does not cache sourceLabel or lastSourceLabels in broadcast payloads", () => {
     server.broadcast({ type: "show-background-media", payload: { url: "/vault/a.png", mediaType: "image" } });
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     const cached = JSON.parse(cache.get("show-background-media")!);
     expect(cached.payload).not.toHaveProperty("sourceLabel");
     expect(cached.payload).not.toHaveProperty("label");
@@ -156,7 +156,7 @@ describe("late-joiner cache budget", () => {
   });
 
   function cacheBytes(): number {
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     let total = 0;
     for (const v of cache.values()) total += v.length;
     return total;
@@ -172,7 +172,7 @@ describe("late-joiner cache budget", () => {
 
   it("never evicts the only cached entry, even when it is over budget on its own", () => {
     server.broadcast({ type: "solo", payload: { blob: "x".repeat(3 * 1024 * 1024) } });
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.size).toBe(1);
     expect(cache.has("solo")).toBe(true);
   });
@@ -180,7 +180,7 @@ describe("late-joiner cache budget", () => {
   it("leaves a small cache untouched", () => {
     server.broadcast({ type: "waiting-screen", payload: { title: "t" } });
     server.broadcast({ type: "combat-scale", payload: { scale: 1 } });
-    const cache = (server as any).lastState as Map<string, string>;
+    const cache = (server as any).cache.entries as Map<string, string>;
     expect(cache.size).toBe(2);
   });
 });

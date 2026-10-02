@@ -56,6 +56,7 @@ export interface DmScreenSettings {
   // Persisted player screen state
   lastPlayerScreenWidth: number;
   lastPlayerScreenHeight: number;
+  lastMapScreenClient: { width: number; height: number; devicePixelRatio: number } | null;
   lastImageLayers: string; // JSON-serialized ImageLayer[] (without dataUrl to save space)
   lastBroadcastCache: Record<string, string>; // message type → JSON payload (for late joiners)
   lastSourceLabels: { background?: SourceLabel; map?: SourceLabel };
@@ -105,6 +106,7 @@ export const DEFAULT_SETTINGS: DmScreenSettings = {
   tvHeight: 1080,
   lastPlayerScreenWidth: 0,
   lastPlayerScreenHeight: 0,
+  lastMapScreenClient: null,
   lastImageLayers: "[]",
   lastBroadcastCache: {},
   lastSourceLabels: {},

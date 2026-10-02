@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `src/server.ts` — `PlayerScreenServer` class, HTTP handler, WebSocket connection accounting, late-joiner cache, `readVaultBytes` helper
+- `src/server.ts` — `PlayerScreenServer` class, HTTP handler, WebSocket connection accounting, `ReplayCache` (late-joiner cache), `readVaultBytes` helper
 - `src/main.ts` — wires `startServer` / `stopServer` / `toggleServer`, applies `maxClients`, forwards client-info callbacks to the DM panel
 - `src/views/DmControlPanel.ts` — renders the server status row, Start/Stop button, and connected-client badges; the player LAN URL + Copy row lives at the top of the Player Screen section (mirroring the Map Screen section's URL row)
 - `src/player/player.ts` — client side of the WebSocket connection, handles reconnect, reads the access token from `?k=` or the `dmScreenKey` cookie
@@ -18,7 +18,7 @@
 - `autoStartServer` — start the server automatically on plugin load
 - `maxClients` — maximum number of simultaneous WebSocket clients (default `10`)
 - `accessToken` — 32-char hex token required by every route except `/health`; minted on first load, regenerated from the settings tab
-- `lastBroadcastCache` — persisted late-joiner cache restored on plugin load
+- `lastBroadcastCache` — persisted late-joiner cache, loaded into the plugin's `ReplayCache` on plugin load and kept in sync with it whether or not the server is running (`websocket-protocol.md` requirements 2b–2d)
 - `waitingTitle` — big text rendered on the waiting screen (default `"Player Screen"`)
 - `waitingSubtitle` — smaller text below the title (default `"Waiting for DM to push content..."`)
 - `ddbInspirationPulse` — drives the `inspiration-style` broadcast that toggles the `dm-inspired-pulse` body class on every connected player (default `true`)

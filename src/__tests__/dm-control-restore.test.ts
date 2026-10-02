@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { DmControlPanel } from "../views/DmControlPanel";
 import { Notice } from "obsidian";
+import { ReplayCache } from "../server";
 
 beforeAll(() => {
   if (!HTMLElement.prototype.addClass) {
@@ -24,14 +25,6 @@ vi.mock("obsidian", async () => {
   };
 });
 
-function makeServerStub() {
-  return {
-    broadcast: vi.fn(),
-    forgetCached: vi.fn(),
-    cachedEntries: vi.fn(() => []),
-  };
-}
-
 function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
     settings: {
@@ -39,6 +32,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       ...((overrides.settings as object) ?? {}),
     },
     server: null,
+    replayCache: new ReplayCache(),
+    broadcast: vi.fn(),
     saveSettings: vi.fn(async () => {}),
     app: { workspace: { getLeavesOfType: () => [] }, vault: { adapter: { exists: vi.fn() } } },
     ...overrides,
@@ -53,36 +48,15 @@ function makePanel(plugin = makePlugin()): DmControlPanel {
 }
 
 describe("DmControlPanel restore with missing non-Hydrus background", () => {
-  it("drops the background, shows Notice, clears state, calls forgetCached when server is running", async () => {
+  it("drops the background, shows Notice, clears state and forgets the cache entry", async () => {
     const { recoverVaultImage } = await import("../hydrus/recoverImage");
     vi.mocked(recoverVaultImage).mockResolvedValue("missing");
 
-    const plugin = makePlugin({ server: makeServerStub() });
-    const panel = makePanel(plugin);
-    panel.activeBackgroundUrl = "/vault/.dm-screen/test.jpg";
-    (panel as any).activeVideoPath = null;
-
-    await (panel as any).checkAndRecoverBackground();
-
-    expect(Notice).toHaveBeenCalledWith('Background "test.jpg" is no longer available');
-    expect(panel.activeBackgroundUrl).toBeNull();
-    expect((panel as any).activeVideoPath).toBeNull();
-    expect(plugin.server.forgetCached).toHaveBeenCalledWith(["show-background-media"]);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1); // setBackgroundLabel(null) saves
-    expect((panel as any).render).toHaveBeenCalledTimes(1);
-  });
-
-  it("drops the background, shows Notice, clears state, deletes cache entry and saves when server is null", async () => {
-    const { recoverVaultImage } = await import("../hydrus/recoverImage");
-    vi.mocked(recoverVaultImage).mockResolvedValue("missing");
-
-    const plugin = makePlugin({
-      settings: {
-        lastBroadcastCache: {
-          "show-background-media": '{"type":"show-background-media","payload":{}}',
-        },
-      },
+    const replayCache = new ReplayCache({
+      "show-background-media": '{"type":"show-background-media","payload":{}}',
+      "waiting-screen": '{"type":"waiting-screen","payload":{}}',
     });
+    const plugin = makePlugin({ replayCache });
     const panel = makePanel(plugin);
     panel.activeBackgroundUrl = "/vault/attachments/missing.png";
     (panel as any).activeVideoPath = null;
@@ -92,8 +66,8 @@ describe("DmControlPanel restore with missing non-Hydrus background", () => {
     expect(Notice).toHaveBeenCalledWith('Background "missing.png" is no longer available');
     expect(panel.activeBackgroundUrl).toBeNull();
     expect((panel as any).activeVideoPath).toBeNull();
-    expect(plugin.settings.lastBroadcastCache).toEqual({});
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(2); // setBackgroundLabel(null) + cache clear
+    expect([...replayCache.entries.keys()]).toEqual(["waiting-screen"]);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1); // setBackgroundLabel(null) saves
     expect((panel as any).render).toHaveBeenCalledTimes(1);
   });
 
