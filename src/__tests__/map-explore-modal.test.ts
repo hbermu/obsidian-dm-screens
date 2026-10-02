@@ -60,7 +60,13 @@ const appStub = { vault: { adapter: { getResourcePath: () => null as null } } };
 
 function makePanelStub(
   walls: MapWall[] = [],
-  opts: { aoes?: MapAoe[]; visions?: MapVision[]; mode?: "physical" | "fit"; rotation?: 0 | 90 | 180 | 270 } = {}
+  opts: {
+    aoes?: MapAoe[];
+    visions?: MapVision[];
+    mode?: "physical" | "fit";
+    rotation?: 0 | 90 | 180 | 270;
+    showGrid?: boolean;
+  } = {}
 ) {
   const aoes = opts.aoes ?? [];
   const visions = opts.visions ?? [];
@@ -76,7 +82,7 @@ function makePanelStub(
     refreshPanel: vi.fn(),
     beginPanelDrag: vi.fn(() => vi.fn()),
     registerOverlayRepaint: vi.fn((_repaint: () => void) => vi.fn()),
-    playerViewportMapSize: vi.fn(() => (opts.mode === "physical" ? { w: 400, h: 300 } : null)),
+    playerViewportMapSize: vi.fn(() => (stub.state.mode === "physical" ? { w: 400, h: 300 } : null)),
     applyExplorePan: vi.fn((x: number, y: number) => {
       stub.state.panX = x;
       stub.state.panY = y;
@@ -88,6 +94,14 @@ function makePanelStub(
     }),
     renderAoeSection: vi.fn(),
     renderVisionSection: vi.fn(),
+    disposeCombatMirror: vi.fn(),
+    registerCombatMirror: vi.fn((_mirror: { body: HTMLElement; setTitleExtra(el: HTMLElement): void }) => stub.disposeCombatMirror),
+    toggleScaleMode: vi.fn(() => {
+      stub.state.mode = stub.state.mode === "physical" ? "fit" : "physical";
+    }),
+    toggleGrid: vi.fn(() => {
+      stub.state.showGrid = !stub.state.showGrid;
+    }),
     viewLocked: false,
     fogDataUrl: null as string | null,
     walls,
@@ -101,6 +115,9 @@ function makePanelStub(
       panX: MAP_W / 2,
       panY: MAP_H / 2,
       rotation: opts.rotation ?? 0,
+      showGrid: opts.showGrid ?? false,
+      gridColor: "#ff0000",
+      gridOpacity: 1,
     },
   };
   return stub;
@@ -661,6 +678,91 @@ describe("MapExploreModal — view-bound vision", () => {
     expect(vision.y).toBeCloseTo(MAP_H / 2, 1);
 
     fireDocMouse("mouseup", 500 + 102.4, 400);
+    modal.onClose();
+  });
+});
+
+describe("MapExploreModal — scale and grid toggles", () => {
+  it("the bar's Scale button toggles the panel's mode and brings the viewport rect in and out", () => {
+    const panel = makePanelStub();
+    const { modal, markers, contentEl } = openModal(panel);
+    expect(markers.querySelector(".dm-map-viewport-rect")).toBeNull();
+
+    findBtn(contentEl, "Scale: fit screen").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(panel.toggleScaleMode).toHaveBeenCalledTimes(1);
+    expect(findBtn(contentEl, "Scale: physical 1″")).toBeTruthy();
+    expect(markers.querySelector(".dm-map-viewport-rect")).not.toBeNull();
+
+    modal.onClose();
+  });
+
+  it("the bar's Grid button toggles the panel's grid and relabels itself", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = openModal(panel);
+
+    findBtn(contentEl, "Grid: off").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(panel.toggleGrid).toHaveBeenCalledTimes(1);
+    expect(findBtn(contentEl, "Grid: on")).toBeTruthy();
+
+    modal.onClose();
+  });
+
+  it("draws the grid lattice on the overlay only while the grid is on", () => {
+    const pixelAt = (overlay: HTMLCanvasElement, x: number, y: number) =>
+      overlay.getContext("2d")!.getImageData(x, y, 1, 1).data;
+    // pxPerSquare 100 at fog scale 1.024: the first interior line sits at x ≈ 102.4.
+    const on = openModal(makePanelStub([], { showGrid: true }));
+    expect(pixelAt(on.overlay, 102, 300)[0]).toBeGreaterThan(100);
+    expect(pixelAt(on.overlay, 50, 300)[3]).toBe(0);
+    on.modal.onClose();
+
+    const off = openModal(makePanelStub([], { showGrid: false }));
+    expect(pixelAt(off.overlay, 102, 300)[3]).toBe(0);
+    off.modal.onClose();
+  });
+});
+
+describe("MapExploreModal — Combat window", () => {
+  it("registers a Combat floating window as a mirror of the panel's COMBAT section", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = openModal(panel);
+    const combat = Array.from(contentEl.querySelectorAll(".dm-floating-window")).find(
+      (w) => w.querySelector(".dm-floating-window-title")?.textContent === "Combat"
+    ) as HTMLElement;
+    expect(combat).toBeTruthy();
+    const mirror = panel.registerCombatMirror.mock.calls[0][0];
+    expect(mirror.body).toBe(combat.querySelector(".dm-floating-window-body"));
+    modal.onClose();
+  });
+
+  it("drops the mirror before refreshing the panel on close, so the section reclaims D&D Beyond", () => {
+    const panel = makePanelStub();
+    const { modal } = openModal(panel);
+    modal.onClose();
+    expect(panel.disposeCombatMirror).toHaveBeenCalledTimes(1);
+    expect(panel.disposeCombatMirror.mock.invocationCallOrder[0]).toBeLessThan(
+      panel.refreshPanel.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("restores the Combat window's saved position", () => {
+    const panel = makePanelStub();
+    const modal = new MapExploreModal(
+      appStub as never,
+      {
+        app: appStub,
+        settings: { exploreWindows: { combat: { x: 0.25, y: 0.5, minimized: true } } },
+        saveSettings: vi.fn(),
+      } as never,
+      panel as never,
+      mapStub
+    );
+    modal.onOpen();
+    const combat = Array.from(modal.contentEl.querySelectorAll(".dm-floating-window")).find(
+      (w) => w.querySelector(".dm-floating-window-title")?.textContent === "Combat"
+    ) as HTMLElement;
+    expect(combat.classList.contains("dm-floating-window-minimized")).toBe(true);
+    expect(combat.style.width).toBe("320px");
     modal.onClose();
   });
 });

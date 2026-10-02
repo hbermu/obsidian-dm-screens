@@ -19,6 +19,13 @@ import { buildJoinUrl } from "../auth";
 
 export const DM_CONTROL_VIEW_TYPE = "dm-control-panel";
 
+// A second surface (the Explore modal's Combat window) that mirrors the COMBAT
+// section. `FloatingWindow` satisfies it structurally.
+export interface CombatMirror {
+  body: HTMLElement;
+  setTitleExtra(el: HTMLElement): void;
+}
+
 interface ManualCombatant {
   name: string;
   hp: number;
@@ -404,7 +411,7 @@ export class DmControlPanel extends ItemView {
     const active = this.contentEl.ownerDocument.activeElement;
     return (
       active instanceof HTMLElement &&
-      this.contentEl.contains(active) &&
+      (this.contentEl.contains(active) || [...this.combatMirrors].some((m) => m.body.contains(active))) &&
       (active.tagName === "INPUT" || active.tagName === "TEXTAREA")
     );
   }
@@ -430,6 +437,7 @@ export class DmControlPanel extends ItemView {
     this.renderPlayerScreenSection(container);
     this.mapPanel.renderSection(container);
     this.renderInitiativeSection(container);
+    for (const mirror of this.combatMirrors) this.renderCombatMirror(mirror);
 
     this.broadcastInitialScale();
     container.scrollTop = scrollTop;
@@ -1071,9 +1079,38 @@ export class DmControlPanel extends ItemView {
     const header = section.createDiv("dm-section-header");
     const title = header.createEl("h3", { text: "COMBAT" });
     this.makeCollapsible(section, title, "combat");
+    this.renderLiveToggle(header);
+    this.renderCombatBody(section, this.combatMirrors.size === 0);
+  }
 
+  private combatMirrors = new Set<CombatMirror>();
+
+  // render() repaints every mirror after the panel itself, so a D&D Beyond
+  // poll, an Initiative Tracker sync or a turn change reaches both surfaces.
+  // While a mirror is registered it owns the single DnDBeyondPanel; the
+  // render that follows its disposal (closing the modal refreshes the panel)
+  // hands it back to the section.
+  registerCombatMirror(mirror: CombatMirror): () => void {
+    debug("DmControlPanel: combat mirror registered");
+    this.combatMirrors.add(mirror);
+    this.render();
+    return () => {
+      debug("DmControlPanel: combat mirror disposed");
+      this.combatMirrors.delete(mirror);
+    };
+  }
+
+  private renderCombatMirror(mirror: CombatMirror) {
+    mirror.body.empty();
+    const extra = document.createElement("div");
+    this.renderLiveToggle(extra);
+    mirror.setTitleExtra(extra);
+    this.renderCombatBody(mirror.body, true);
+  }
+
+  private renderLiveToggle(parent: HTMLElement) {
     const broadcasting = this.isCombatBroadcasting();
-    const emitToggle = header.createEl("button", {
+    const emitToggle = parent.createEl("button", {
       cls: broadcasting ? "dm-emit-toggle dm-emit-active" : "dm-emit-toggle",
       attr: {
         "aria-label": broadcasting ? "Stop broadcasting combat" : "No combat being broadcast",
@@ -1086,7 +1123,9 @@ export class DmControlPanel extends ItemView {
       (emitToggle as HTMLButtonElement).disabled = true;
     }
     emitToggle.addEventListener("click", () => this.stopAllCombatBroadcast());
+  }
 
+  private renderCombatBody(section: HTMLElement, ownsDdbPanel: boolean) {
     // Tabs: Local Track + (optionally) D&D Beyond, full-width
     const ddbActive = this.plugin.settings.ddbEnabled && this.plugin.settings.ddbCobaltSession;
     const tabBar = section.createDiv("dm-combat-tabs");
@@ -1141,6 +1180,10 @@ export class DmControlPanel extends ItemView {
     incBtn.addEventListener("click", () => this.adjustCombatTrackerScale(0.1));
 
     if (ddbActive && this.combatTab === "dndbeyond") {
+      if (!ownsDdbPanel) {
+        section.createDiv({ cls: "dm-status-detail", text: "D&D Beyond is shown in the Explore window." });
+        return;
+      }
       const ddbContainer = section.createDiv("dm-ddb-panel");
       if (this.plugin.settings.ddbInspirationPulse) {
         ddbContainer.addClass("dm-inspired-pulse-on");

@@ -8,7 +8,7 @@ import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
 import { DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
-import { rotatePoint } from "../map/transform";
+import { gridLinePositions, rotatePoint } from "../map/transform";
 import { debug } from "../debug";
 import { fitScale } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
@@ -34,6 +34,8 @@ export class MapExploreModal extends Modal {
   private hoverRegion: { cellX: number; cellY: number; region: Uint8Array | null } | null = null;
   private aoesWindow: FloatingWindow | null = null;
   private visionWindow: FloatingWindow | null = null;
+  private combatWindow: FloatingWindow | null = null;
+  private disposeCombatMirror: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
   constructor(
@@ -107,6 +109,13 @@ export class MapExploreModal extends Modal {
       syncLockIcon();
       this.renderMarkers?.();
     });
+    const scaleBtn = bar.createEl("button");
+    const gridBtn = bar.createEl("button");
+    const syncToggleLabels = () => {
+      scaleBtn.textContent = this.panel.state.mode === "physical" ? "Scale: physical 1″" : "Scale: fit screen";
+      gridBtn.textContent = this.panel.state.showGrid ? "Grid: on" : "Grid: off";
+    };
+    syncToggleLabels();
     const exitBtn = bar.createEl("button", { text: "Exit" });
 
     const body = contentEl.createDiv("dm-explore-body");
@@ -176,6 +185,25 @@ export class MapExploreModal extends Modal {
           hctx.fillRect(0, 0, hc.width, hc.height);
           octx.drawImage(hc, 0, 0);
         }
+      }
+
+      if (this.panel.state.showGrid) {
+        octx.save();
+        octx.globalAlpha = this.panel.state.gridOpacity;
+        octx.strokeStyle = this.panel.state.gridColor;
+        octx.lineWidth = 1;
+        octx.beginPath();
+        const { gridOffsetX, gridOffsetY, pxPerSquare } = this.panel.state;
+        for (const x of gridLinePositions(0, gridOffsetX, pxPerSquare, fogScale, overlay.width)) {
+          octx.moveTo(x, 0);
+          octx.lineTo(x, overlay.height);
+        }
+        for (const y of gridLinePositions(0, gridOffsetY, pxPerSquare, fogScale, overlay.height)) {
+          octx.moveTo(0, y);
+          octx.lineTo(overlay.width, y);
+        }
+        octx.stroke();
+        octx.restore();
       }
 
       // AoE footprints at fog scale (mapRotation 0 — the inner box already
@@ -332,6 +360,22 @@ export class MapExploreModal extends Modal {
       },
     });
 
+    this.combatWindow = new FloatingWindow(stage, {
+      id: "combat",
+      title: "Combat",
+      width: 320,
+      initial: this.plugin.settings.exploreWindows?.["combat"] || {
+        x: 12 / stage.clientWidth,
+        y: 12 / stage.clientHeight,
+        minimized: false,
+      },
+      onChange: (state) => {
+        this.plugin.settings.exploreWindows["combat"] = state;
+        void this.plugin.saveSettings();
+      },
+    });
+    this.disposeCombatMirror = this.panel.registerCombatMirror(this.combatWindow);
+
     const renderWindows = () => {
       this.aoesWindow!.body.empty();
       this.visionWindow!.body.empty();
@@ -345,6 +389,7 @@ export class MapExploreModal extends Modal {
     this.resizeObserver = new ResizeObserver(() => {
       this.aoesWindow?.clamp();
       this.visionWindow?.clamp();
+      this.combatWindow?.clamp();
     });
     this.resizeObserver.observe(stage);
 
@@ -360,6 +405,16 @@ export class MapExploreModal extends Modal {
       ctx.fillRect(0, 0, this.fogCanvas.width, this.fogCanvas.height);
       redraw();
       this.commitFog();
+    });
+    scaleBtn.addEventListener("click", () => {
+      this.panel.toggleScaleMode();
+      syncToggleLabels();
+      refresh();
+    });
+    gridBtn.addEventListener("click", () => {
+      this.panel.toggleGrid();
+      syncToggleLabels();
+      redraw();
     });
     exitBtn.addEventListener("click", () => this.close());
 
@@ -712,6 +767,10 @@ export class MapExploreModal extends Modal {
     this.aoesWindow = null;
     this.visionWindow?.destroy();
     this.visionWindow = null;
+    this.disposeCombatMirror?.();
+    this.disposeCombatMirror = null;
+    this.combatWindow?.destroy();
+    this.combatWindow = null;
     this.panel.refreshPanel();
     this.contentEl.empty();
   }

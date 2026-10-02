@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `src/views/DmControlPanel.ts` — `renderInitiativeSection`, `renderManualTracker`, `renderPluginTracker`, `renderPluginCombatantRow`, `getActiveCombatLabel`, `isCombatBroadcasting`, `stopAllCombatBroadcast`, scale controls, the tab bar
+- `src/views/DmControlPanel.ts` — `renderInitiativeSection`, `renderLiveToggle`, `renderCombatBody`, `CombatMirror`, `registerCombatMirror`, `renderCombatMirror`, `renderManualTracker`, `renderPluginTracker`, `renderPluginCombatantRow`, `getActiveCombatLabel`, `isCombatBroadcasting`, `stopAllCombatBroadcast`, scale controls, the tab bar
 - `src/main.ts` — `sendInitiativeUpdate`, `onInitiativeStateChange`, `onInitiativeStop`, `lookupStatblock` for plugin-synced creatures
 - `src/views/DnDBeyondPanel.ts` — D&D Beyond tab implementation (specified in `../dndbeyond-integration/`)
 - `src/player/player.ts` — `updateInitiative`, `applyCombatScale`
@@ -25,7 +25,7 @@
    - For D&D Beyond: `<encounter name> — Round <n>` from the poller status.
    - For plugin sync: `<encounter name> — Round <n>` from the last `save-state`.
    - For manual / no combat: empty string.
-6. The broadcast button (`.dm-emit-toggle`, label `● Live`) in the COMBAT section header shall carry the `dm-emit-active` class and be enabled (green, clickable) while any source is broadcasting; clicking it shall call `stopAllCombatBroadcast`. When no source is broadcasting, the button shall carry the HTML `disabled` attribute (greyed out via CSS, not clickable).
+6. The broadcast button (`.dm-emit-toggle`, label `● Live`) in the COMBAT section header (and in the header of the Exploration Combat window, requirement 27) shall carry the `dm-emit-active` class and be enabled (green, clickable) while any source is broadcasting; clicking it shall call `stopAllCombatBroadcast`. When no source is broadcasting, the button shall carry the HTML `disabled` attribute (greyed out via CSS, not clickable).
 7. `isCombatBroadcasting` shall return true if any of: plugin combatants present, manual combatants present, or D&D Beyond tracking active.
 8. `stopAllCombatBroadcast` shall: stop the D&D Beyond poller (if any), clear manual combatants and round, set `trackerSource = "manual"`, clear plugin combatants and encounter name, send an empty `initiative-update`, and re-render.
 9. Tracker scale controls (`−`, `1×`, `+`) shall adjust `combatTrackerScale` by ±0.1 (clamped `[0.5, 2.0]`, rounded to 1 decimal) or reset to `1`, persist to settings, and broadcast `combat-scale`.
@@ -53,6 +53,12 @@
 25. While `settings.ddbInspirationPulse === true`, the player shall additionally animate `.init-inspired` with the `dm-inspired-pulse` keyframes (1.5 s ease-in-out infinite). The DM-side preview shall animate the same way when its container `.dm-ddb-panel` carries the `dm-inspired-pulse-on` class. When the setting is `false`, the glow is static and characteristic but does not pulse.
 26. Toggling `ddbInspirationPulse` in settings shall (a) call `plugin.broadcastInspirationStyle()` to broadcast `inspiration-style` to every connected client and (b) call `plugin.refreshOpenDmPanels()` so the DM panel re-renders with the new container class.
 
+### Exploration Combat window
+
+27. A second surface may mirror the COMBAT section through `registerCombatMirror(mirror)`, where a `CombatMirror` is `{ body, setTitleExtra(el) }` (the Exploration modal's Combat `FloatingWindow`, `../map-screen/fog-of-war.md` requirement 43b). Registering re-renders the panel; every `render()` then repaints each registered mirror after the panel's own sections — the combat body (`renderCombatBody`: tabs, name row with scale buttons, the active tab's tracker) into `mirror.body` and the Live toggle (`renderLiveToggle`) into the header via `setTitleExtra` — so a D&D Beyond poll, an Initiative Tracker sync, a turn change or an edit made in either surface shows in both. Every control behaves exactly as in the section.
+28. There is a single `DnDBeyondPanel`. While a mirror is registered the mirror owns it (`setContainer` points at the mirror's container) and the section's D&D Beyond tab shows only the note "D&D Beyond is shown in the Explore window."; the disposer returned by `registerCombatMirror` removes the mirror without rendering, and the next render (the Exploration modal refreshes the panel on close) gives the D&D Beyond panel back to the section.
+29. A background-triggered render shall also be deferred while an `INPUT` or `TEXTAREA` inside a registered mirror has focus, the same guard that protects the panel's own fields, so typing a combatant in the Combat window is not wiped by a poll.
+
 ## Broadcast / IPC
 
 | Message type | Direction | Payload | When |
@@ -66,6 +72,7 @@
 ## Tests covering this
 
 - `src/__tests__/dm-control-combat.test.ts` — broadcast toggle state, stop-all behaviour, scale controls
+- `src/__tests__/dm-control-combat-mirror.test.ts` — requirements 27–29: a registered mirror receives the combat body and an active Live toggle, repaints on every render and stops once disposed, takes the D&D Beyond panel while registered and hands it back after disposal, and a focused field inside the mirror defers a background render
 - `src/__tests__/main.test.ts` — Initiative Tracker plugin event mapping into `TrackerCombatant[]`, `sendInitiativeUpdate` filters hidden
 - `src/__tests__/server-combat-scale.test.ts` — `combat-scale` end-to-end
 - `src/__tests__/ddb-to-player.integration.test.ts` — D&D Beyond → player `initiative-update`
