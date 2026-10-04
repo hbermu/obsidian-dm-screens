@@ -16,7 +16,7 @@
 1. The modal shall add the `dm-hydrus-modal` CSS class and set the title to `Media from Hydrus`.
 2. The modal shall pre-fill the search input with `hydrusDefaultSearchTags`.
 3. The modal shall expose a source selector with three options: `Remote + Local` (merged), `Local only`, and implicitly `Online` mode when the Hydrus client is reachable. Switching shall re-render the tile grid.
-4. The modal shall expose two filter checkboxes: `images` and `videos`. Unchecking a class shall hide its tiles from the grid.
+4. The modal shall expose two filter checkboxes: `images` and `videos`. Unchecking a class shall hide its tiles from the grid; files of any other kind (archives, documents) never appear, whatever the checkboxes say (`search.md` requirement 3).
 5. The modal shall render a maximum of `PAGE_SIZE = 100` tiles per page; total tiles considered are capped at `HARD_CAP = 1000`.
 6. Each remote tile shall load its thumbnail via `client.getThumbnailBytes(hash)` and render it as a data URL.
 7. Each local tile shall load its thumbnail from the cached `thumbVaultPath` via `vault.adapter.getResourcePath`.
