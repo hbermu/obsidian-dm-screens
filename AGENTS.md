@@ -150,6 +150,7 @@ src/
     client.ts            # Hydrus Client API client
     cache.ts             # Vault-folder cache with TTL sweep
     noteRefs.ts          # Parse/resolve/download hydrus:// references embedded in notes
+    foundryModules.ts    # Foundry module lookup by name: tag and ranged zip reads
     pagination.ts        # Client-side pagination helper
     tagFilter.ts         # Regex tag filtering
     tagInput.ts          # Comma-delimited tag query parser
@@ -175,6 +176,7 @@ src/
     MapScreenPanel.ts    # Map Screen section of the DM panel (picker, pan preview, grid controls)
     MapCalibrationModal.ts  # Per-screen physical calibration (diagonal + fine-tune + test pattern)
     MapFogModal.ts       # Fog and walls editor
+    FoundryImportModals.ts  # Foundry import confirmation and scene picker
     MapExploreModal.ts   # Exploration Mode (room/door gestures, scale/grid toggles, floating AoE, Vision and Combat windows)
     FloatingWindow.ts    # Draggable, minimizable window used by Exploration Mode
     controlCard.ts       # Collapsible AoE/vision control card

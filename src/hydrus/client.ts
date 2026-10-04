@@ -160,15 +160,24 @@ export class HydrusClient {
     return res.arrayBuffer;
   }
 
+  // Hydrus honours `Range`, so a caller can read a few entries out of a large
+  // archive. A server that ignores it answers 200 with the whole file, which
+  // `partial: false` reports so the caller can use those bytes as they are.
+  async getFileRange(hash: string, start: number, end: number): Promise<{ bytes: Uint8Array; partial: boolean }> {
+    const res = await this.get(`/get_files/file?hash=${encodeURIComponent(hash)}`, { Range: `bytes=${start}-${end}` });
+    debug("Hydrus: getFileRange", hash.slice(0, 8), `${start}-${end}`, res.status);
+    return { bytes: new Uint8Array(res.arrayBuffer), partial: res.status === 206 };
+  }
+
   async getThumbnailBytes(hash: string): Promise<ArrayBuffer> {
     const res = await this.get(`/get_files/thumbnail?hash=${encodeURIComponent(hash)}`);
     return res.arrayBuffer;
   }
 
-  private async get(path: string): Promise<RequestUrlResponse> {
+  private async get(path: string, extraHeaders: Record<string, string> = {}): Promise<RequestUrlResponse> {
     const url = `${this.opts.baseUrl}${path}`;
     assertOutboundUrl(url, "hydrus");
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", ...extraHeaders };
     // The key is bound to the configured origin. `path` is assembled from
     // internal strings plus server-supplied hashes, so this asserts that no
     // future caller can turn a response value into an absolute URL and have us

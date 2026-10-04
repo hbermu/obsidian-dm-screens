@@ -2,6 +2,7 @@ import type { MapWall } from "./types";
 
 export interface FoundryScene {
   name: string;
+  background: string;
   width: number;
   height: number;
   gridSize: number;
@@ -242,43 +243,105 @@ export function foundrySceneToWalls(scene: Record<string, unknown>): FoundryScen
   if (walls.length === 0) return null;
 
   const name = typeof scene["name"] === "string" ? scene["name"] : "";
-  return { name, width, height, gridSize, walls };
+  // Older modules keep the background in `img`, newer ones in `background.src`.
+  const bg = scene["background"];
+  const background =
+    bg !== null && typeof bg === "object" && typeof (bg as Record<string, unknown>)["src"] === "string"
+      ? ((bg as Record<string, unknown>)["src"] as string)
+      : typeof scene["img"] === "string" ? (scene["img"] as string) : "";
+  return { name, background, width, height, gridSize, walls };
 }
 
-export function pickScene(docs: unknown[]): FoundryScene | null {
+export function collectFoundryScenes(entries: Record<string, Uint8Array>): FoundryScene[] {
+  const docs: unknown[] = [];
+  for (const [name, bytes] of Object.entries(entries)) {
+    if (/\.db$/i.test(name)) {
+      docs.push(...parseNedb(new TextDecoder("utf-8", { fatal: false }).decode(bytes)));
+    } else if (/packs[/\\].*\.(log|ldb)$/i.test(name)) {
+      docs.push(...assembleLeveldbScenes(parseLeveldbEntries(bytes)));
+    }
+  }
   const scenes: FoundryScene[] = [];
   for (const doc of docs) {
     if (doc === null || typeof doc !== "object") continue;
     const scene = foundrySceneToWalls(doc as Record<string, unknown>);
     if (scene) scenes.push(scene);
   }
-  if (scenes.length === 0) return null;
-
-  // Prefer scene whose name has no parenthesis (base variant)
-  const base = scenes.filter((s) => !s.name.includes("("));
-  if (base.length > 0) {
-    // Among base variants, most walls first, then first
-    return base.reduce((best, s) => (s.walls.length > best.walls.length ? s : best), base[0]);
-  }
-  // Fall back to most walls
-  return scenes.reduce((best, s) => (s.walls.length > best.walls.length ? s : best), scenes[0]);
+  return scenes;
 }
 
-export function parseFoundryModule(entries: Record<string, Uint8Array>): FoundryImportResult {
-  const docs: unknown[] = [];
+export interface SceneTarget {
+  width: number;
+  height: number;
+  tags: string[];
+}
 
-  for (const [name, bytes] of Object.entries(entries)) {
-    if (/\.db$/i.test(name)) {
-      const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-      docs.push(...parseNedb(text));
-    } else if (/packs[/\\].*\.(log|ldb)$/i.test(name)) {
-      docs.push(...assembleLeveldbScenes(parseLeveldbEntries(bytes)));
+export interface SceneChoice {
+  scene: FoundryScene | null;
+  candidates: FoundryScene[];
+}
+
+const STOP_TOKENS = new Set(["the", "of", "and", "a", "an"]);
+
+export function sceneTokens(text: string): Set<string> {
+  const words = text
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/);
+  return new Set(words.filter((w) => w.length > 1 && !/\d/.test(w) && !STOP_TOKENS.has(w)));
+}
+
+function wallSignature(scene: FoundryScene): string {
+  return scene.walls.map((w) => `${Math.round(w.x1)},${Math.round(w.y1)},${Math.round(w.x2)},${Math.round(w.y2)}`).sort().join(";");
+}
+
+// A module ships one scene per room and per lighting variant, and Czepeku
+// shares one module between related maps. The aspect ratio rules out rooms of
+// another shape; the map's name: words and its other tags, matched against the
+// scene name and background file, rank the rest. The pick is automatic only
+// when every name: word is in the winning scene (an "Interior" map never gets
+// an exterior scene) and no equally ranked scene carries different walls (day
+// and night copies of a room share them); otherwise the caller asks the DM.
+export function chooseScene(scenes: FoundryScene[], target: SceneTarget): SceneChoice {
+  if (scenes.length === 0) return { scene: null, candidates: [] };
+  const ratio = target.width / target.height;
+  const sameShape = scenes.filter((s) => Math.abs(Math.log(s.width / s.height / ratio)) <= 0.03);
+  const pool = sameShape.length > 0 ? sameShape : scenes;
+
+  const nameTokens = new Set<string>();
+  const tagTokens: string[][] = [];
+  for (const tag of target.tags) {
+    if (tag.startsWith("name:")) {
+      for (const t of sceneTokens(tag.slice("name:".length))) nameTokens.add(t);
+    } else if (!tag.includes(":")) {
+      const tokens = [...sceneTokens(tag)];
+      if (tokens.length > 0) tagTokens.push(tokens);
     }
   }
+  // A tag counts only when every word of it is in the scene, weighted by its
+  // length: Hydrus maps also carry single-word AI tags ("dragon", "book"), and a
+  // whole multi-word variant tag ("cannon room") must outweigh a stray word.
+  const scored = pool.map((scene) => {
+    const have = sceneTokens(`${scene.name} ${scene.background.split("/").pop() ?? ""}`);
+    let score = 0;
+    for (const t of nameTokens) if (have.has(t)) score++;
+    for (const tokens of tagTokens) if (tokens.every((t) => have.has(t))) score += tokens.length;
+    return { scene, score, namesMatch: [...nameTokens].every((t) => have.has(t)) };
+  });
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      Number(a.scene.name.includes("(")) - Number(b.scene.name.includes("(")) ||
+      b.scene.walls.length - a.scene.walls.length
+  );
+  const candidates = scored.map((s) => s.scene);
+  const top = scored[0];
+  const topWalls = wallSignature(top.scene);
+  const tied = scored.some((s) => s.score === top.score && wallSignature(s.scene) !== topWalls);
+  return { scene: tied || !top.namesMatch ? null : top.scene, candidates };
+}
 
-  const scene = pickScene(docs);
-  if (!scene) throw new Error("No scene with walls found in module");
-
+export function sceneImportResult(scene: FoundryScene): FoundryImportResult {
   return {
     walls: scene.walls,
     gridSquares: { x: scene.width / scene.gridSize, y: scene.height / scene.gridSize },

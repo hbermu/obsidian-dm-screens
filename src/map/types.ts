@@ -65,9 +65,12 @@ export interface MapVision {
   sizeFt: number;
   dimFt: number;
   featherFt: number;
-  // When true the vision centre tracks the players' viewport centre (panX/panY),
-  // so moving the view during exploration drags the lit area with it.
+  // When true the vision keeps its offset from the players' viewport centre
+  // (panX/panY + viewOffsetX/Y), so moving the view carries the lit area along
+  // by the same amount while it stays where it was placed relative to the view.
   followsView?: boolean;
+  viewOffsetX?: number;
+  viewOffsetY?: number;
   // DM-side name and marker colour; the map screen ignores both.
   label?: string;
   color?: string;

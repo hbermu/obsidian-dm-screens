@@ -7,7 +7,7 @@ import { vaultPathFromUrl } from "../server";
 import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
-import { DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
+import { anchorToView, DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
 import { gridLinePositions, rotatePoint } from "../map/transform";
 import { debug } from "../debug";
 import { fitScale } from "./mapStage";
@@ -631,6 +631,7 @@ export class MapExploreModal extends Modal {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
             moveVisions(targets, starts, d.x, d.y, nw, nh);
+            for (const v of targets) if (v.followsView) anchorToView(v, this.panel.state.panX, this.panel.state.panY);
             for (const reposition of positions) reposition();
             redraw();
             this.panel.broadcastVisions();

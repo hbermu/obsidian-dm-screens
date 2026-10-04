@@ -11,10 +11,27 @@ export function normalizeVision(v: MapVision): MapVision {
 export const DEFAULT_VISION_COLOR = "#ffd23f";
 
 // In group mode a drag moves every vision that is not bound to the view; a
-// bound vision is re-placed by the next pan anyway, so it always moves alone.
+// bound vision is anchored to the view, so it always moves alone (and its drag
+// re-anchors it).
 export function visionDragTargets(visions: MapVision[], dragged: MapVision, group: boolean): MapVision[] {
   if (!group || dragged.followsView) return [dragged];
   return visions.filter((v) => !v.followsView);
+}
+
+export function anchorToView(v: MapVision, panX: number, panY: number): void {
+  v.viewOffsetX = v.x - panX;
+  v.viewOffsetY = v.y - panY;
+}
+
+// Re-place a view-bound vision at the view centre plus its offset, kept on the
+// map; the offset survives the clamp, so the vision returns once the view does.
+export function followView(v: MapVision, panX: number, panY: number, nw: number, nh: number): boolean {
+  const x = Math.min(nw, Math.max(0, panX + (v.viewOffsetX ?? 0)));
+  const y = Math.min(nh, Math.max(0, panY + (v.viewOffsetY ?? 0)));
+  if (x === v.x && y === v.y) return false;
+  v.x = x;
+  v.y = y;
+  return true;
 }
 
 // The delta is clamped once for the whole set so the formation keeps its shape

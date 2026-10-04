@@ -4,12 +4,13 @@
 
 ## Source files
 
-- `src/hydrus/client.ts` — `HydrusClient`, `verifyAccess`, `getServices`, `searchFiles`, `getFilesMetadata`, `getFileBytes`, `getThumbnailBytes`, `searchTags`, MIME → extension map
+- `src/hydrus/client.ts` — `HydrusClient`, `verifyAccess`, `getServices`, `searchFiles`, `getFileMetadata`, `getFileBytes`, `getFileRange`, `getThumbnailBytes`, `searchTags`, MIME → extension map
 - `src/hydrus/cache.ts` — `HydrusCache`, `CachedEntry`, index management, write serialisation, `sweep`, `clear`, `markUsed`, `fetchAndCache`
 - `src/hydrus/pagination.ts` — `paginate(items, pageIndex, pageSize)` for client-side paging
 - `src/hydrus/tagFilter.ts` — regex-anchored `filterTags` used by the explorer tile menu
 - `src/hydrus/tagInput.ts` — comma-delimited query parser
 - `src/hydrus/noteRefs.ts` — parse/resolve/download `hydrus://` references embedded in notes
+- `src/hydrus/foundryModules.ts` — Foundry module lookup by `name:` tag and ranged zip reads (behaviour in `../map-screen/fog-of-war.md`, requirements 41b–41f)
 - `src/views/HydrusExplorerModal.ts` — the modal UI
 - `src/views/HydrusTagSuggester.ts` — autocomplete component bound to the search input
 - `src/main.ts` — `buildHydrusClient`, `initHydrusCache`, daily `sweep` via `registerInterval`
@@ -36,6 +37,8 @@
 3. The plugin shall instantiate `HydrusCache` (and `DdbImageCache`) on load and whenever a cache-related setting changes (`hydrusEnabled`, `cacheBaseFolder`, `hydrusCacheTtlDays`). It shall NOT re-instantiate on every unrelated settings save — bulk paths like `DmControlPanel.saveState` fire on every layer broadcast and rebuilding caches there would be wasteful.
 4. While `hydrusEnabled` is true, the plugin shall sweep the Hydrus cache once on load and then every 24 hours (via `registerInterval`). The `DdbImageCache` sweep schedule is independent of `hydrusEnabled` — it always sweeps on load and on a 24-hour `registerInterval` while the plugin is loaded.
 5. The plugin shall expose `buildHydrusClient()` returning a configured `HydrusClient` or `null` if any of `hydrusEnabled` / `hydrusApiUrl` / `hydrusApiKey` is missing or empty.
+5a. `HydrusClient.getFileRange(hash, start, end)` shall request `/get_files/file` with `Range: bytes=<start>-<end>` (through the same keyed, policy-checked request as every other call) and return `{ bytes, partial }`, where `partial` is true only for a `206` answer; a server that ignores `Range` answers `200` with the whole file and `partial: false`.
+5b. When a Hydrus image or video is set as the map, the plugin shall look for a Foundry VTT module zip tagged `type:foundry module` with the same `name:` tag and offer to import its walls; the flow is specified in `../map-screen/fog-of-war.md` (requirements 41b–41f).
 6. `HydrusClient.getFileMetadata` shall populate `HydrusFile.knownTags` from the Hydrus `storage_tags` bucket `"0"` (currently-active tags) only. Tombstones (`"2"`), pending (`"1"`), and petitioned (`"3"`) buckets shall be excluded so tag cleanups performed in Hydrus are reflected in the explorer (tile tooltip, tile menu, layer-label derivation, Copy tags, local search-box filter) without surfacing deleted tags.
 7. Sub-functionality requirements are split across:
    - `connection-and-services.md` — connectivity test, service discovery, multi-service selection
@@ -52,6 +55,7 @@ The Hydrus integration uses the background-media broadcast (`show-background-med
 ## Tests covering this
 
 - `src/__tests__/hydrus-client.test.ts`, `src/__tests__/hydrus-client-extra.test.ts` — API client behaviour
+- `src/__tests__/hydrus-foundry-modules.test.ts` — `getFileRange` sends `Range` and reports a partial answer; the module lookup and ranged zip reader
 - `src/__tests__/hydrus-cache.test.ts`, `src/__tests__/hydrus-cache-extra.test.ts` — cache index, sweep, mark-used, write serialisation
 - `src/__tests__/pagination.test.ts` — `paginate` helper
 - `src/__tests__/tag-filter.test.ts` — ignored-tag regex matching
@@ -63,5 +67,5 @@ The Hydrus integration uses the background-media broadcast (`show-background-med
 - Pushing a video as an image layer. Videos render only as the player-screen background.
 - Tag editing or any write operation on the Hydrus server. The integration is read-only.
 - Authenticating per-user. There is a single API key in settings.
-- Streaming partial downloads. Files are fetched whole and stored on disk.
+- Streaming partial downloads of media. Images and videos are fetched whole and stored on disk; only Foundry module zips are read by range, and their bytes are never cached.
 - A persistent search history.

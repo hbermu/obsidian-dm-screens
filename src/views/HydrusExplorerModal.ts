@@ -238,24 +238,25 @@ export class HydrusExplorerModal extends Modal {
     this.setStatus("Searching…");
 
     const tags = parseTagQuery(this.query);
-
-    if (this.filterImages && !this.filterVideos) {
-      tags.push("system:filetype is image");
-    } else if (this.filterVideos && !this.filterImages) {
-      tags.push("system:filetype is video");
-    } else if (!this.filterImages && !this.filterVideos) {
+    const kinds: Array<"image" | "video"> = [];
+    if (this.filterImages) kinds.push("image");
+    if (this.filterVideos) kinds.push("video");
+    if (kinds.length === 0) {
       this.tiles = [];
       this.renderPage();
       this.busy = false;
       return;
     }
 
-    debug("HydrusExplorer: runSearch tags:", tags, "mode:", this.mode, "localOnly:", this.localOnly);
+    debug("HydrusExplorer: runSearch tags:", tags, "kinds:", kinds, "mode:", this.mode, "localOnly:", this.localOnly);
     try {
       if (this.localOnly || this.mode === "offline" || !this.client) {
-        this.tiles = await this.searchLocal(tags);
+        this.tiles = await this.searchLocal(tags, kinds);
       } else {
-        this.tiles = await this.searchMerged(this.client, tags);
+        // Hydrus also holds non-media files tagged like the maps (the Foundry
+        // module zips share their map's name:), so the search always names the
+        // media kinds it may return, even with both boxes checked.
+        this.tiles = await this.searchMerged(this.client, [...tags, `system:filetype is ${kinds.join(", ")}`]);
       }
       debug("HydrusExplorer: runSearch returned", this.tiles.length, "tile(s)");
       this.renderPage();
@@ -325,11 +326,13 @@ export class HydrusExplorerModal extends Modal {
     });
   }
 
-  private async searchLocal(tags: string[]): Promise<Tile[]> {
+  private async searchLocal(tags: string[], kinds: Array<"image" | "video">): Promise<Tile[]> {
     const cached = await this.cache.listCached();
-    const filtered = tags.length === 0
-      ? cached
-      : cached.filter((entry) => tags.every((t) => entryMatchesTag(entry, t)));
+    const filtered = cached.filter(
+      (entry) =>
+        kinds.some((kind) => entry.mime.toLowerCase().startsWith(`${kind}/`)) &&
+        tags.every((t) => entryMatchesTag(entry, t))
+    );
     return filtered
       .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
       .map((entry) => ({

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNapiCanvas } from "../../test/canvas/napi-canvas-shim";
 import { MapExploreModal } from "../views/MapExploreModal";
 import { fogCanvasSize } from "../map/fog";
+import { followView } from "../map/vision";
 import type { ActiveMap } from "../views/MapScreenPanel";
 import type { MapAoe, MapVision, MapWall } from "../map/types";
 
@@ -88,7 +89,7 @@ function makePanelStub(
       stub.state.panY = y;
       let changed = false;
       for (const v of stub.visions) {
-        if (v.followsView) { v.x = x; v.y = y; changed = true; }
+        if (v.followsView && followView(v, x, y, MAP_W, MAP_H)) changed = true;
       }
       return changed;
     }),
@@ -678,6 +679,31 @@ describe("MapExploreModal — view-bound vision", () => {
     expect(vision.y).toBeCloseTo(MAP_H / 2, 1);
 
     fireDocMouse("mouseup", 500 + 102.4, 400);
+    modal.onClose();
+  });
+
+  it("dragging a bound vision's dot re-anchors it, so the next view move keeps the new offset", () => {
+    const vision: MapVision = {
+      id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5,
+      followsView: true, viewOffsetX: 0, viewOffsetY: 0,
+    };
+    const panel = makePanelStub([], { mode: "physical", visions: [vision] });
+    const { modal, markers } = openModal(panel);
+
+    const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
+    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocMouse("mousemove", 102.4, 0); // +100 natural px in x
+    fireDocMouse("mouseup", 102.4, 0);
+    expect(vision.viewOffsetX).toBeCloseTo(100, 1);
+    expect(vision.viewOffsetY).toBeCloseTo(0, 1);
+
+    const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
+    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocMouse("mousemove", 500, 400 + 51.2); // +50 natural px in y
+    fireDocMouse("mouseup", 500, 400 + 51.2);
+    expect(vision.x).toBeCloseTo(MAP_W / 2 + 100, 1);
+    expect(vision.y).toBeCloseTo(MAP_H / 2 + 50, 1);
+
     modal.onClose();
   });
 });

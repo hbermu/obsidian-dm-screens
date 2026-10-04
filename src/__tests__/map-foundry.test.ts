@@ -5,9 +5,19 @@ import {
   parseLeveldbLog,
   parseLeveldbEntries,
   foundrySceneToWalls,
-  pickScene,
-  parseFoundryModule,
+  collectFoundryScenes,
+  chooseScene,
+  sceneImportResult,
+  sceneTokens,
+  type FoundryScene,
 } from "../map/foundry";
+
+// Single-scene modules: the only scene is the one imported.
+function parseFoundryModule(entries: Record<string, Uint8Array>) {
+  const scenes = collectFoundryScenes(entries);
+  if (scenes.length === 0) throw new Error("No scene with walls found in module");
+  return sceneImportResult(scenes[0]);
+}
 
 // Hand-made synthetic fixtures using only public-domain data.
 
@@ -130,30 +140,105 @@ describe("foundrySceneToWalls", () => {
   });
 });
 
-describe("pickScene", () => {
-  const makeScene = (name: string, wallCount: number) => ({
+describe("foundrySceneToWalls — background", () => {
+  const base = { name: "Hall", width: 1000, height: 800, grid: 100, walls: [{ c: [0, 0, 100, 0], sense: 20 }] };
+
+  it("reads background.src from newer modules", () => {
+    const scene = foundrySceneToWalls({ ...base, background: { src: "modules/x/maps/Hall_Roof_Day.webp" } });
+    expect(scene!.background).toBe("modules/x/maps/Hall_Roof_Day.webp");
+  });
+
+  it("reads img from older modules", () => {
+    expect(foundrySceneToWalls({ ...base, img: "modules/x/Hall_Night.jpg" })!.background).toBe("modules/x/Hall_Night.jpg");
+  });
+
+  it("leaves it empty when the scene names no background", () => {
+    expect(foundrySceneToWalls({ ...base, background: { src: null } })!.background).toBe("");
+  });
+});
+
+describe("chooseScene", () => {
+  const scene = (name: string, opts: Partial<FoundryScene> = {}): FoundryScene => ({
     name,
+    background: "",
     width: 1000,
     height: 800,
-    grid: 100,
-    walls: Array.from({ length: wallCount }, (_, i) => ({ c: [i, 0, i + 1, 0], sense: 20 })),
+    gridSize: 100,
+    walls: [{ x1: 0, y1: 0, x2: 100, y2: 0 }],
+    ...opts,
+  });
+  const target = (tags: string[] = [], width = 2000, height = 1600) => ({ width, height, tags });
+  const otherWalls = [{ x1: 0, y1: 0, x2: 0, y2: 300 }];
+
+  it("returns no scene for an empty module", () => {
+    expect(chooseScene([], target())).toEqual({ scene: null, candidates: [] });
   });
 
-  it("prefers base name (no parens) over variant with parens", () => {
-    const docs = [makeScene("Guildhall (Night)", 5), makeScene("Guildhall", 5)];
-    const picked = pickScene(docs);
-    expect(picked).not.toBeNull();
-    expect(picked!.name).toBe("Guildhall");
+  it("treats day/night copies with identical walls as one match and prefers the base name", () => {
+    const choice = chooseScene([scene("Guildhall (Night)"), scene("Guildhall")], target());
+    expect(choice.scene!.name).toBe("Guildhall");
   });
 
-  it("picks the scene with most walls when all have parens", () => {
-    const docs = [makeScene("Room (A)", 3), makeScene("Room (B)", 8)];
-    const picked = pickScene(docs);
-    expect(picked!.walls).toHaveLength(8);
+  it("rules out rooms of another aspect ratio", () => {
+    const choice = chooseScene(
+      [scene("Library", { width: 1000, height: 1000, walls: otherWalls }), scene("Cannon Room")],
+      target()
+    );
+    expect(choice.scene!.name).toBe("Cannon Room");
   });
 
-  it("returns null for empty docs", () => {
-    expect(pickScene([])).toBeNull();
+  it("picks the scene whose name or background shares the map's variant tags", () => {
+    const choice = chooseScene(
+      [
+        scene("The Vale 1 - 03a Barn Sunset Indoors", { background: "maps/GL_Barn_Indoors_Sunset.jpg" }),
+        scene("The Vale 1 - 03b Barn Sunset Roof", { background: "maps/GL_Barn_Roof_Sunset.jpg", walls: otherWalls }),
+      ],
+      target(["name:vale barn", "roof", "sunset", "grid:gridless", "artist:czepeku"])
+    );
+    expect(choice.scene!.name).toBe("The Vale 1 - 03b Barn Sunset Roof");
+  });
+
+  it("reports an ambiguity when equally good scenes carry different walls", () => {
+    const choice = chooseScene([scene("Room (A)"), scene("Room (B)", { walls: [...otherWalls, ...otherWalls] })], target());
+    expect(choice.scene).toBeNull();
+    expect(choice.candidates.map((s) => s.name)).toEqual(["Room (B)", "Room (A)"]);
+  });
+
+  it("ranks the scenes of the named map first in a module shared by several maps", () => {
+    const choice = chooseScene(
+      [
+        scene("The Vale 1 - 08a ApplePress NewBeginnings Indoors Day"),
+        scene("The Vale 1 - 01a Barn NewBeginnings Indoors Day", { walls: otherWalls }),
+      ],
+      target(["name:ages of the vale barn", "indoors"])
+    );
+    expect(choice.candidates[0].name).toBe("The Vale 1 - 01a Barn NewBeginnings Indoors Day");
+  });
+
+  it("asks instead of guessing when no scene carries every word of the map's name", () => {
+    const choice = chooseScene(
+      [scene("Drow Warship - 18a Sky", { background: "GL_DrowWarship_Sky.jpg" }), scene("Drow Warship - 01a Original", { walls: otherWalls })],
+      target(["name:drow warship interior", "sky", "iridescent middle deck"])
+    );
+    expect(choice.scene).toBeNull();
+    expect(choice.candidates[0].name).toBe("Drow Warship - 18a Sky");
+  });
+
+  it("ignores namespaced tags other than name:", () => {
+    const choice = chooseScene(
+      [scene("Hall"), scene("Fantasy Grid Cellar", { walls: otherWalls })],
+      target(["name:hall", "genre:fantasy", "grid:gridless"])
+    );
+    expect(choice.scene!.name).toBe("Hall");
+  });
+
+  it("falls back to every scene when none has the map's shape", () => {
+    const choice = chooseScene([scene("Square", { width: 500, height: 500 })], target());
+    expect(choice.scene!.name).toBe("Square");
+  });
+
+  it("splits camelCase and separators into lowercase tokens without stop words", () => {
+    expect([...sceneTokens("FlyingCastle_CannonRoom_Day of the-King 03a")]).toEqual(["flying", "castle", "cannon", "room", "day", "king"]);
   });
 });
 
@@ -206,7 +291,7 @@ describe("parseFoundryModule — LevelDB with separate wall docs (newer Foundry)
     expect(result.walls.filter((w) => w.door)).toHaveLength(1);
   });
 
-  it("prefers the base scene variant and uses only its own walls", () => {
+  it("keeps each scene's own walls apart", () => {
     const bytes = makeWal([
       { key: "!scenes!BASE", doc: { _id: "BASE", name: "Tavern", width: 500, height: 500, grid: 100, walls: [] } },
       { key: "!scenes!NIGHT", doc: { _id: "NIGHT", name: "Tavern (Night)", width: 500, height: 500, grid: 100, walls: [] } },
@@ -214,8 +299,9 @@ describe("parseFoundryModule — LevelDB with separate wall docs (newer Foundry)
       { key: "!scenes.walls!BASE.B", doc: { _id: "B", c: [100, 0, 100, 100] } },
       { key: "!scenes.walls!NIGHT.C", doc: { _id: "C", c: [0, 0, 200, 200] } },
     ]);
-    const result = parseFoundryModule({ "packs/tavern/000001.log": bytes });
-    expect(result.walls).toHaveLength(2); // BASE's two walls, not NIGHT's
+    const scenes = collectFoundryScenes({ "packs/tavern/000001.log": bytes });
+    expect(scenes.find((s) => s.name === "Tavern")!.walls).toHaveLength(2);
+    expect(scenes.find((s) => s.name === "Tavern (Night)")!.walls).toHaveLength(1);
   });
 });
 
