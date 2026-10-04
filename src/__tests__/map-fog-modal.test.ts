@@ -5,7 +5,7 @@ import { zipSync } from "fflate";
 import { installNapiCanvas, pixelAt } from "../../test/canvas/napi-canvas-shim";
 import { MapFogModal } from "../views/MapFogModal";
 import { fogCanvasSize } from "../map/fog";
-import type { ActiveMap } from "../views/MapScreenPanel";
+import { MapScreenPanel, type ActiveMap } from "../views/MapScreenPanel";
 import type { MapWall } from "../map/types";
 
 // Map dimensions: 1000×750 natural pixels; fog canvas: 1024×768
@@ -65,6 +65,13 @@ function makePanelStub(walls: MapWall[] = []) {
     commitFog: commitFogSpy,
     commitWalls: commitWallsSpy,
     applyGridConfig: applyGridConfigSpy,
+    // The real import path, bound to this stub: it scales onto `activeMap` and
+    // reports through the spies above.
+    importWalls: MapScreenPanel.prototype.importWalls,
+    pickFoundryScene: MapScreenPanel.prototype.pickFoundryScene,
+    activeMap: null as ActiveMap | null,
+    activeMapTags: [] as string[],
+    plugin: { app: appStub },
     fogDataUrl: null as string | null,
     walls,
     state: {
@@ -618,6 +625,7 @@ describe("MapFogModal — uvtt import", () => {
       panel as never,
       halfMap
     );
+    panel.activeMap = halfMap;
     modal.onOpen();
     return { modal, panel };
   }
@@ -785,11 +793,12 @@ describe("MapFogModal — Foundry import", () => {
       panel as never,
       map
     );
+    panel.activeMap = map;
     modal.onOpen();
     return { modal, panel };
   }
 
-  it("importFoundryZip scales walls to the displayed map width and sets grid", () => {
+  it("importFoundryZip scales walls to the displayed map width and sets grid", async () => {
     // Scene: 1000×800, gridSize=100 → gridSquares={x:10,y:8}, pixelsPerGrid=100
     // naturalWidth = 2000 (2× scene width) → scale = 2
     const scene = {
@@ -807,7 +816,7 @@ describe("MapFogModal — Foundry import", () => {
     const zipBytes = zipSync({ "packs/maps.db": new TextEncoder().encode(nedbStr) });
 
     const { modal, panel } = openModalWithNaturalWidth(2000);
-    modal.importFoundryZip(zipBytes);
+    await modal.importFoundryZip(zipBytes);
 
     expect(panel.commitWalls).toHaveBeenCalledTimes(1);
     const walls = panel.commitWalls.mock.calls[0][0] as MapWall[];
@@ -828,12 +837,34 @@ describe("MapFogModal — Foundry import", () => {
 
     const zipBytes = zipSync({ "readme.txt": new TextEncoder().encode("hello") });
     const { modal, panel } = openModalWithNaturalWidth(1000);
-    modal.importFoundryZip(zipBytes);
+    await modal.importFoundryZip(zipBytes);
 
     expect(panel.commitWalls).not.toHaveBeenCalled();
     expect(noticeSpy).toHaveBeenCalledWith(expect.stringContaining("Foundry import failed"), 6000);
 
     noticeSpy.mockRestore();
+    modal.onClose();
+  });
+
+  it("asks the DM to pick when the module's matching scenes carry different walls", async () => {
+    const obsidian = await import("obsidian");
+    const opened: string[][] = [];
+    vi.spyOn(obsidian.FuzzySuggestModal.prototype, "open").mockImplementation(function (this: InstanceType<typeof obsidian.FuzzySuggestModal<{ name: string }>>) {
+      const items = this.getItems();
+      opened.push(items.map((s) => s.name));
+      this.onChooseItem(items[1], new MouseEvent("click"));
+    });
+    const room = (name: string, c: number[]) =>
+      JSON.stringify({ _id: name, name, width: 1000, height: 600, grid: 100, walls: [{ c, sense: 20 }] }) + "\n";
+    const zipBytes = zipSync({
+      "packs/maps.db": new TextEncoder().encode(room("Kitchen", [0, 0, 100, 0]) + room("Cellar", [0, 0, 0, 300])),
+    });
+    const { modal, panel } = openModalWithNaturalWidth(1000);
+    await modal.importFoundryZip(zipBytes);
+
+    expect(opened).toEqual([["Kitchen", "Cellar"]]);
+    expect(panel.commitWalls).toHaveBeenCalledTimes(1);
+    expect(panel.commitWalls.mock.calls[0][0]).toEqual([{ x1: 0, y1: 0, x2: 0, y2: 300 }]);
     modal.onClose();
   });
 });

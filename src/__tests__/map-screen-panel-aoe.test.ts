@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapScreenPanel } from "../views/MapScreenPanel";
 import type { MapAoe, MapVision } from "../map/types";
+import { anchorToView } from "../map/vision";
 
 interface Broadcast {
   type: string;
@@ -160,24 +161,57 @@ describe("MapScreenPanel AoE lifecycle", () => {
     expect(broadcasts[3].payload).toEqual({ aoes: [AOE] });
   });
 
-  it("syncBoundVisions snaps a followsView vision onto the pan centre and broadcasts", () => {
+  it("syncBoundVisions carries a bound vision by its offset from the view centre and broadcasts", () => {
     const { panel, broadcasts } = makePanel();
     panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 4480, naturalHeight: 7000 };
-    panel.state.panX = 1000;
-    panel.state.panY = 1500;
-    const bound: MapVision = { id: "v-1", shape: "circle", x: 10, y: 20, sizeFt: 30, dimFt: 0, featherFt: 5, followsView: true };
+    // View centre at (400, 500) with the light at (500, 600); moving the view to
+    // (600, 800) puts the light at (700, 900) — it keeps its place relative to the view.
+    panel.state.panX = 400;
+    panel.state.panY = 500;
+    const bound: MapVision = { id: "v-1", shape: "circle", x: 500, y: 600, sizeFt: 30, dimFt: 0, featherFt: 5, followsView: true };
+    anchorToView(bound, panel.state.panX, panel.state.panY);
     const free: MapVision = { id: "v-2", shape: "square", x: 999, y: 888, sizeFt: 30, dimFt: 0, featherFt: 5 };
     panel.visions = [bound, free];
+    expect(panel.syncBoundVisions(true)).toBe(false);
 
+    panel.state.panX = 600;
+    panel.state.panY = 800;
     const changed = panel.syncBoundVisions(true);
 
     expect(changed).toBe(true);
-    // The bound vision moved to the view centre; the free one is untouched.
-    expect([bound.x, bound.y]).toEqual([1000, 1500]);
+    expect([bound.x, bound.y]).toEqual([700, 900]);
     expect([free.x, free.y]).toEqual([999, 888]);
     const vis = broadcasts.filter((b) => b.type === "map-vision");
     expect(vis).toHaveLength(1);
-    expect((vis[0].payload as { visions: MapVision[] }).visions[0].x).toBe(1000);
+    expect((vis[0].payload as { visions: MapVision[] }).visions[0].x).toBe(700);
+  });
+
+  it("syncBoundVisions keeps a bound vision on the map but remembers its offset", () => {
+    const { panel } = makePanel();
+    panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 4480, naturalHeight: 7000 };
+    const bound: MapVision = {
+      id: "v-1", shape: "circle", x: 0, y: 0, sizeFt: 30, dimFt: 0, featherFt: 5,
+      followsView: true, viewOffsetX: -500, viewOffsetY: 0,
+    };
+    panel.visions = [bound];
+    panel.state.panX = 200;
+    panel.state.panY = 1000;
+    panel.syncBoundVisions(true);
+    expect([bound.x, bound.y]).toEqual([0, 1000]);
+    panel.state.panX = 2000;
+    panel.syncBoundVisions(true);
+    expect([bound.x, bound.y]).toEqual([1500, 1000]);
+  });
+
+  it("syncBoundVisions centres a bound vision that has no offset yet", () => {
+    const { panel } = makePanel();
+    panel.activeMap = { url: "/vault/m.jpg", mediaType: "image", naturalWidth: 4480, naturalHeight: 7000 };
+    const bound: MapVision = { id: "v-1", shape: "circle", x: 10, y: 20, sizeFt: 30, dimFt: 0, featherFt: 5, followsView: true };
+    panel.visions = [bound];
+    panel.state.panX = 1000;
+    panel.state.panY = 1500;
+    expect(panel.syncBoundVisions(true)).toBe(true);
+    expect([bound.x, bound.y]).toEqual([1000, 1500]);
   });
 
   it("syncBoundVisions is a no-op (no broadcast) when no vision follows the view", () => {

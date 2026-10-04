@@ -8,9 +8,7 @@ import { blocksSight } from "../map/los";
 import { vaultPathFromUrl } from "../server";
 import type { MapWall } from "../map/types";
 import { parseUvttWalls } from "../map/uvtt";
-import type { UvttParseResult } from "../map/uvtt";
-import { parseFoundryModule } from "../map/foundry";
-import type { FoundryImportResult } from "../map/foundry";
+import { collectFoundryScenes, sceneImportResult, type FoundryScene } from "../map/foundry";
 import { debug } from "../debug";
 
 type FogTool = "brush" | "rect" | "cell" | "gridrect" | "room";
@@ -681,30 +679,6 @@ export class MapFogModal extends Modal {
     });
   }
 
-  private applyImportedWalls(result: UvttParseResult | FoundryImportResult, sourceLabel: string) {
-    const scale = this.map.naturalWidth / (result.gridSquares.x * result.pixelsPerGrid);
-    const scaledWalls: MapWall[] = result.walls.map((w) => ({
-      x1: w.x1 * scale,
-      y1: w.y1 * scale,
-      x2: w.x2 * scale,
-      y2: w.y2 * scale,
-      ...(w.door ? { door: true } : {}),
-      ...(w.open ? { open: true } : {}),
-    }));
-
-    this.walls = scaledWalls;
-    void this.panel.commitWalls([...this.walls]);
-    this.redrawOverlay?.();
-
-    const rawPxPerSquare = this.map.naturalWidth / result.gridSquares.x;
-    const pxPerSquare = Number.isInteger(rawPxPerSquare) ? rawPxPerSquare : parseFloat(rawPxPerSquare.toFixed(2));
-    this.panel.applyGridConfig(pxPerSquare, 0, 0);
-
-    const doors = scaledWalls.filter((w) => w.door).length;
-    debug(`MapFogModal: ${sourceLabel} —`, scaledWalls.length, "walls,", doors, "doors, pxPerSquare", pxPerSquare);
-    new Notice(`Imported ${scaledWalls.length} walls (${doors} doors) — grid set to ${pxPerSquare} px/square`);
-  }
-
   importUvttDoc(doc: unknown) {
     let parsed;
     try {
@@ -713,25 +687,26 @@ export class MapFogModal extends Modal {
       new Notice(`UVTT import failed: ${(err as Error).message}`, 6000);
       return;
     }
-    this.applyImportedWalls(parsed, "importUvttDoc");
+    this.walls = this.panel.importWalls(parsed, "UVTT file");
+    this.redrawOverlay?.();
   }
 
-  importFoundryZip(zipBytes: Uint8Array) {
-    let entries: Record<string, Uint8Array>;
+  async importFoundryZip(zipBytes: Uint8Array) {
+    let scenes: FoundryScene[];
     try {
-      entries = unzipSync(zipBytes, { filter: (f) => /\.(db|log|ldb)$/i.test(f.name) });
+      scenes = collectFoundryScenes(unzipSync(zipBytes, { filter: (f) => /\.(db|log|ldb)$/i.test(f.name) }));
     } catch (err) {
       new Notice(`Foundry import failed: ${(err as Error).message}`, 6000);
       return;
     }
-    let result: FoundryImportResult;
-    try {
-      result = parseFoundryModule(entries);
-    } catch (err) {
-      new Notice(`Foundry import failed: ${(err as Error).message}`, 6000);
+    if (scenes.length === 0) {
+      new Notice("Foundry import failed: No scene with walls found in module", 6000);
       return;
     }
-    this.applyImportedWalls(result, "importFoundryZip");
+    const scene = await this.panel.pickFoundryScene(scenes);
+    if (!scene) return;
+    this.walls = this.panel.importWalls(sceneImportResult(scene), `Foundry file "${scene.name}"`);
+    this.redrawOverlay?.();
   }
 
   onClose() {

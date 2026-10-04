@@ -10,6 +10,10 @@ import { fogCanvasSize, loadFogSidecar, saveFogSidecar, type FogAdapter } from "
 import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
 import { MapFogModal } from "./MapFogModal";
 import { MapExploreModal } from "./MapExploreModal";
+import { FoundryImportConfirmModal, FoundrySceneModal } from "./FoundryImportModals";
+import { chooseScene, sceneImportResult, type FoundryImportResult, type FoundryScene } from "../map/foundry";
+import type { UvttParseResult } from "../map/uvtt";
+import { findFoundryModules, loadModuleScenes } from "../hydrus/foundryModules";
 import {
   clampPan,
   cssPixelsPerInch,
@@ -19,7 +23,7 @@ import {
 } from "../map/transform";
 import type { AoePreset, AoeShape, MapAoe, MapRotation, MapVision, MapWall, StoredMapState } from "../map/types";
 import { renderAoe } from "../map/aoe";
-import { DEFAULT_VISION_COLOR, eraseVisionWithWalls, moveVisions, normalizeVision, visionDragTargets } from "../map/vision";
+import { anchorToView, DEFAULT_VISION_COLOR, eraseVisionWithWalls, followView, moveVisions, normalizeVision, visionDragTargets } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
 import { LightSourceModal } from "./LightSourceModal";
 import { finiteScale, fitScale } from "./mapStage";
@@ -65,6 +69,8 @@ export class MapScreenPanel {
   visions: MapVision[] = [];
   visionGroup = false;
   walls: MapWall[] = [];
+  // Hydrus tags of the active map (empty for note images); scene matching reads them.
+  private activeMapTags: string[] = [];
   fogDataUrl: string | null = null;
   private viewBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
   private aoeBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -164,6 +170,7 @@ export class MapScreenPanel {
     const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url, plugin: this.plugin }).label;
     new Notice(`Map "${label}" is no longer available`);
     this.activeMap = null;
+    this.activeMapTags = [];
     this.aoes = [];
     this.visions = [];
     this.walls = [];
@@ -376,6 +383,7 @@ export class MapScreenPanel {
       ? { ...stored }
       : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
+    this.activeMapTags = opts?.knownTags ?? [];
 
     const sourceLabel = resolveSourceLabel({
       url,
@@ -409,6 +417,75 @@ export class MapScreenPanel {
     this.broadcastWalls();
     this.persistState();
     this.host.render();
+    if (opts?.hydrusHash) void this.offerFoundryWalls(url);
+  }
+
+  // Scale imported walls (UVTT or Foundry, in their own pixel space) onto the
+  // displayed map and derive the grid from the source's square count.
+  importWalls(result: UvttParseResult | FoundryImportResult, sourceLabel: string): MapWall[] {
+    const map = this.activeMap!;
+    const scale = map.naturalWidth / (result.gridSquares.x * result.pixelsPerGrid);
+    const scaledWalls: MapWall[] = result.walls.map((w) => ({
+      x1: w.x1 * scale,
+      y1: w.y1 * scale,
+      x2: w.x2 * scale,
+      y2: w.y2 * scale,
+      ...(w.door ? { door: true } : {}),
+      ...(w.open ? { open: true } : {}),
+    }));
+    void this.commitWalls([...scaledWalls]);
+
+    const rawPxPerSquare = map.naturalWidth / result.gridSquares.x;
+    const pxPerSquare = Number.isInteger(rawPxPerSquare) ? rawPxPerSquare : parseFloat(rawPxPerSquare.toFixed(2));
+    this.applyGridConfig(pxPerSquare, 0, 0);
+
+    const doors = scaledWalls.filter((w) => w.door).length;
+    debug(`MapScreenPanel: importWalls from ${sourceLabel} —`, scaledWalls.length, "walls,", doors, "doors, pxPerSquare", pxPerSquare);
+    new Notice(`Imported ${scaledWalls.length} walls (${doors} doors) — grid set to ${pxPerSquare} px/square`);
+    return scaledWalls;
+  }
+
+  // Resolves the scene whose walls belong to the active map: automatically when
+  // the match is unambiguous, otherwise through a picker (null when dismissed).
+  pickFoundryScene(scenes: FoundryScene[]): Promise<FoundryScene | null> {
+    const map = this.activeMap!;
+    const choice = chooseScene(scenes, { width: map.naturalWidth, height: map.naturalHeight, tags: this.activeMapTags });
+    debug("MapScreenPanel: pickFoundryScene —", scenes.length, "scenes,", choice.scene ? `matched "${choice.scene.name}"` : `ambiguous among ${choice.candidates.length}`);
+    if (choice.scene) return Promise.resolve(choice.scene);
+    return new Promise((resolve) => new FoundrySceneModal(this.plugin.app, choice.candidates, resolve).open());
+  }
+
+  // A Hydrus map whose name: tag matches a `type:foundry module` zip offers to
+  // import that module's walls. Every await re-checks the active map, so a map
+  // switched mid-flight never receives another map's walls.
+  async offerFoundryWalls(mapUrl: string) {
+    const client = this.plugin.buildHydrusClient();
+    if (!client) return;
+    const isCurrent = () => this.activeMap?.url === mapUrl;
+    let modules;
+    try {
+      modules = await findFoundryModules(client, this.activeMapTags);
+    } catch (err) {
+      debugWarn("MapScreenPanel: Foundry module lookup failed", (err as Error).message);
+      return;
+    }
+    if (modules.length === 0 || !isCurrent()) return;
+
+    const nameTag = this.activeMapTags.find((t) => t.startsWith("name:")) ?? "";
+    const accepted = await new Promise<boolean>((resolve) =>
+      new FoundryImportConfirmModal(this.plugin.app, nameTag.slice("name:".length), this.walls.length, resolve).open()
+    );
+    if (!accepted || !isCurrent()) return;
+
+    const scenes = await loadModuleScenes(client, modules);
+    if (!isCurrent()) return;
+    if (scenes.length === 0) {
+      new Notice("Foundry import: the module has no scene with walls", 6000);
+      return;
+    }
+    const scene = await this.pickFoundryScene(scenes);
+    if (!scene || !isCurrent()) return;
+    this.importWalls(sceneImportResult(scene), `Hydrus Foundry module "${scene.name}"`);
   }
 
   stopMap() {
@@ -416,6 +493,7 @@ export class MapScreenPanel {
     this.disconnectPreviewObserver();
     this.releasePreviewThumb();
     this.activeMap = null;
+    this.activeMapTags = [];
     this.aoes = [];
     this.visions = [];
     this.walls = [];
@@ -1118,6 +1196,7 @@ export class MapScreenPanel {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
             moveVisions(targets, starts, d.x, d.y, nw, nh);
+            for (const v of targets) if (v.followsView) anchorToView(v, this.state.panX, this.state.panY);
             for (const reposition of repositionVisionDots) reposition();
             redrawAoes();
             this.broadcastVisions();
@@ -1425,19 +1504,15 @@ export class MapScreenPanel {
     this.previewLocked = locked;
   }
 
-  // Snap every view-bound vision's centre onto the players' viewport centre and
-  // broadcast. Called whenever the players' view pans (from the panel preview or
-  // the Explore modal) so a bound vision lights exactly what the players see.
+  // Carry every view-bound vision along with the players' viewport, keeping its
+  // offset from the view centre, and broadcast. Called whenever the players'
+  // view pans (from the panel preview or the Explore modal).
   syncBoundVisions(immediate = false): boolean {
     if (!this.activeMap) return false;
+    const { naturalWidth: nw, naturalHeight: nh } = this.activeMap;
     let changed = false;
     for (const v of this.visions) {
-      if (!v.followsView) continue;
-      if (v.x !== this.state.panX || v.y !== this.state.panY) {
-        v.x = this.state.panX;
-        v.y = this.state.panY;
-        changed = true;
-      }
+      if (v.followsView && followView(v, this.state.panX, this.state.panY, nw, nh)) changed = true;
     }
     if (changed) this.broadcastVisions(immediate);
     return changed;
@@ -1674,8 +1749,10 @@ export class MapScreenPanel {
           bindBtn.addEventListener("click", () => {
             vision.followsView = !vision.followsView;
             if (vision.followsView) {
-              vision.x = this.state.panX;
-              vision.y = this.state.panY;
+              anchorToView(vision, this.state.panX, this.state.panY);
+            } else {
+              delete vision.viewOffsetX;
+              delete vision.viewOffsetY;
             }
             this.broadcastVisions(true);
             onChange();

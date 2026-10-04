@@ -87,7 +87,8 @@ While a map is active, the MAP SCREEN section gains a **Fog** button (it reads `
 ![Importing a Foundry module zip fills in every wall and door](docs/screenshots/walls-import.gif)
 
 - **Import UVTT** — load a `.dd2vtt` / `.uvtt` / `.df2vtt` export (Dungeondraft and most VTT map packs). Walls, objects, and portals become walls and doors, and the map's grid size is set automatically.
-- **Import Foundry** — load a Foundry VTT module `.zip` (the format Czepeku and other creators ship). The scene's walls and doors are extracted and scaled to your map. Both old (NeDB) and new (LevelDB) Foundry module layouts are supported.
+- **Import Foundry** — load a Foundry VTT module `.zip` (the format Czepeku and other creators ship). The scene's walls and doors are extracted and scaled to your map. Both old (NeDB) and new (LevelDB) Foundry module layouts are supported. When a module holds several rooms or variants, the scene matching your map's shape is picked for you, and a picker asks when more than one could fit.
+- **Straight from Hydrus** — set a Hydrus image as the map and, if your library holds a Foundry module zip tagged `type:foundry module` with the same `name:` tag, the plugin offers to import its walls. It reads only the module's few-MB scene data out of the zip, never the hundreds of MB of artwork around it.
 
 ### Spell AoE overlays
 
@@ -108,7 +109,7 @@ The **Explore** button, next to the Map Screen title (so it works even with the 
 - **Click a door** to open or close it — green means open, grey means closed. The players' TV recomputes line of sight instantly.
 - **Click a room** to reveal or hide its fog in one gesture; a green hover highlight shows which room you're about to toggle. Doors always bound a room here, so an open door lights up without merging rooms.
 - **Move the players' view** — in physical mode, drag the viewport rectangle to pan what the table sees. A **lock** button freezes it so you can't nudge it by accident; hold **Shift** to momentarily click straight through to doors and rooms without moving anything.
-- **Bind a vision to the view** — flip the ⦿ toggle on a vision and its lit circle/square follows the players' viewport as you pan, a moving pool of light that makes exploration feel alive.
+- **Bind a vision to the view** — flip the ⦿ toggle on a vision and it stays where you put it relative to the players' viewport: pan the view and the lit circle/square moves by the same amount, a moving pool of light that makes exploration feel alive.
 - **Scale** and **Grid** toggles in the top bar switch the TV between *fit screen* and *physical 1″* and show or hide the grid, which is drawn over the map here too.
 - Floating **AoEs**, **Vision** and **Combat** windows carry the full controls, so you can add, tweak, and place templates or run initiative (local, Initiative Tracker or D&D Beyond) without leaving the modal; drag them by the header out of the way or minimize them, and they remember where you left them.
 
