@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as obsidian from "obsidian";
 import { MapScreenPanel } from "../views/MapScreenPanel";
-import { FoundryImportConfirmModal } from "../views/FoundryImportModals";
+import { FoundryImportConfirmModal, FoundrySceneModal } from "../views/FoundryImportModals";
 import type { FoundryScene } from "../map/foundry";
 import type { HydrusFile } from "../hydrus/client";
 
@@ -134,5 +134,86 @@ describe("MapScreenPanel.offerFoundryWalls", () => {
     const { panel, commitWalls } = makePanel();
     await expect(panel.offerFoundryWalls("/vault/abbey.jpg")).resolves.toBeUndefined();
     expect(commitWalls).not.toHaveBeenCalled();
+  });
+});
+
+describe("Foundry import modals", () => {
+  it("closing the confirmation without a choice counts as Skip", async () => {
+    lookup.findFoundryModules.mockResolvedValue([MODULE]);
+    vi.spyOn(FoundryImportConfirmModal.prototype, "open").mockImplementation(function (this: FoundryImportConfirmModal) {
+      this.onOpen();
+      this.onClose();
+    });
+    const { panel, commitWalls } = makePanel();
+    await panel.offerFoundryWalls("/vault/abbey.jpg");
+    expect(lookup.loadModuleScenes).not.toHaveBeenCalled();
+    expect(commitWalls).not.toHaveBeenCalled();
+  });
+
+  const conflicting: FoundryScene[] = [
+    { ...SCENE, name: "Abbey Prison Cells" },
+    { ...SCENE, name: "Abbey Prison Yard", walls: [{ x1: 0, y1: 0, x2: 0, y2: 800 }] },
+  ];
+
+  it("a scene chosen in the picker survives Obsidian closing the picker first", async () => {
+    vi.spyOn(FoundrySceneModal.prototype, "open").mockImplementation(function (this: FoundrySceneModal) {
+      this.onClose();
+      this.onChooseItem(this.getItems()[1]);
+    });
+    const { panel } = makePanel();
+    const scene = await panel.pickFoundryScene(conflicting);
+    expect(scene!.name).toBe("Abbey Prison Yard");
+  });
+
+  it("dismissing the picker resolves with no scene, so nothing is imported", async () => {
+    lookup.findFoundryModules.mockResolvedValue([MODULE]);
+    lookup.loadModuleScenes.mockResolvedValue(conflicting);
+    answerConfirm(true);
+    const picker = vi.spyOn(FoundrySceneModal.prototype, "open").mockImplementation(function (this: FoundrySceneModal) {
+      this.onClose();
+    });
+    const { panel, commitWalls } = makePanel();
+    await panel.offerFoundryWalls("/vault/abbey.jpg");
+    expect(picker).toHaveBeenCalledTimes(1);
+    expect(commitWalls).not.toHaveBeenCalled();
+  });
+});
+
+describe("MapScreenPanel.setVaultMap — Foundry lookup trigger", () => {
+  beforeAll(() => {
+    // happy-dom never loads image bytes; report a fixed natural size instead.
+    vi.stubGlobal(
+      "Image",
+      class {
+        naturalWidth = 2000;
+        naturalHeight = 1600;
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        set src(_url: string) {
+          queueMicrotask(() => this.onload?.());
+        }
+      }
+    );
+  });
+
+  function panelForSetVaultMap() {
+    const { panel } = makePanel();
+    const adapter = panel["plugin"].app.vault.adapter as unknown as Record<string, unknown>;
+    adapter.getResourcePath = (p: string) => `app://local/${p}`;
+    const offer = vi.spyOn(panel, "offerFoundryWalls").mockResolvedValue();
+    return { panel, offer };
+  }
+
+  it("looks for a Foundry module when the map comes from Hydrus", async () => {
+    const { panel, offer } = panelForSetVaultMap();
+    await panel.setVaultMap("cache/hydrus/abcd.jpg", "image", { hydrusHash: "abcd", knownTags: ["name:abbey prison"] });
+    expect(offer).toHaveBeenCalledWith(panel.activeMap!.url);
+  });
+
+  it("never queries Hydrus for a note image", async () => {
+    const { panel, offer } = panelForSetVaultMap();
+    await panel.setVaultMap("attachments/map.jpg", "image", { noteBasename: "Session 3" });
+    expect(panel.activeMap).not.toBeNull();
+    expect(offer).not.toHaveBeenCalled();
   });
 });

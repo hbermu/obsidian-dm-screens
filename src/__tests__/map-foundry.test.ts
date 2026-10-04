@@ -140,6 +140,23 @@ describe("foundrySceneToWalls", () => {
   });
 });
 
+describe("foundrySceneToWalls — background", () => {
+  const base = { name: "Hall", width: 1000, height: 800, grid: 100, walls: [{ c: [0, 0, 100, 0], sense: 20 }] };
+
+  it("reads background.src from newer modules", () => {
+    const scene = foundrySceneToWalls({ ...base, background: { src: "modules/x/maps/Hall_Roof_Day.webp" } });
+    expect(scene!.background).toBe("modules/x/maps/Hall_Roof_Day.webp");
+  });
+
+  it("reads img from older modules", () => {
+    expect(foundrySceneToWalls({ ...base, img: "modules/x/Hall_Night.jpg" })!.background).toBe("modules/x/Hall_Night.jpg");
+  });
+
+  it("leaves it empty when the scene names no background", () => {
+    expect(foundrySceneToWalls({ ...base, background: { src: null } })!.background).toBe("");
+  });
+});
+
 describe("chooseScene", () => {
   const scene = (name: string, opts: Partial<FoundryScene> = {}): FoundryScene => ({
     name,
