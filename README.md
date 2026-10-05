@@ -147,6 +147,7 @@ Browse a self-hosted [Hydrus](https://hydrusnetwork.github.io/hydrus/) media lib
 - Right-click a tile — or use its ⋮ button — for the same actions as a context menu, plus cache management (download / delete local copy).
 - Videos can be used as a background or map, not as an image layer.
 - Downloaded media is cached locally; the cache folder, retention, and tag filters are all configurable in settings.
+- No Hydrus yet? [hydrus/README.md](hydrus/README.md) runs it with Docker Compose, API key included, and has a script that tags your maps from their folder layout (including the tags the Foundry wall import looks for).
 
 ### D&D Beyond
 
