@@ -1,0 +1,53 @@
+# Hydrus Network (media library + Client API) and Hydrui (web front-end).
+# Copy .env.example to .env and create hydrui/htpasswd first; see README.md.
+
+services:
+  hydrus:
+    image: ghcr.io/hydrusnetwork/hydrus:v687
+    # Bootstraps the Client API and the access key on first boot, then runs
+    # the image's normal entrypoint.
+    entrypoint: ["/bin/sh", "/init-hydrus-api.sh"]
+    restart: unless-stopped
+    # Give Hydrus time to close its databases cleanly.
+    stop_grace_period: 2m
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      HYDRUS_API_KEY: ${HYDRUS_API_KEY}
+    ports:
+      - "5800:5800"   # noVNC: the Hydrus GUI in a browser
+      - "45869:45869" # Client API
+    volumes:
+      - ./init-hydrus-api.sh:/init-hydrus-api.sh:ro
+      - ./db:/opt/hydrus/db
+      - ./imports:/imports:ro
+    # The image's own healthcheck only watches supervisord, so a schema
+    # migration after an upgrade (minutes before the API opens) never marks
+    # the container unhealthy.
+
+  hydrui:
+    image: ghcr.io/hydrui/hydrui:0.9.0
+    # Upstream publishes amd64 only; Apple Silicon runs it under emulation.
+    platform: linux/amd64
+    restart: unless-stopped
+    command:
+      - "-hydrus-url=http://hydrus:45869"
+      - "-server-mode"
+      - "-secure=false" # plain HTTP; set true behind an HTTPS proxy
+      - "-htpasswd=/secrets/htpasswd"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      HYDRUI_HYDRUS_API_KEY: ${HYDRUS_API_KEY}
+      HYDRUI_SECRET: ${HYDRUI_SECRET}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./hydrui/htpasswd:/secrets/htpasswd:ro
+    depends_on:
+      - hydrus
+    # Replaces the image's built-in check, which adds ?check_hydrus and so
+    # flags a healthy Hydrui whenever Hydrus is slow or migrating.
+    healthcheck:
+      test: ["CMD", "/hydrui-server", "healthcheck", "http://localhost:5050/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
