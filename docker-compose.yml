@@ -83,7 +83,8 @@ services:
     entrypoint: ["sh", "-c"]
     command: ["npm audit"]
 
-  # Keep image tag in sync with @playwright/test in package.json.
+  # Keep image tag in sync with @playwright/test in package.json. Dependabot
+  # bumps the two in separate PRs (docker-compose vs npm); merge them together.
   # Uses its own node_modules volume — alpine vs jammy musl/glibc binaries (esbuild,
   # playwright browsers) are not interchangeable with the other services'.
   visual:

@@ -50,3 +50,28 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    # Dependency bumps are dev-only and must not publish a release.
+    labels:
+      - dependencies
+      - release:skip
+    # node:22 is the runtime the plugin and @types/node target, so its majors
+    # stay put; obsidian:latest is a moving tag Dependabot cannot bump.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+    # One PR for all images: visual and e2e share the Playwright image tag.
+    groups:
+      docker-compose:
+        patterns: ["*"]
