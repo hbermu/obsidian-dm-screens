@@ -92,7 +92,7 @@ Run `make typecheck && make test` before every commit. CI runs the same targets 
 
 ### Visual tests
 
-Visual regressions run via Playwright against the real production player bundle. Baselines live under `test/visual/__snapshots__/`. **Always update baselines inside the container** with `make test-visual-update` — host-generated PNGs render differently from the pinned Playwright image and will diff in CI. The `mcr.microsoft.com/playwright:vX.Y.Z-jammy` image tag in `docker-compose.yml` is kept in sync with the `@playwright/test` version pinned in `package.json`; bump them together. The `visual` CI job is informational only (not in required checks) until the suite has soaked.
+Visual regressions run via Playwright against the real production player bundle. Baselines live under `test/visual/__snapshots__/`. **Always update baselines inside the container** with `make test-visual-update` — host-generated PNGs render differently from the pinned Playwright image and will diff in CI. The `mcr.microsoft.com/playwright:vX.Y.Z-jammy` image tag in `docker-compose.yml` is kept in sync with the `@playwright/test` version pinned in `package.json`; bump them together. Dependabot raises the two in separate PRs (its `docker-compose` and `npm` ecosystems), and each one alone fails `visual` with `Executable doesn't exist at /ms-playwright/…`: push the image bump onto the npm PR (or merge both back to back) instead of merging either one by itself. The `visual` CI job is informational only (not in required checks) until the suite has soaked.
 
 ### End-to-end tests
 
