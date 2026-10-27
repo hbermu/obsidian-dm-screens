@@ -142,8 +142,8 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     await browser.keys("Burning Hands");
     // Wait until the exact spell is the top suggestion, then choose it.
     await browser.waitUntil(async () => {
-      const first = browser.$(".suggestion-item");
-      return (await first.isExisting()) && (await first.getText()).includes("Burning Hands");
+      const [first] = await browser.$$(".suggestion-item");
+      return !!first && (await first.getText()).includes("Burning Hands");
     });
     await browser.keys("Enter");
 

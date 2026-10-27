@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { env } from "node:process";
 import { parseObsidianVersions } from "wdio-obsidian-service";
+import type { ClickOptions } from "webdriverio";
 
 const cacheDir = path.resolve(".obsidian-cache");
 
@@ -59,7 +60,31 @@ export const config: WebdriverIO.Config = {
           options,
         );
       },
-      true,
+      { attachToElement: true },
+    );
+
+    // webdriverio 10 dropped "element click intercepted" from the general
+    // WebDriver error retry, keeping only click()'s own scroll-and-reposition
+    // workaround. That workaround uncovers a button hidden behind fixed chrome,
+    // but it cannot wait out an overlay that is about to disappear on its own —
+    // a Notice toast, or a modal backdrop mid-transition — which the suite hits
+    // constantly against a real Electron app. Retrying until the overlay clears
+    // restores what the specs were written against, and only for this one error.
+    browser.overwriteCommand(
+      "click",
+      async function (this: WebdriverIO.Element, orig, options?: Partial<ClickOptions>) {
+        const deadline = Date.now() + 10_000;
+        for (;;) {
+          try {
+            return await orig.call(this, options);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (!message.includes("element click intercepted") || Date.now() > deadline) throw err;
+            await browser.pause(100);
+          }
+        }
+      },
+      { attachToElement: true },
     );
   },
 };

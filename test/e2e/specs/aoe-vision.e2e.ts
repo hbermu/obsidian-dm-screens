@@ -148,8 +148,8 @@ describe("aoe overlays and vision", function () {
     await browser.$(".prompt-input").waitForExist();
     await browser.keys("Torch");
     await browser.waitUntil(async () => {
-      const first = browser.$(".suggestion-item");
-      return (await first.isExisting()) && (await first.getText()).startsWith("Torch —");
+      const [first] = await browser.$$(".suggestion-item");
+      return !!first && (await first.getText()).startsWith("Torch —");
     });
     await browser.keys("Enter");
 
