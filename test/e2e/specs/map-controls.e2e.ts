@@ -69,7 +69,7 @@ describe("map view, grid, calibration, and vault guard", function () {
 
   it("changing px/square broadcasts map-config", async function () {
     const seen = rec.count("map-config");
-    const pxInput = browser.$(".dm-control-panel .dm-map-grid-controls").$('input[type="number"]');
+    const [pxInput] = await browser.$(".dm-control-panel .dm-map-grid-controls").$$('input[type="number"]');
     await pxInput.setValue("70");
     await browser.keys(["Tab"]);
     await rec.waitFor("map-config", { skip: seen, where: (m) => m.payload.pxPerSquare === 70 });

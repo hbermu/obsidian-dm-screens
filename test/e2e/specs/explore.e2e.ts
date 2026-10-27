@@ -136,7 +136,7 @@ describe("exploration mode", function () {
     const modal = browser.$(".dm-explore-modal");
     await expect(modal).toExist();
 
-    const aoesWindow = await modal.$(".dm-floating-window");
+    const [aoesWindow] = await modal.$$(".dm-floating-window");
     const minimizeBtn = await aoesWindow.$(".dm-floating-window-minimize");
     await expect(minimizeBtn).toExist();
 

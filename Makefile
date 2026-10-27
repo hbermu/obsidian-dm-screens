@@ -29,7 +29,7 @@ deps-audit:          ## dependency audit, runtime-only then including dev
 	docker compose --profile tools run --rm deps "npm install --no-audit --no-fund >/dev/null 2>&1; echo '--- runtime only ---'; npm audit --omit=dev; echo '--- including dev ---'; npm audit"
 
 deps-update:         ## re-resolve package-lock.json from package.json, then audit
-	docker compose --profile tools run --rm deps "npm i -g npm@11 >/dev/null 2>&1 && npm install --package-lock-only --no-audit --no-fund && npm install --no-audit --no-fund >/dev/null 2>&1; npm audit"
+	docker compose --profile tools run --rm deps "set -e; npm i -g npm@11 >/dev/null 2>&1 || echo 'warning: could not upgrade npm, using '\$$(npm --version); npm install --package-lock-only --no-audit --no-fund; npm install --no-audit --no-fund >/dev/null 2>&1; set +e; npm audit"
 
 test-coverage:       ## vitest run --coverage (report in ./coverage/)
 	docker compose --profile tools run --rm test sh -c "npm install --no-audit --no-fund && npx vitest run --coverage"

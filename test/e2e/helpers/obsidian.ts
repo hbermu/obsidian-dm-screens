@@ -69,6 +69,18 @@ export function panelButton(text: string) {
   return browser.$(".dm-control-panel").$(`button=${text}`);
 }
 
+// A Notice sits above the DM panel and swallows clicks aimed at the buttons
+// underneath it; the re-render that follows one also invalidates any element
+// handle resolved through the panel container, which surfaces as a stale
+// element reference. A test that asserted a Notice must let it expire before
+// the next interaction.
+export async function waitForNoticesToClear(): Promise<void> {
+  await browser.waitUntil(async () => (await browser.$$(".notice")).length === 0, {
+    timeout: 10_000,
+    timeoutMsg: "Notices still on screen",
+  });
+}
+
 export async function addMap(): Promise<void> {
   await (await panelButton("Add Map")).click();
   await panelButton("Stop Map").waitForExist();

@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { openPanel, openFixtureNote, startServer, panelButton, addMap, DEFAULT_PORT } from "../helpers/obsidian";
+import { openPanel, openFixtureNote, startServer, panelButton, addMap, waitForNoticesToClear, DEFAULT_PORT } from "../helpers/obsidian";
 import { WsRecorder } from "../helpers/ws";
 
 describe("state persistence and recovery", function () {
@@ -148,6 +148,7 @@ describe("state persistence and recovery", function () {
   // Quitting Obsidian does not reliably unload the plugin, so these read
   // data.json from disk without a disable/enable in between.
   it("Server stopped: Stop BG and Stop Map reach data.json, and an offline pick replays on start", async function () {
+    await waitForNoticesToClear();
     await (await panelButton("Add BG")).click();
     await playerRec.waitFor("show-background-media");
     await addMap();
