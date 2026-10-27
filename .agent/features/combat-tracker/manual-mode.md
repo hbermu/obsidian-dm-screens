@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `src/views/DmControlPanel.ts` — `renderManualTracker`, `sortManualCombatants`, `advanceManualTurn`, `broadcastManualInitiative`, `manualCombatants`, `currentTurn`, `manualRound`
+- `src/views/DmControlPanel.ts` — `renderManualTracker`, `sortManualCombatants`, `advanceManualTurn`, `broadcastManualInitiative`, `manualCombatants`, `currentTurn`, `addCombatantDraft`, `manualRound`
 - `src/combat/tracker.ts` — pure helpers `sortByInitiative`, `advanceTurn`, `clampTrackerScale`, `applyRound1Reveal` that the view methods above delegate to
 
 ## Settings used
@@ -14,18 +14,20 @@
 ## Requirements
 
 1. The manual tracker shall render an Add row with three inputs (name, initiative, HP) and a `+` button.
-2. When the `+` button is clicked with a non-empty name, the panel shall push a new combatant `{ name, initiative, hp: input, maxHp: input, active: false, statuses: [] }`, re-sort by initiative DESC, broadcast, and re-render.
-3. Each combatant row shall expose: the initiative number, the name, an editable HP input, the maxHP read-only `/ <max>`, and a remove button.
-4. When the HP input changes, the panel shall update `combatant.hp` and broadcast.
-5. The Next Turn button shall: clear `active` on all combatants; advance `currentTurn` by 1, wrapping to 0 and incrementing `manualRound` on wrap; set the new current combatant `active = true`; broadcast.
-6. The Reset Round button shall set `currentTurn = 0`, `manualRound = 1`, mark the first combatant active (if any), and broadcast.
-7. The Clear All button shall empty `manualCombatants`, reset `currentTurn` to 0 and `manualRound` to 1, and broadcast an empty `initiative-update`.
-8. The manual broadcast shall apply the round-1 reveal rule (see `round-1-reveal.md`).
-9. If the Initiative Tracker plugin is installed, the manual tracker shall display a hint `Start an encounter in Initiative Tracker to auto-sync` above the Add row.
+2. The three Add-row inputs shall be backed by a draft held on the view, written on every `input` event and re-applied whenever the Add row is rendered, so a render that rebuilds the row — a client connecting, a D&D Beyond poll, a drag releasing — does not discard what the DM has typed. The `+` button shall read that draft rather than the input elements, whose nodes it closed over and which a render may already have replaced, and shall clear it once the combatant is added.
+3. When the `+` button is clicked with a non-empty name, the panel shall push a new combatant `{ name, initiative, hp: input, maxHp: input, active: false, statuses: [] }`, re-sort by initiative DESC, broadcast, and re-render.
+4. Each combatant row shall expose: the initiative number, the name, an editable HP input, the maxHP read-only `/ <max>`, and a remove button.
+5. When the HP input changes, the panel shall update `combatant.hp` and broadcast.
+6. The Next Turn button shall: clear `active` on all combatants; advance `currentTurn` by 1, wrapping to 0 and incrementing `manualRound` on wrap; set the new current combatant `active = true`; broadcast.
+7. The Reset Round button shall set `currentTurn = 0`, `manualRound = 1`, mark the first combatant active (if any), and broadcast.
+8. The Clear All button shall empty `manualCombatants`, reset `currentTurn` to 0 and `manualRound` to 1, and broadcast an empty `initiative-update`.
+9. The manual broadcast shall apply the round-1 reveal rule (see `round-1-reveal.md`).
+10. If the Initiative Tracker plugin is installed, the manual tracker shall display a hint `Start an encounter in Initiative Tracker to auto-sync` above the Add row.
 
 ## Tests covering this
 
 - `src/__tests__/dm-control-combat.test.ts` — sort order, broadcast wiring (manual mode shares the broadcast pipeline)
+- `src/__tests__/dm-control-add-combatant-draft.test.ts` — requirement 2: the draft is re-applied to the rebuilt inputs, the `+` button adds what was typed even after a render replaced them, and the draft is cleared on a successful add
 - `src/__tests__/combat-tracker.test.ts` — pure helpers: `sortByInitiative` (in-place DESC), `clampTrackerScale` ([0.5, 2] tenths), `advanceTurn` (wrap + round bump), `applyRound1Reveal`
 - `test/e2e/specs/combat.e2e.ts` — real Obsidian: add combatants through the panel form (sorted `initiative-update`), Next Turn cycling with round advance, scale buttons (`combat-scale`), Clear All empties the tracker
 
