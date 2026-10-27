@@ -43,6 +43,13 @@ export class DmControlPanel extends ItemView {
   currentTurn = 0;
   manualRound = 1;
 
+  // render() empties the container, so the Add row's inputs — and the values
+  // the DM has typed into them — are destroyed and rebuilt. Holding the draft
+  // here instead of only in the DOM is what survives a render, and it is what
+  // the + button reads: the input nodes its handler closed over may already
+  // have been replaced by the time the click arrives.
+  private addCombatantDraft = { name: "", initiative: "", hp: "" };
+
   // Plugin-synced initiative state
   trackerSource: "manual" | "plugin" = "manual";
   pluginCombatants: TrackerCombatant[] = [];
@@ -416,7 +423,15 @@ export class DmControlPanel extends ItemView {
     );
   }
 
-  private flushPendingRender = () => {
+  // focusout names the element about to take focus. While that is another
+  // control the DM is still working in this panel, and rendering now would
+  // reflow it out from under a click that is only half delivered: pressing a
+  // button blurs the field first, so the render lands between the blur and the
+  // handler, the control moves, and the click arrives where it used to be.
+  // Keep deferring; the next focusout out of the panel flushes it.
+  private flushPendingRender = (event?: Event) => {
+    const next = (event as FocusEvent | undefined)?.relatedTarget;
+    if (next instanceof Node && this.contentEl.contains(next)) return;
     // Focus may hop straight to another panel field; re-check on the next tick.
     setTimeout(() => {
       if (this.pendingBackgroundRender && this.dragDepth === 0 && !this.isEditingPanelField()) {
@@ -1373,21 +1388,32 @@ export class DmControlPanel extends ItemView {
 
     // Add combatant form
     const addRow = section.createDiv("dm-add-combatant");
+    const draft = this.addCombatantDraft;
     const nameInput = addRow.createEl("input", { type: "text", placeholder: "Name" });
+    nameInput.value = draft.name;
     const initInput = addRow.createEl("input", { type: "number", placeholder: "Init" });
+    initInput.value = draft.initiative;
     initInput.style.width = "60px";
     const hpInput = addRow.createEl("input", { type: "number", placeholder: "HP" });
+    hpInput.value = draft.hp;
     hpInput.style.width = "60px";
+
+    nameInput.addEventListener("input", () => (draft.name = nameInput.value));
+    initInput.addEventListener("input", () => (draft.initiative = initInput.value));
+    hpInput.addEventListener("input", () => (draft.hp = hpInput.value));
 
     const addBtn = addRow.createEl("button", { text: "+", cls: "mod-cta" });
     addBtn.addEventListener("click", () => {
-      const name = nameInput.value.trim();
-      const initiative = parseInt(initInput.value, 10) || 0;
-      const hp = parseInt(hpInput.value, 10) || 0;
+      const name = draft.name.trim();
+      const initiative = parseInt(draft.initiative, 10) || 0;
+      const hp = parseInt(draft.hp, 10) || 0;
       if (name) {
         this.manualCombatants.push({ name, initiative, hp, maxHp: hp, active: false, statuses: [] });
         this.sortManualCombatants();
         this.broadcastManualInitiative();
+        draft.name = "";
+        draft.initiative = "";
+        draft.hp = "";
         this.render();
       }
     });

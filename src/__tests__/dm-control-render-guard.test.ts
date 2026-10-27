@@ -59,6 +59,38 @@ describe("DmControlPanel background render guard", () => {
     expect((panel as any).pendingBackgroundRender).toBe(false);
   });
 
+  // Both cases leave focus on a button rather than an input, so the deferral
+  // can only come from the relatedTarget guard — isEditingPanelField() is
+  // already false by then.
+  it("keeps deferring when focus moves to another control in the panel", async () => {
+    const { panel, render, input } = makePanel();
+    const button = document.createElement("button");
+    input.parentElement!.appendChild(button);
+    input.focus();
+    (panel as any).renderFromBackground();
+    expect(render).not.toHaveBeenCalled();
+
+    button.focus();
+    input.dispatchEvent(new FocusEvent("focusout", { relatedTarget: button, bubbles: true }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).not.toHaveBeenCalled();
+    expect((panel as any).pendingBackgroundRender).toBe(true);
+  });
+
+  it("flushes when focus leaves the panel entirely", async () => {
+    const { panel, render, input } = makePanel();
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    input.focus();
+    (panel as any).renderFromBackground();
+
+    outside.focus();
+    input.dispatchEvent(new FocusEvent("focusout", { relatedTarget: outside, bubbles: true }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(render).toHaveBeenCalledTimes(1);
+    expect((panel as any).pendingBackgroundRender).toBe(false);
+  });
+
   it("defers a background render while a drag is active", () => {
     const { panel, render } = makePanel();
     panel.beginDrag();
