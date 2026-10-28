@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "http";
 import type { AddressInfo } from "net";
 
-const encodeWebp = vi.hoisted(() => vi.fn());
-vi.mock("../imageDerivative", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../imageDerivative")>()),
-  encodeWebp,
+const encodeMedia = vi.hoisted(() => vi.fn());
+vi.mock("../mediaDerivative", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../mediaDerivative")>()),
+  encodeMedia,
 }));
 
 import { PlayerScreenServer } from "../server";
@@ -36,7 +36,7 @@ describe("PlayerScreenServer /vault/ sized derivatives", () => {
   let readBinary: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    encodeWebp.mockReset();
+    encodeMedia.mockReset();
     readBinary = vi.fn(async () => ORIGINAL);
     const plugin = {
       app: { vault: { getAbstractFileByPath: () => null, adapter: { exists: async () => true, readBinary } } },
@@ -51,34 +51,47 @@ describe("PlayerScreenServer /vault/ sized derivatives", () => {
 
   afterEach(() => server.stop());
 
-  const showMap = (url: string) =>
-    server.broadcast({ type: "map-show", payload: { url, mediaType: "image", naturalWidth: 4900, naturalHeight: 11760 } });
+  const showMap = (url: string, mediaType = "image") =>
+    server.broadcast({ type: "map-show", payload: { url, mediaType, naturalWidth: 4900, naturalHeight: 11760 } });
 
   it("serves a WebP derivative at the requested width, rounded up to the step", async () => {
-    encodeWebp.mockImplementation(async (_d: ArrayBuffer, w: number) => new TextEncoder().encode(`WEBP@${w}`).buffer);
+    encodeMedia.mockImplementation(async (_d: ArrayBuffer, w: number) => ({
+      bytes: new TextEncoder().encode(`WEBP@${w}`).buffer,
+      mime: "image/webp",
+    }));
     showMap("/vault/maps/big.jpg");
     const res = await fetchPath(port, "/vault/maps/big.jpg?w=1600");
     expect(res).toMatchObject({ status: 200, type: "image/webp", body: "WEBP@1792" });
   });
 
+  it("serves an MP4 derivative of a video map", async () => {
+    encodeMedia.mockImplementation(async (_d: ArrayBuffer, w: number, kind: string) => ({
+      bytes: new TextEncoder().encode(`${kind}@${w}`).buffer,
+      mime: "video/mp4",
+    }));
+    showMap("/vault/maps/loop.mp4", "video");
+    const res = await fetchPath(port, "/vault/maps/loop.mp4?w=1426");
+    expect(res).toMatchObject({ status: 200, type: "video/mp4", body: "video@1536" });
+  });
+
   it("serves the original when the encoder declines the width", async () => {
-    encodeWebp.mockResolvedValue(null);
+    encodeMedia.mockResolvedValue(null);
     showMap("/vault/maps/small.jpg");
     const res = await fetchPath(port, "/vault/maps/small.jpg?w=4096");
     expect(res).toMatchObject({ status: 200, type: "image/jpeg", body: "ORIGINAL-JPEG" });
   });
 
-  it("ignores the width for formats it does not resize", async () => {
+  it("ignores the width for formats it does not convert", async () => {
     showMap("/vault/maps/loop.gif");
     const res = await fetchPath(port, "/vault/maps/loop.gif?w=512");
     expect(res).toMatchObject({ status: 200, type: "image/gif", body: "ORIGINAL-JPEG" });
-    expect(encodeWebp).not.toHaveBeenCalled();
+    expect(encodeMedia).not.toHaveBeenCalled();
   });
 
   it("keeps the display allowlist in front of the encoder", async () => {
     const res = await fetchPath(port, "/vault/maps/secret.jpg?w=512");
     expect(res.status).toBe(404);
-    expect(encodeWebp).not.toHaveBeenCalled();
+    expect(encodeMedia).not.toHaveBeenCalled();
     expect(readBinary).not.toHaveBeenCalled();
   });
 });

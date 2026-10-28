@@ -13,10 +13,11 @@ import { WsRecorder, WsMessage } from "../helpers/ws";
 // map-controls.e2e.ts covers the calibration modal's test-pattern toggle. This
 // file covers the rest of calibration.md: the diagonal input saving a profile
 // and broadcasting map-calibration, the fine-tune multiplier, the ✓ badge, and
-// clearing the diagonal to delete the profile.
+// clearing the diagonal to delete the profile, and the per-screen media
+// quality that keeps a profile alive without a diagonal.
 
 const KEY = "1920x1080@1";
-type Profile = { diagonalInches: number; fineTune: number };
+type Profile = { diagonalInches: number; fineTune: number; quality?: string };
 const profiles = (m: WsMessage) => m.payload.profiles as Record<string, Profile | undefined>;
 
 function badge() {
@@ -44,6 +45,14 @@ async function setFineTune(value: number): Promise<void> {
     // Obsidian's SliderComponent commits on "change"; "input" only streams.
     slider.dispatchEvent(new Event("input", { bubbles: true }));
     slider.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
+}
+
+async function setQuality(value: string): Promise<void> {
+  await browser.executeObsidian((_app, v: string) => {
+    const select = document.querySelector(".modal select") as HTMLSelectElement;
+    select.value = v;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
   }, value);
 }
 
@@ -114,6 +123,26 @@ describe("map screen physical calibration", function () {
       skip: seen,
       where: (m) => profiles(m)[KEY] === undefined,
     });
+    expect(await savedProfile()).toBe(null);
+    await closeModal();
+  });
+
+  it("choosing original quality keeps a profile without a diagonal and marks the badge", async function () {
+    await openModal();
+    const seen = rec.count("map-calibration");
+    await setQuality("original");
+    await rec.waitFor("map-calibration", { skip: seen, where: (m) => profiles(m)[KEY]?.quality === "original" });
+    expect(await savedProfile()).toMatchObject({ diagonalInches: 0, quality: "original" });
+    await closeModal();
+    await browser.waitUntil(async () => (await badge().getText()).includes("· original"));
+    expect(await badge().getText()).not.toContain("✓");
+  });
+
+  it("returning to optimized drops a profile that has no diagonal", async function () {
+    await openModal();
+    const seen = rec.count("map-calibration");
+    await setQuality("optimized");
+    await rec.waitFor("map-calibration", { skip: seen, where: (m) => profiles(m)[KEY] === undefined });
     expect(await savedProfile()).toBe(null);
     await closeModal();
   });

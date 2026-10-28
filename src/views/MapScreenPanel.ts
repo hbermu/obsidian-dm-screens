@@ -581,7 +581,7 @@ export class MapScreenPanel {
   } {
     const profile =
       this.plugin.settings.mapScreenProfiles[profileKey(client.width, client.height, client.devicePixelRatio)];
-    return { ppi: cssPixelsPerInch(client.width, client.height, profile), calibrated: !!profile };
+    return { ppi: cssPixelsPerInch(client.width, client.height, profile), calibrated: (profile?.diagonalInches ?? 0) > 0 };
   }
 
   renderSection(container: HTMLElement) {
@@ -637,8 +637,9 @@ export class MapScreenPanel {
         if (seen.has(key)) continue;
         seen.add(key);
         const { calibrated } = this.clientPpi(c);
+        const original = this.plugin.settings.mapScreenProfiles[key]?.quality === "original";
         const badge = clientInfo.createSpan({
-          text: `${c.width}×${c.height}${calibrated ? " ✓" : " — calibrate"}`,
+          text: `${c.width}×${c.height}${calibrated ? " ✓" : " — calibrate"}${original ? " · original" : ""}`,
           cls: "dm-client-resolution",
         });
         badge.title = calibrated

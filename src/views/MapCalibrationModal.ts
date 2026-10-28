@@ -41,7 +41,7 @@ export class MapCalibrationModal extends Modal {
     refreshPpi();
 
     const apply = () => {
-      if (profile.diagonalInches > 0) {
+      if (profile.diagonalInches > 0 || profile.quality === "original") {
         this.plugin.settings.mapScreenProfiles[key] = { ...profile };
       } else {
         delete this.plugin.settings.mapScreenProfiles[key];
@@ -71,6 +71,23 @@ export class MapCalibrationModal extends Modal {
           .setDynamicTooltip()
           .onChange((value) => {
             profile.fineTune = value;
+            apply();
+          })
+      );
+
+    new Setting(contentEl)
+      .setName("Media quality")
+      .setDesc(
+        "Optimized sends this screen a map sized to what it shows (videos at most 1080p); original sends the file untouched."
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("optimized", "Optimized")
+          .addOption("original", "Original")
+          .setValue(profile.quality ?? "optimized")
+          .onChange((value) => {
+            if (value === "original") profile.quality = "original";
+            else delete profile.quality;
             apply();
           })
       );

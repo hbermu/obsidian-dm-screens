@@ -203,3 +203,25 @@ export function mediaRequestWidth(naturalWidth: number, scales: number[], device
   const needed = Math.ceil((nw * scale * Math.max(1, finiteOr(devicePixelRatio, 1))) / MEDIA_WIDTH_STEP) * MEDIA_WIDTH_STEP;
   return needed < nw ? needed : null;
 }
+
+// Hardware video decoders on TV-class screens stop at 1080p, in either
+// orientation, so a derivative fits the long side in 1920 and the short in 1080.
+export const VIDEO_MAX_LONG_SIDE = 1920;
+export const VIDEO_MAX_SHORT_SIDE = 1080;
+
+// Even output size for a video at most maxWidth wide inside the decoder box;
+// null when the original already fits both.
+export function videoTargetSize(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxWidth: number
+): { width: number; height: number } | null {
+  const nw = finiteOr(naturalWidth, 0);
+  const nh = finiteOr(naturalHeight, 0);
+  if (!(nw > 0) || !(nh > 0)) return null;
+  const [boxW, boxH] = nw >= nh ? [VIDEO_MAX_LONG_SIDE, VIDEO_MAX_SHORT_SIDE] : [VIDEO_MAX_SHORT_SIDE, VIDEO_MAX_LONG_SIDE];
+  const scale = Math.min(1, boxW / nw, boxH / nh, finiteOr(maxWidth, nw) / nw);
+  if (scale >= 1) return null;
+  const even = (v: number) => Math.max(2, Math.floor(v / 2) * 2);
+  return { width: even(nw * scale), height: even(nh * scale) };
+}

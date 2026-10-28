@@ -3,7 +3,7 @@ import { TFile } from "obsidian";
 import type DmScreenPlugin from "./main";
 import { debug, debugWarn, debugError } from "./debug";
 import { tokenMatches } from "./auth";
-import { DerivativeCache, encodeWebp, isResizable, parseDerivativeWidth } from "./imageDerivative";
+import { DerivativeCache, derivativeKind, encodeMedia, parseDerivativeWidth } from "./mediaDerivative";
 
 const MAX_WS_PAYLOAD_BYTES = 64 * 1024;
 const MAX_WS_MESSAGES_PER_SECOND = 20;
@@ -199,7 +199,7 @@ export class PlayerScreenServer {
   onClientCountChanged: (() => void) | null = null;
   private cache: ReplayCache;
   private allowlist = new VaultServeAllowlist();
-  private derivatives = new DerivativeCache(encodeWebp);
+  private derivatives = new DerivativeCache(encodeMedia);
 
   constructor(plugin: DmScreenPlugin, cache: ReplayCache = new ReplayCache()) {
     this.plugin = plugin;
@@ -459,18 +459,19 @@ export class PlayerScreenServer {
         return;
       }
 
-      if (width !== null && isResizable(decodedPath)) {
-        const derivative = await this.derivatives.get(decodedPath, width, () =>
+      const kind = width === null ? null : derivativeKind(decodedPath);
+      if (width !== null && kind !== null) {
+        const derivative = await this.derivatives.get(decodedPath, width, kind, () =>
           readVaultBytes(this.plugin.app, decodedPath)
         );
         if (derivative) {
-          debug("serveVaultFile:", decodedPath, `(webp at ${width}px, ${derivative.byteLength} bytes)`);
+          debug("serveVaultFile:", decodedPath, `(${derivative.mime} at ${width}px, ${derivative.bytes.byteLength} bytes)`);
           res.writeHead(200, {
-            "Content-Type": "image/webp",
-            "Content-Length": derivative.byteLength,
+            "Content-Type": derivative.mime,
+            "Content-Length": derivative.bytes.byteLength,
             "Cache-Control": "public, max-age=3600",
           });
-          res.end(Buffer.from(derivative));
+          res.end(Buffer.from(derivative.bytes));
           return;
         }
       }

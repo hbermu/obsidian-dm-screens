@@ -5,6 +5,7 @@ import { httpGet } from "../helpers/http";
 import { WsRecorder } from "../helpers/ws";
 
 const FIXTURE_BYTES = fs.statSync("test/e2e/vault/attachments/map.png").size;
+const VIDEO_BYTES = fs.statSync("test/e2e/vault/attachments/loop.mp4").size;
 
 function webpWidth(b: Buffer): number {
   const chunk = b.subarray(12, 16).toString();
@@ -111,5 +112,23 @@ describe("map screen", function () {
     await expect(panelButton("Add Map")).toExist();
     expect(await (await panelButton("Fog")).isExisting()).toBe(false);
     expect(await (await panelButton("Explore")).isEnabled()).toBe(false);
+  });
+
+  // The e2e runtime is GPU-less Linux with no hardware video encoder, where a
+  // software WebCodecs encode crashes the renderer; the plugin must fall back.
+  it("serves the original video, and stays up, when no hardware encoder exists", async function () {
+    await browser.executeObsidian(({ app }) => {
+      const plugin = (app as any).plugins.plugins["dm-screen"];
+      plugin.server.broadcast({
+        type: "map-show",
+        payload: { url: "/vault/attachments/loop.mp4", mediaType: "video", naturalWidth: 2400, naturalHeight: 1350 },
+      });
+    });
+    const res = await httpGet(`http://127.0.0.1:${DEFAULT_PORT}/vault/attachments/loop.mp4?w=1920`, await accessToken());
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toBe("video/mp4");
+    expect(res.body.byteLength).toBe(VIDEO_BYTES);
+    const health = await httpGet(`http://127.0.0.1:${DEFAULT_PORT}/health`);
+    expect(health.status).toBe(200);
   });
 });
