@@ -5,6 +5,14 @@ import { httpGet } from "../helpers/http";
 import { WsRecorder } from "../helpers/ws";
 
 const FIXTURE_BYTES = fs.statSync("test/e2e/vault/attachments/map.png").size;
+const VIDEO_BYTES = fs.statSync("test/e2e/vault/attachments/loop.mp4").size;
+
+function webpWidth(b: Buffer): number {
+  const chunk = b.subarray(12, 16).toString();
+  if (chunk === "VP8X") return 1 + b.readUIntLE(24, 3);
+  if (chunk === "VP8L") return 1 + (b.readUInt16LE(21) & 0x3fff);
+  return b.readUInt16LE(26) & 0x3fff;
+}
 
 describe("map screen", function () {
   let rec: WsRecorder;
@@ -56,6 +64,26 @@ describe("map screen", function () {
     }
   });
 
+  it("serves a WebP derivative of the map at a requested width", async function () {
+    const show = await rec.waitFor("map-show");
+    const res = await httpGet(
+      `http://127.0.0.1:${DEFAULT_PORT}${show.payload.url}?w=200`,
+      await accessToken(),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/webp");
+    expect(res.body.subarray(0, 4).toString()).toBe("RIFF");
+    expect(res.body.subarray(8, 12).toString()).toBe("WEBP");
+    expect(webpWidth(res.body)).toBe(256);
+
+    const full = await httpGet(
+      `http://127.0.0.1:${DEFAULT_PORT}${show.payload.url}?w=1000`,
+      await accessToken(),
+    );
+    expect(full.headers["content-type"]).toContain("image/png");
+    expect(full.body.byteLength).toBe(FIXTURE_BYTES);
+  });
+
   it("map preview shows source label chip with note basename", async function () {
     rec.send({ type: "client-info", payload: { width: 1920, height: 1080 } });
     await new Promise((r) => setTimeout(r, 200));
@@ -84,5 +112,23 @@ describe("map screen", function () {
     await expect(panelButton("Add Map")).toExist();
     expect(await (await panelButton("Fog")).isExisting()).toBe(false);
     expect(await (await panelButton("Explore")).isEnabled()).toBe(false);
+  });
+
+  // The e2e runtime is GPU-less Linux with no hardware video encoder, where a
+  // software WebCodecs encode crashes the renderer; the plugin must fall back.
+  it("serves the original video, and stays up, when no hardware encoder exists", async function () {
+    await browser.executeObsidian(({ app }) => {
+      const plugin = (app as any).plugins.plugins["dm-screen"];
+      plugin.server.broadcast({
+        type: "map-show",
+        payload: { url: "/vault/attachments/loop.mp4", mediaType: "video", naturalWidth: 2400, naturalHeight: 1350 },
+      });
+    });
+    const res = await httpGet(`http://127.0.0.1:${DEFAULT_PORT}/vault/attachments/loop.mp4?w=1920`, await accessToken());
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toBe("video/mp4");
+    expect(res.body.byteLength).toBe(VIDEO_BYTES);
+    const health = await httpGet(`http://127.0.0.1:${DEFAULT_PORT}/health`);
+    expect(health.status).toBe(200);
   });
 });

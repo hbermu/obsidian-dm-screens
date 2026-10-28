@@ -10,6 +10,8 @@ import {
   gridLinePositions,
   mapScale,
   mapTranslation,
+  mediaRequestWidth,
+  videoTargetSize,
   profileKey,
   DEFAULT_GRID_CONFIG,
   FALLBACK_PPI,
@@ -69,6 +71,8 @@ class MapScreen {
   private hasConnectedOnce = false;
 
   private media: MapMediaPayload | null = null;
+  private mediaBase: string | null = null;
+  private requestedWidth = 0;
   private view: MapView = { mode: "fit", panX: 0, panY: 0 };
   private config: MapGridConfig = { ...DEFAULT_GRID_CONFIG };
   private profiles: Record<string, ScreenProfile> = {};
@@ -313,44 +317,44 @@ class MapScreen {
     }
   }
 
+  private currentProfile(): ScreenProfile | undefined {
+    return this.profiles[profileKey(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1)];
+  }
+
   private currentPpi(): { ppi: number; calibrated: boolean } {
-    const key = profileKey(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1);
-    const profile = this.profiles[key];
-    if (!profile) return { ppi: FALLBACK_PPI, calibrated: false };
+    const profile = this.currentProfile();
+    if (!profile || !(profile.diagonalInches > 0)) return { ppi: FALLBACK_PPI, calibrated: false };
     return { ppi: cssPixelsPerInch(window.innerWidth, window.innerHeight, profile), calibrated: true };
   }
 
   private showMap(payload: MapMediaPayload) {
     const video = document.getElementById("map-video") as HTMLVideoElement;
     const image = document.getElementById("map-image") as HTMLImageElement;
-    if (payload.mediaType === "video") {
-      const safeSrc = safePlayerUrl(payload.url, "video");
-      if (!safeSrc) {
-        console.warn("[Map Screen] Rejected map video URL");
-        return;
-      }
-      image.style.display = "none";
-      image.src = "";
-      video.loop = payload.loop ?? true;
-      video.muted = payload.muted ?? true;
-      video.src = safeSrc;
-      video.style.display = "block";
-      video.play().catch((e) => console.error("[Map Screen] Video autoplay failed:", e));
-      video.addEventListener("loadedmetadata", () => this.applyLayout(), { once: true });
-    } else {
-      const safeSrc = safePlayerUrl(payload.url, "image");
-      if (!safeSrc) {
-        console.warn("[Map Screen] Rejected map image URL");
-        return;
-      }
-      video.pause();
-      video.src = "";
-      video.style.display = "none";
-      image.src = safeSrc;
-      image.style.display = "block";
-      image.onload = () => this.applyLayout();
+    const isVideo = payload.mediaType === "video";
+    const safeSrc = safePlayerUrl(payload.url, isVideo ? "video" : "image");
+    if (!safeSrc) {
+      console.warn(`[Map Screen] Rejected map ${isVideo ? "video" : "image"} URL`);
+      return;
     }
+    const [shown, hidden] = isVideo ? [video, image] : [image, video];
+    video.pause();
+    hidden.style.display = "none";
+    hidden.src = "";
+    video.loop = payload.loop ?? true;
+    video.muted = payload.muted ?? true;
     this.media = payload;
+    this.mediaBase = safeSrc;
+    // Without the DM's natural size the layout can only come from the decoded
+    // media, so there is nothing to size a request against.
+    if (payload.naturalWidth > 0 && payload.naturalHeight > 0) {
+      shown.removeAttribute("src");
+      this.requestedWidth = 0;
+    } else {
+      this.loadMedia(safeSrc);
+      this.requestedWidth = Number.POSITIVE_INFINITY;
+    }
+    shown.style.display = "block";
+    image.onload = () => this.applyLayout();
     document.getElementById("waiting-screen")!.style.display = "none";
     this.applyLayout();
     // Fog may have loaded before the map (replay order is not guaranteed) —
@@ -416,6 +420,8 @@ class MapScreen {
     video.style.display = "none";
     image.src = "";
     image.style.display = "none";
+    this.mediaBase = null;
+    this.requestedWidth = 0;
     this.fogImage = null;
     this.visions = [];
     this.walls = [];
@@ -479,6 +485,7 @@ class MapScreen {
     ) as HTMLElement;
     mediaEl.style.width = `${nw}px`;
     mediaEl.style.height = `${nh}px`;
+    this.syncMediaSource(ppi, nw, nh, vw, vh, dpr);
     stage.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotation}deg) scale(${scale})`;
 
     if (this.config.showGrid) {
@@ -508,6 +515,39 @@ class MapScreen {
       hint.style.display = "block";
     } else {
       hint.style.display = "none";
+    }
+  }
+
+  // The media element keeps the DM's natural size, so a smaller derivative is
+  // only stretched and grid, fog and walls stay where the DM placed them. A
+  // full-size map decoded on a low-RAM screen costs hundreds of MB (a JPEG gets
+  // silently downsampled anyway) and a video past 1080p does not decode at all
+  // on a TV. Only an upgrade triggers a reload, because a video restarts.
+  private syncMediaSource(ppi: number, nw: number, nh: number, vw: number, vh: number, dpr: number) {
+    if (!this.media || !this.mediaBase) return;
+    let width: number | null = null;
+    if (this.mediaBase.startsWith("/vault/") && this.currentProfile()?.quality !== "original") {
+      const scales = (["physical", "fit"] as const).map((mode) =>
+        mapScale({ ...this.view, mode }, ppi, this.config.pxPerSquare, nw, nh, vw, vh)
+      );
+      width = mediaRequestWidth(nw, scales, dpr);
+      if (this.media.mediaType === "video") width = videoTargetSize(nw, nh, width ?? nw)?.width ?? null;
+    }
+    const wanted = width ?? Number.POSITIVE_INFINITY;
+    if (wanted <= this.requestedWidth) return;
+    this.requestedWidth = wanted;
+    this.loadMedia(width === null ? this.mediaBase : `${this.mediaBase}?w=${width}`);
+    console.log(`[Map Screen] Map ${this.media.mediaType} requested at ${width ?? "full"} px of ${nw}`);
+  }
+
+  private loadMedia(src: string) {
+    if (this.media?.mediaType === "video") {
+      const video = document.getElementById("map-video") as HTMLVideoElement;
+      video.src = src;
+      video.addEventListener("loadedmetadata", () => this.applyLayout(), { once: true });
+      video.play().catch((e) => console.error("[Map Screen] Video autoplay failed:", e));
+    } else {
+      (document.getElementById("map-image") as HTMLImageElement).src = src;
     }
   }
 

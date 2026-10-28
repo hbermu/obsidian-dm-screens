@@ -4,6 +4,7 @@ import type { MapGridConfig, MapRotation, MapView, ScreenProfile, StoredMapState
 // display, so this is the only honest fallback when no screen profile exists.
 export const FALLBACK_PPI = 96;
 export const DEFAULT_PX_PER_SQUARE = 140;
+export const MEDIA_WIDTH_STEP = 256;
 
 // These numbers arrive from a WebSocket payload, from a saved screen profile, or
 // from a map config persisted by an earlier version. A NaN or Infinity reaching a
@@ -190,4 +191,37 @@ export function gridLinePositions(
   const positions: number[] = [];
   for (let p = first; p <= viewportExtent; p += pitch) positions.push(p);
   return positions;
+}
+
+// Width the screen needs to draw the map without upscaling at the largest of
+// the given scales, on the server's derivative step; null when that is the
+// original's own width or more.
+export function mediaRequestWidth(naturalWidth: number, scales: number[], devicePixelRatio: number): number | null {
+  const nw = finiteOr(naturalWidth, 0);
+  const scale = Math.max(0, ...scales.map((s) => finiteOr(s, 0)));
+  if (!(nw > 0) || !(scale > 0)) return null;
+  const needed = Math.ceil((nw * scale * Math.max(1, finiteOr(devicePixelRatio, 1))) / MEDIA_WIDTH_STEP) * MEDIA_WIDTH_STEP;
+  return needed < nw ? needed : null;
+}
+
+// Hardware video decoders on TV-class screens stop at 1080p, in either
+// orientation, so a derivative fits the long side in 1920 and the short in 1080.
+export const VIDEO_MAX_LONG_SIDE = 1920;
+export const VIDEO_MAX_SHORT_SIDE = 1080;
+
+// Even output size for a video at most maxWidth wide inside the decoder box;
+// null when the original already fits both.
+export function videoTargetSize(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxWidth: number
+): { width: number; height: number } | null {
+  const nw = finiteOr(naturalWidth, 0);
+  const nh = finiteOr(naturalHeight, 0);
+  if (!(nw > 0) || !(nh > 0)) return null;
+  const [boxW, boxH] = nw >= nh ? [VIDEO_MAX_LONG_SIDE, VIDEO_MAX_SHORT_SIDE] : [VIDEO_MAX_SHORT_SIDE, VIDEO_MAX_LONG_SIDE];
+  const scale = Math.min(1, boxW / nw, boxH / nh, finiteOr(maxWidth, nw) / nw);
+  if (scale >= 1) return null;
+  const even = (v: number) => Math.max(2, Math.floor(v / 2) * 2);
+  return { width: even(nw * scale), height: even(nh * scale) };
 }

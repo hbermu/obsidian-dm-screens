@@ -1,6 +1,6 @@
 # Vault Routing (`/vault/`)
 
-> The server exposes vault files over HTTP so that the player screen can stream large assets (videos, large images) without paying the cost of base64 inlining. The path is decoded from the URL and the file is read through the vault adapter, with a path-traversal guard.
+> The server exposes vault files over HTTP so that the player screen can stream large assets (videos, large images) without paying the cost of base64 inlining. The path is decoded from the URL and the file is read through the vault adapter, with a path-traversal guard. A `?w=` query asks for a downscaled derivative — a WebP for a still image, an MP4 at most 1080p for a video — so a low-memory screen never decodes a map larger than it can show and a TV never gets a video its hardware decoder refuses.
 
 ## Security boundary
 
@@ -9,6 +9,8 @@ The `/vault/` endpoint is gated by a **display allowlist** derived from the broa
 ## Source files
 
 - `src/server.ts` — `handleHttpRequest` dispatches `/vault/` requests to `serveVaultFile`; `readVaultBytes` exported helper falls back to `vault.adapter` for dotfolders; `vaultPathFromUrl` exported helper decodes a `/vault/` URL into a vault path or returns `null`; `VaultServeAllowlist` exported class tracks the current background path and layer-path set from broadcasts and answers `isAllowed(decodedPath)`; the `PlayerScreenServer` holds one instance, feeds it every message already in the `ReplayCache` it is constructed with, calls `observe(message)` inside `broadcast`, and consults `isAllowed` inside `serveVaultFile`
+- `src/mediaDerivative.ts` — `parseDerivativeWidth`, `derivativeKind`, `encodeMedia` (images: Chromium `createImageBitmap` resize + `OffscreenCanvas.convertToBlob` to WebP; videos: a `mediabunny` `Conversion` over WebCodecs to MP4, hardware encoders only), `DerivativeCache` (in-memory LRU of encoded derivatives); the server holds one `DerivativeCache`
+- `src/map/transform.ts` — `videoTargetSize`, `VIDEO_MAX_LONG_SIDE`, `VIDEO_MAX_SHORT_SIDE`: the decoder box a video derivative fits in
 - `src/views/DmControlPanel.ts` — `setImageAsBackground` builds `/vault/<encoded-path>` URLs
 - `src/views/HydrusExplorerModal.ts` — `handleSetBackground` builds `/vault/<encoded-path>` URLs for cached Hydrus files
 
@@ -33,6 +35,13 @@ The `/vault/` endpoint is gated by a **display allowlist** derived from the broa
 12. When the read throws, the server shall respond with HTTP 500 `Server error`.
 13. The server shall verify the access token before evaluating the display allowlist and before touching the vault, so an unauthenticated `/vault/` request results in `401` with no `getAbstractFileByPath`, `exists`, or `readBinary` call. Requests from the player and map pages carry the token in the `dmScreenKey` cookie set when the page was served.
 14. When an allowlisted asset exceeds 512 MiB, the server shall respond `413 Asset too large` rather than writing the buffer to the response.
+15. When a `/vault/` request carries a `w` query parameter that is a positive integer, the server shall round it up to a multiple of `MEDIA_WIDTH_STEP` (256) and cap it at 16384 (`parseDerivativeWidth`); any other `w` value shall be ignored.
+16. When the decoded path is allowlisted, has a still-image extension (`jpg`, `jpeg`, `png`, `webp`) and a width from requirement 15, the server shall respond `200` with `Content-Type: image/webp`, the requirement 11 headers and a WebP of that width, aspect ratio kept, encoded at quality 0.9.
+16a. When the decoded path is allowlisted, has a video extension (`mp4`, `webm`) and a width from requirement 15, the server shall respond `200` with `Content-Type: video/mp4`, the requirement 11 headers and the primary video track re-encoded to `videoTargetSize(width, height, w)` — at most `w` wide and inside 1920×1080 (1080×1920 for a portrait video), even dimensions, aspect ratio kept — with audio dropped, H.264 preferred and VP9 as the fallback, at `QUALITY_HIGH`.
+16b. The video encoder shall be chosen with `VideoEncoder.isConfigSupported(..., hardwareAcceleration: "prefer-hardware")` and run with the same preference; when no hardware encoder supports the size, the server shall serve the original. A software WebCodecs encode on a GPU-less runtime crashes the renderer process, and with it Obsidian, which no `try` can catch.
+16c. The access-token and allowlist checks of requirements 5 and 13 shall run before any derivative work, so a refused path is never read or encoded.
+17. When the original already fits (an image not wider than the requested width, a video inside both the requested width and the decoder box), or the read or the encode fails, the server shall serve the original as in requirements 6–11; a failed encode shall log through `debugWarn`.
+18. The server shall keep encoded derivatives in a `DerivativeCache` keyed by width and path, holding at most six entries with least-recently-used eviction; concurrent requests for one key shall share a single read and encode, and a `null` result shall not be cached.
 
 ## Tests covering this
 
@@ -41,9 +50,14 @@ The `/vault/` endpoint is gated by a **display allowlist** derived from the broa
 - `src/__tests__/server-map-channel.test.ts` — map slot admit/revoke via `map-show`/`map-clear`, independence from background and `clear`, non-vault map URLs ignored
 - `src/__tests__/server-vault-allowlist.integration.test.ts` — end-to-end HTTP: undisplayed paths return 404 without touching disk; broadcasting a `/vault/` background admits its path; a server built on a seeded `ReplayCache` serves the cached background and map (requirement 3b); `hide-background-media` and `clear` revoke; layer paths admitted; traversal still 400; background/layer union honoured
 - `src/__tests__/server-bootstrap.integration.test.ts` — end-to-end `/vault/` hit with a real vault adapter mock
+- `src/__tests__/media-derivative.test.ts` — requirements 15 and 18: width rounding, cap and rejection, image and video extensions, cache dedupe, per-width keys, LRU eviction, uncached `null`, encode failure, the media kind reaching the encoder
+- `src/__tests__/server-vault-derivative.integration.test.ts` — requirements 16, 16a and 17 over HTTP with a stubbed encoder: WebP at the rounded width, MP4 for a video map, original when the encoder declines, `w` ignored for a GIF, allowlist checked before any read or encode
+- `src/__tests__/map-transform.test.ts` — `videoTargetSize`: landscape and portrait boxes, a narrower requested width, even sides, nothing to do
+- `test/e2e/specs/map.e2e.ts` — requirement 16 in real Obsidian: the WebP header and width of a derivative encoded by Electron; requirement 16b: on the GPU-less e2e runtime a video request returns the original and the server stays up
 
 ## Non-goals
 
 - Range requests. The server returns the full body each time; for video this is acceptable on a LAN.
 - Conditional GET (`If-Modified-Since`, `ETag`). `Cache-Control: max-age=3600` is the only freshness signal.
 - Streaming very large files. `readBinary` reads into memory; players should not push assets larger than a few hundred MB.
+- Persisting derivatives. They live in memory only and are rebuilt after a restart.

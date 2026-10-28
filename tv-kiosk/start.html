@@ -1,0 +1,169 @@
+<!doctype html>
+<!-- Fully Kiosk start page for a table TV: probes the DM's map servers in order and opens the first map screen that answers.
+     install.sh fills in the SERVERS list (label, host, port, token) and pushes the page into Fully's own files directory;
+     the custom entry is typed on the TV with the remote and kept in this page's localStorage. -->
+<html><head><meta charset="utf-8"><title>DM Screen — map</title><style>
+html,body{margin:0;height:100%;background:#000;color:#c9aa71;font:24px Georgia,serif}
+body{display:flex;align-items:center;justify-content:center}
+main{width:min(760px,90vw);text-align:center}
+#msg{font-size:28px;margin-bottom:24px;min-height:1.2em}
+#list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+button,input{font:20px monospace;background:#111;color:#999;border:2px solid #333;border-radius:8px;padding:10px 14px}
+.row{display:flex;justify-content:space-between}
+.row.up{color:#7c7}
+button:focus,input:focus,.sel{border-color:#c9aa71;color:#fff;outline:none;background:#1d1a12}
+form{display:none;gap:10px;flex-wrap:wrap;justify-content:center}
+form.open{display:flex}
+#host{width:200px}#port{width:80px}#token{width:380px}
+#hint{font:16px monospace;color:#666;margin-top:14px}
+</style></head><body><main>
+<div id="msg">Looking for the DM…</div>
+<div id="list"></div>
+<form id="form">
+  <input id="host" placeholder="IP" inputmode="url">
+  <input id="port" placeholder="Port" inputmode="numeric">
+  <input id="token" placeholder="Token">
+  <button type="submit">Save</button>
+</form>
+<div id="hint">↑ ↓ to choose · OK to open</div>
+</main><script>
+"use strict";
+const SERVERS = {{SERVERS}};
+const RETRY_MS = 3000, TIMEOUT_MS = 2000, COUNTDOWN_S = 10, STORE = "dmCustomServer";
+const $ = (id) => document.getElementById(id);
+let states = [], manual = false, editing = false, countdown = null, selected = 0;
+
+function custom() {
+  try {
+    const c = JSON.parse(localStorage.getItem(STORE) || "null");
+    return c && c.host && c.token ? { label: "Custom", host: c.host, port: Number(c.port) || 3000, token: c.token } : null;
+  } catch (e) { return null; }
+}
+
+function servers() { const c = custom(); return c ? SERVERS.concat([c]) : SERVERS; }
+
+function buttons() { return Array.from($("list").querySelectorAll("button")); }
+
+function render() {
+  const list = $("list");
+  list.innerHTML = "";
+  servers().forEach((s, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "row" + (states[i] ? " up" : "");
+    const name = document.createElement("span"), state = document.createElement("span");
+    name.textContent = s.label;
+    state.textContent = states[i] ? "available" : "—";
+    b.append(name, state);
+    b.addEventListener("click", () => open(i));
+    list.appendChild(b);
+  });
+  const cfg = document.createElement("button");
+  cfg.type = "button";
+  cfg.textContent = "Set up a custom server";
+  cfg.addEventListener("click", openSetup);
+  list.appendChild(cfg);
+  if (!editing) select(Math.min(selected, buttons().length - 1));
+}
+
+function select(i) {
+  const all = buttons();
+  selected = (i + all.length) % all.length;
+  all.forEach((b, j) => b.classList.toggle("sel", j === selected));
+  all[selected].focus();
+}
+
+// /health needs no token and answers fast; no-cors because this page has a file:// origin.
+async function alive(s) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  try { await fetch("http://" + s.host + ":" + s.port + "/health", { mode: "no-cors", cache: "no-store", signal: ctl.signal }); return true; }
+  catch (e) { return false; }
+  finally { clearTimeout(t); }
+}
+
+function open(i) {
+  const s = servers()[i];
+  if (!s) return;
+  $("msg").textContent = "Opening " + s.label + "…";
+  location.replace("http://" + s.host + ":" + s.port + "/map?k=" + encodeURIComponent(s.token));
+}
+
+function stopCountdown(text) {
+  manual = true;
+  clearTimeout(countdown);
+  countdown = null;
+  $("msg").textContent = text;
+}
+
+function startCountdown(i) {
+  let left = COUNTDOWN_S;
+  const tick = () => {
+    if (manual) return;
+    if (left === 0) { open(i); return; }
+    $("msg").textContent = "Opening " + servers()[i].label + " in " + left-- + "… (press any key to choose)";
+    countdown = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+async function probe() {
+  const result = await Promise.all(servers().map(alive));
+  states = result;
+  if (!editing) render();
+  const first = result.indexOf(true);
+  if (!manual && countdown === null) {
+    if (first >= 0) { select(first); startCountdown(first); }
+    else $("msg").textContent = "Waiting for the DM…";
+  }
+  setTimeout(probe, RETRY_MS);
+}
+
+function openSetup() {
+  stopCountdown("Custom server");
+  editing = true;
+  const c = custom() || {};
+  $("host").value = c.host || "";
+  $("port").value = c.port || 3000;
+  $("token").value = c.token || "";
+  $("form").classList.add("open");
+  $("host").focus();
+}
+
+function closeSetup() {
+  editing = false;
+  $("form").classList.remove("open");
+  $("msg").textContent = "Choose a server";
+  render();
+}
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const host = $("host").value.trim(), port = $("port").value.trim(), token = $("token").value.trim();
+  try {
+    if (host && token) localStorage.setItem(STORE, JSON.stringify({ host, port: port || "3000", token }));
+    else localStorage.removeItem(STORE);
+  } catch (err) { $("msg").textContent = "Could not save"; return; }
+  states = [];
+  closeSetup();
+});
+
+// The page drives its own selection instead of the WebView's spatial navigation, and any key stops the countdown.
+function onKey(e) {
+  if (!manual) stopCountdown("Choose a server");
+  if (editing) {
+    if (e.type === "keydown" && (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack")) { e.preventDefault(); closeSetup(); }
+    return;
+  }
+  if (e.type !== "keydown") return;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); select(selected + 1); }
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); select(selected - 1); }
+  else if (e.key === "Enter" || e.keyCode === 23) { e.preventDefault(); buttons()[selected].click(); }
+}
+window.addEventListener("keydown", onKey, true);
+window.addEventListener("keyup", onKey, true);
+
+render();
+window.focus();
+probe();
+</script></body></html>

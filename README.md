@@ -65,6 +65,10 @@ A second endpoint dedicated to battlemaps for in-person play with miniatures on 
 
 If the TV isn't calibrated yet, physical mode falls back to 96 px/inch and both the TV and the panel show a warning until you calibrate.
 
+**Media sized to each screen.** By default every screen asks the server for a map sized to what it actually shows: still images come as a downscaled WebP, and videos larger than 1080p are re-encoded to fit 1920×1080, because most TV hardware decoders refuse anything bigger. Encoding runs inside Obsidian on the computer's hardware video encoder; where there is none, the original is sent. To send a screen the untouched originals, set **Media quality** to *Original* in that screen's calibration modal; the badge then shows `· original`.
+
+**A start page for the table TV.** On an Android / Google TV with Fully Kiosk Browser, [`tv-kiosk/`](tv-kiosk/README.md) installs a start page over ADB that lists the computers that may run the server, opens the first one that answers after a short countdown, and lets you pick another (or type a one-off server) with the remote.
+
 ### Battlemap fog of war, walls, and vision
 
 ![Map fog editor](docs/screenshots/map-fog-editor.png)

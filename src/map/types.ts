@@ -26,9 +26,13 @@ export interface MapGridConfig {
   gridOpacity: number;
 }
 
+export type MediaQuality = "optimized" | "original";
+
 export interface ScreenProfile {
   diagonalInches: number;
   fineTune: number;
+  // Absent means "optimized": the screen asks for media sized to what it shows.
+  quality?: MediaQuality;
 }
 
 export interface StoredMapState extends MapGridConfig, MapView {}

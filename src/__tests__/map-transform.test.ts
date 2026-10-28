@@ -7,6 +7,8 @@ import {
   gridLinePositions,
   mapScale,
   mapTranslation,
+  mediaRequestWidth,
+  videoTargetSize,
   profileKey,
   rotatePoint,
   rotatedSize,
@@ -256,5 +258,60 @@ describe("transform math is total over non-finite input", () => {
     const out = rotatePoint(bad, bad, 90);
     expect(Number.isFinite(out.x)).toBe(true);
     expect(Number.isFinite(out.y)).toBe(true);
+  });
+});
+
+describe("mediaRequestWidth", () => {
+  it("sizes the request to the largest scale, rounded up to the step", () => {
+    // 4900 px map at 140 px/square on a ~46 ppi TV: 4900 × 46/140 = 1610 → 1792
+    expect(mediaRequestWidth(4900, [46 / 140, 0.06], 1)).toBe(1792);
+  });
+
+  it("multiplies by devicePixelRatio and never by less than 1", () => {
+    expect(mediaRequestWidth(4000, [0.25], 2)).toBe(2048);
+    expect(mediaRequestWidth(4000, [0.25], 0.5)).toBe(1024);
+  });
+
+  it("returns null when the screen needs the full original", () => {
+    expect(mediaRequestWidth(1000, [1], 1)).toBeNull();
+    expect(mediaRequestWidth(1000, [0.9], 1)).toBeNull();
+  });
+
+  it("returns null for unusable sizes or scales", () => {
+    expect(mediaRequestWidth(0, [0.5], 1)).toBeNull();
+    expect(mediaRequestWidth(4000, [Number.NaN], 1)).toBeNull();
+    expect(mediaRequestWidth(4000, [], 1)).toBeNull();
+  });
+});
+
+describe("videoTargetSize", () => {
+  it("fits a landscape video in 1920×1080", () => {
+    // A 3840×2908 map video: the 1080 short side binds.
+    expect(videoTargetSize(3840, 2908, 3840)).toEqual({ width: 1426, height: 1080 });
+    expect(videoTargetSize(3840, 2160, 3840)).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it("fits a portrait video in 1080×1920", () => {
+    expect(videoTargetSize(2160, 3840, 2160)).toEqual({ width: 1080, height: 1920 });
+  });
+
+  it("applies a narrower requested width inside the box", () => {
+    expect(videoTargetSize(3840, 2160, 1280)).toEqual({ width: 1280, height: 720 });
+  });
+
+  it("keeps both sides even", () => {
+    const { width, height } = videoTargetSize(3001, 1999, 3001)!;
+    expect(width % 2).toBe(0);
+    expect(height % 2).toBe(0);
+  });
+
+  it("returns null when the video already fits and no smaller width is asked", () => {
+    expect(videoTargetSize(1920, 1080, 1920)).toBeNull();
+    expect(videoTargetSize(1280, 720, 4000)).toBeNull();
+  });
+
+  it("returns null for unusable sizes", () => {
+    expect(videoTargetSize(0, 1080, 1920)).toBeNull();
+    expect(videoTargetSize(Number.NaN, 1080, 1920)).toBeNull();
   });
 });
