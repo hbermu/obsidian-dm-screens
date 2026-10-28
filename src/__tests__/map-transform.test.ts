@@ -286,7 +286,7 @@ describe("mediaRequestWidth", () => {
 
 describe("videoTargetSize", () => {
   it("fits a landscape video in 1920×1080", () => {
-    // The M2's 3840×2908 map video: the 1080 short side binds.
+    // A 3840×2908 map video: the 1080 short side binds.
     expect(videoTargetSize(3840, 2908, 3840)).toEqual({ width: 1426, height: 1080 });
     expect(videoTargetSize(3840, 2160, 3840)).toEqual({ width: 1920, height: 1080 });
   });

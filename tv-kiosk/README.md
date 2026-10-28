@@ -19,9 +19,9 @@ A start page for an Android / Google TV that shows the DM Screen map. It lists t
 ## Install
 
 ```bash
-./install.sh --tv 192.168.1.50 \
-  --server "Living room PC=192.168.1.20:3000:0123456789abcdef0123456789abcdef" \
-  --server "Laptop=192.168.1.21:0123456789abcdef0123456789abcdef"
+./install.sh --tv 192.0.2.50 \
+  --server "Living room PC=192.0.2.20:3000:0123456789abcdef0123456789abcdef" \
+  --server "Laptop=192.0.2.21:0123456789abcdef0123456789abcdef"
 ```
 
 - The first run shows a debugging prompt on the TV: accept it (tick "Always allow from this computer" to skip it next time).

@@ -27,7 +27,7 @@
 
 ## Tests covering this
 
-- Manual: `install.sh` against a Xiaomi Google TV (Android 14, Fully 1.61): the generated page lists three servers, counts down, opens the first that answers, and the remote's arrows and OK choose another; the custom entry persists across Fully restarts.
+- Manual: `install.sh` against an Android 14 Google TV with Fully 1.61: the generated page lists three servers, counts down, opens the first that answers, and the remote's arrows and OK choose another; the custom entry persists across Fully restarts.
 
 ## Non-goals
 

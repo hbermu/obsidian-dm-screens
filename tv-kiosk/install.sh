@@ -2,7 +2,7 @@
 # Installs the map-screen start page on an Android TV running Fully Kiosk Browser, over ADB.
 # See README.md in this directory for the one-time steps on the TV.
 #
-#   install.sh --tv 192.168.1.50 --server "Living room PC=192.168.1.20:3000:<token>" [--server ...] [--fully-password <pw>]
+#   install.sh --tv 192.0.2.50 --server "Living room PC=192.0.2.20:3000:<token>" [--server ...] [--fully-password <pw>]
 #
 #   --tv HOST[:PORT]       the TV's network debugging address (port 5555 by default)
 #   --server LABEL=HOST[:PORT]:TOKEN
