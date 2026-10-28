@@ -6,6 +6,13 @@ import { WsRecorder } from "../helpers/ws";
 
 const FIXTURE_BYTES = fs.statSync("test/e2e/vault/attachments/map.png").size;
 
+function webpWidth(b: Buffer): number {
+  const chunk = b.subarray(12, 16).toString();
+  if (chunk === "VP8X") return 1 + b.readUIntLE(24, 3);
+  if (chunk === "VP8L") return 1 + (b.readUInt16LE(21) & 0x3fff);
+  return b.readUInt16LE(26) & 0x3fff;
+}
+
 describe("map screen", function () {
   let rec: WsRecorder;
 
@@ -54,6 +61,26 @@ describe("map screen", function () {
     for (const text of ["Stop Map", "Scale: fit screen", "Rotate: 0°", "Fog", "Explore"]) {
       await expect(panelButton(text)).toExist();
     }
+  });
+
+  it("serves a WebP derivative of the map at a requested width", async function () {
+    const show = await rec.waitFor("map-show");
+    const res = await httpGet(
+      `http://127.0.0.1:${DEFAULT_PORT}${show.payload.url}?w=200`,
+      await accessToken(),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/webp");
+    expect(res.body.subarray(0, 4).toString()).toBe("RIFF");
+    expect(res.body.subarray(8, 12).toString()).toBe("WEBP");
+    expect(webpWidth(res.body)).toBe(256);
+
+    const full = await httpGet(
+      `http://127.0.0.1:${DEFAULT_PORT}${show.payload.url}?w=1000`,
+      await accessToken(),
+    );
+    expect(full.headers["content-type"]).toContain("image/png");
+    expect(full.body.byteLength).toBe(FIXTURE_BYTES);
   });
 
   it("map preview shows source label chip with note basename", async function () {

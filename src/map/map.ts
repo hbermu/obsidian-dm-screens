@@ -10,6 +10,7 @@ import {
   gridLinePositions,
   mapScale,
   mapTranslation,
+  mediaRequestWidth,
   profileKey,
   DEFAULT_GRID_CONFIG,
   FALLBACK_PPI,
@@ -69,6 +70,8 @@ class MapScreen {
   private hasConnectedOnce = false;
 
   private media: MapMediaPayload | null = null;
+  private imageBase: string | null = null;
+  private requestedWidth = 0;
   private view: MapView = { mode: "fit", panX: 0, panY: 0 };
   private config: MapGridConfig = { ...DEFAULT_GRID_CONFIG };
   private profiles: Record<string, ScreenProfile> = {};
@@ -346,7 +349,16 @@ class MapScreen {
       video.pause();
       video.src = "";
       video.style.display = "none";
-      image.src = safeSrc;
+      this.imageBase = safeSrc;
+      // Without the DM's natural size the layout can only come from the
+      // decoded image, so there is nothing to size a request against.
+      if (payload.naturalWidth > 0 && payload.naturalHeight > 0) {
+        image.removeAttribute("src");
+        this.requestedWidth = 0;
+      } else {
+        image.src = safeSrc;
+        this.requestedWidth = Number.POSITIVE_INFINITY;
+      }
       image.style.display = "block";
       image.onload = () => this.applyLayout();
     }
@@ -416,6 +428,8 @@ class MapScreen {
     video.style.display = "none";
     image.src = "";
     image.style.display = "none";
+    this.imageBase = null;
+    this.requestedWidth = 0;
     this.fogImage = null;
     this.visions = [];
     this.walls = [];
@@ -479,6 +493,7 @@ class MapScreen {
     ) as HTMLElement;
     mediaEl.style.width = `${nw}px`;
     mediaEl.style.height = `${nh}px`;
+    this.syncImageSource(ppi, nw, nh, vw, vh, dpr);
     stage.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotation}deg) scale(${scale})`;
 
     if (this.config.showGrid) {
@@ -509,6 +524,24 @@ class MapScreen {
     } else {
       hint.style.display = "none";
     }
+  }
+
+  // The image element keeps the DM's natural size, so a smaller derivative is
+  // only stretched and grid, fog and walls stay where the DM placed them. A
+  // full-size map decoded on a low-RAM screen costs hundreds of MB and, for a
+  // JPEG, gets silently downsampled anyway. Only an upgrade triggers a reload.
+  private syncImageSource(ppi: number, nw: number, nh: number, vw: number, vh: number, dpr: number) {
+    if (this.media?.mediaType !== "image" || !this.imageBase) return;
+    const scales = (["physical", "fit"] as const).map((mode) =>
+      mapScale({ ...this.view, mode }, ppi, this.config.pxPerSquare, nw, nh, vw, vh)
+    );
+    const width = this.imageBase.startsWith("/vault/") ? mediaRequestWidth(nw, scales, dpr) : null;
+    const wanted = width ?? Number.POSITIVE_INFINITY;
+    if (wanted <= this.requestedWidth) return;
+    this.requestedWidth = wanted;
+    const image = document.getElementById("map-image") as HTMLImageElement;
+    image.src = width === null ? this.imageBase : `${this.imageBase}?w=${width}`;
+    console.log(`[Map Screen] Map image requested at ${width ?? "full"} px of ${nw}`);
   }
 
   private renderCalibrationCard() {

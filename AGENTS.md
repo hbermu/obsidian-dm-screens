@@ -118,6 +118,7 @@ src/
   debug.ts               # Debug-mode logger
   redact.ts              # redactUrl / redactSecret for log and Notice text
   auth.ts                # Player-screen access token and join URL
+  imageDerivative.ts     # Downscaled WebP derivatives of vault images for /vault/?w=
   sourceLabel.ts         # resolveSourceLabel — DM-side image label (Hydrus name: tag, Hydrus <hash8>, note basename)
   conditions.ts          # D&D 5e condition catalogue (icons, DDB id mapping, status encode/decode)
   global.d.ts            # Window augmentations (InitiativeTracker, FantasyStatblocks)

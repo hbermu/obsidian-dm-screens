@@ -7,6 +7,7 @@ import {
   gridLinePositions,
   mapScale,
   mapTranslation,
+  mediaRequestWidth,
   profileKey,
   rotatePoint,
   rotatedSize,
@@ -256,5 +257,28 @@ describe("transform math is total over non-finite input", () => {
     const out = rotatePoint(bad, bad, 90);
     expect(Number.isFinite(out.x)).toBe(true);
     expect(Number.isFinite(out.y)).toBe(true);
+  });
+});
+
+describe("mediaRequestWidth", () => {
+  it("sizes the request to the largest scale, rounded up to the step", () => {
+    // 4900 px map at 140 px/square on a ~46 ppi TV: 4900 × 46/140 = 1610 → 1792
+    expect(mediaRequestWidth(4900, [46 / 140, 0.06], 1)).toBe(1792);
+  });
+
+  it("multiplies by devicePixelRatio and never by less than 1", () => {
+    expect(mediaRequestWidth(4000, [0.25], 2)).toBe(2048);
+    expect(mediaRequestWidth(4000, [0.25], 0.5)).toBe(1024);
+  });
+
+  it("returns null when the screen needs the full original", () => {
+    expect(mediaRequestWidth(1000, [1], 1)).toBeNull();
+    expect(mediaRequestWidth(1000, [0.9], 1)).toBeNull();
+  });
+
+  it("returns null for unusable sizes or scales", () => {
+    expect(mediaRequestWidth(0, [0.5], 1)).toBeNull();
+    expect(mediaRequestWidth(4000, [Number.NaN], 1)).toBeNull();
+    expect(mediaRequestWidth(4000, [], 1)).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import { TFile } from "obsidian";
 import type DmScreenPlugin from "./main";
 import { debug, debugWarn, debugError } from "./debug";
 import { tokenMatches } from "./auth";
+import { DerivativeCache, encodeWebp, isResizable, parseDerivativeWidth } from "./imageDerivative";
 
 const MAX_WS_PAYLOAD_BYTES = 64 * 1024;
 const MAX_WS_MESSAGES_PER_SECOND = 20;
@@ -198,6 +199,7 @@ export class PlayerScreenServer {
   onClientCountChanged: (() => void) | null = null;
   private cache: ReplayCache;
   private allowlist = new VaultServeAllowlist();
+  private derivatives = new DerivativeCache(encodeWebp);
 
   constructor(plugin: DmScreenPlugin, cache: ReplayCache = new ReplayCache()) {
     this.plugin = plugin;
@@ -422,8 +424,7 @@ export class PlayerScreenServer {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", clients: this.clients.size }));
     } else if (url.startsWith("/vault/")) {
-      // Serve vault files directly (for large assets like videos)
-      this.serveVaultFile(url.slice(7), res);
+      this.serveVaultFile(url.slice(7), parseDerivativeWidth(req.url || "/"), res);
     } else {
       res.writeHead(404);
       res.end("Not found");
@@ -441,7 +442,7 @@ export class PlayerScreenServer {
     };
   }
 
-  private async serveVaultFile(vaultPath: string, res: ServerResponse) {
+  private async serveVaultFile(vaultPath: string, width: number | null, res: ServerResponse) {
     try {
       const decodedPath = decodeURIComponent(vaultPath);
       if (decodedPath.includes("..") || decodedPath.startsWith("/")) {
@@ -456,6 +457,22 @@ export class PlayerScreenServer {
         res.writeHead(404);
         res.end("Not found");
         return;
+      }
+
+      if (width !== null && isResizable(decodedPath)) {
+        const derivative = await this.derivatives.get(decodedPath, width, () =>
+          readVaultBytes(this.plugin.app, decodedPath)
+        );
+        if (derivative) {
+          debug("serveVaultFile:", decodedPath, `(webp at ${width}px, ${derivative.byteLength} bytes)`);
+          res.writeHead(200, {
+            "Content-Type": "image/webp",
+            "Content-Length": derivative.byteLength,
+            "Cache-Control": "public, max-age=3600",
+          });
+          res.end(Buffer.from(derivative));
+          return;
+        }
       }
 
       const data = await readVaultBytes(this.plugin.app, decodedPath);
