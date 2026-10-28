@@ -188,6 +188,7 @@ src/
     StatblockPanel.ts    # 5e statblock renderer
     layerContextMenu.ts  # Right-click context menu for image-layer rows
   __tests__/             # Vitest unit and integration tests
+tv-kiosk/                # Fully Kiosk start page for a table TV + its ADB installer (start.html, install.sh, README.md)
 ```
 
 ## Release process

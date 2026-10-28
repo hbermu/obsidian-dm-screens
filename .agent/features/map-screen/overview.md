@@ -67,7 +67,7 @@
 
 ## Broadcast / IPC
 
-All map traffic uses the `map` channel (types prefixed `map-`); the full table lives in `../player-server/websocket-protocol.md`. Scale/grid/preview semantics in `scale-and-grid.md`; calibration in `calibration.md`; AoE overlays in `aoe-overlays.md`.
+All map traffic uses the `map` channel (types prefixed `map-`); the full table lives in `../player-server/websocket-protocol.md`. Scale/grid/preview semantics in `scale-and-grid.md`; calibration in `calibration.md`; AoE overlays in `aoe-overlays.md`; the table-TV start page and its installer in `tv-kiosk.md`.
 
 ## Tests covering this
 
