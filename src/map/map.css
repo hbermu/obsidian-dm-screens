@@ -14,10 +14,12 @@ body {
   height: 100vh;
 }
 
+/* Fixed and clipped: a map stage that overflows the page makes Android WebView
+   widen the layout viewport, which changes innerWidth and loses the calibration profile. */
 #app {
-  width: 100vw;
-  height: 100vh;
-  position: relative;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
 
 /* Waiting Screen */
