@@ -33,14 +33,14 @@ Status: actively developed. Desktop only (Windows, macOS, Linux). MIT licensed. 
 
 At an in-person table you want the players to see the scene art, a handout or the turn order, but not your notes. DM Screen keeps your notes in Obsidian and sends a clean visual layer to the screens in the room.
 
-It is not a virtual tabletop (VTT). Players do not log in or interact; they watch. It does not replace D&D Beyond or the Initiative Tracker plugin either. It shows their state on the TV. Everything runs on your own network.
+It is neither a virtual tabletop (VTT) nor a replacement for D&D Beyond or the Initiative Tracker plugin: players do not log in or interact, and the TV only shows the state of the tools you already use. Everything runs on your own network.
 
 What it does:
 
 - [Player screen on any device](#connect-the-screens): a TV, tablet, phone or second monitor opens a link in its browser and follows what you push. It reconnects by itself after a network hiccup.
-- [Image layers with per-layer fog of war](#player-screen): stack scene art and portraits, and hide parts of each one under fog until the party gets there.
+- [Image layers with per-layer fog of war](#player-screen): stack scene art and portraits, and hide parts of each one under fog of war (a dark mask over what the party has not discovered yet) until they get there.
 - [Background image or video](#player-screen): a full-screen scene or a looping video behind the layers.
-- [Initiative tracker on the TV](#combat): manual, synced from the Initiative Tracker plugin, or live from a D&D Beyond encounter. Turn order is revealed as round 1 plays out.
+- [Initiative tracker on the TV](#combat): manual, synced from the Initiative Tracker plugin, or live from a D&D Beyond encounter. The turn order can stay hidden until each combatant acts.
 - [Statblocks in the panel](#combat): read a monster's statblock from Fantasy Statblocks without leaving the combat view.
 - [Battle map at 1 inch per square](#map-screen-table-tv): a second page, `/map`, shows one map on a table TV at true scale for miniatures, after a one-time calibration.
 - [Map fog, walls and dynamic vision](#fog-walls-and-vision): fog you paint once and keep, walls and doors that block line of sight, and torches or darkvision that light only what they reach. Walls can be imported from Universal VTT (UVTT) files and Foundry VTT modules.
@@ -54,7 +54,7 @@ What it does:
 - Obsidian desktop (Windows, macOS, Linux). The plugin is not available on mobile.
 - The computer running Obsidian and every screen on the same network, one you trust.
 - A browser on each screen: a smart TV browser, Fully Kiosk Browser on Android or Google TV, a tablet, a phone, or a second monitor.
-- A firewall that lets the other devices reach the server port (3000 by default).
+- A firewall that lets the other devices reach the server port (see [Network usage and privacy](#network-usage-and-privacy)).
 
 Optional:
 
@@ -69,13 +69,13 @@ DM Screen is not yet listed in the Obsidian community plugin gallery. Install it
 
 ### With BRAT (recommended)
 
-[BRAT](https://github.com/TfTHacker/obsidian42-brat) installs plugins straight from GitHub and keeps them updated.
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) installs plugins straight from GitHub.
 
 1. Install BRAT from **Settings → Community plugins → Browse** and enable it.
 2. Run the BRAT command **Add a beta plugin for testing** and enter `hbermu/obsidian-dm-screens`.
 3. Enable **DM Screen** in **Settings → Community plugins**.
 
-BRAT keeps you on the latest release.
+BRAT installs the latest release when it checks for updates: at startup, if that is turned on in BRAT's settings, or when you run its update command.
 
 ### Manual
 
@@ -100,7 +100,7 @@ The TV now shows the background, the image and the initiative tracker. [Running 
 
 <p align="center"><img src="docs/screenshots/dm-control-panel.png" alt="DM Control Panel" width="360"></p>
 
-The DM Control Panel has four collapsible sections: **Player Screen Server**, **Player Screen**, **Map Screen** and **COMBAT**. When Hydrus is enabled, a **Media from Hydrus** bar sits between them. Click a section title to fold it.
+The DM Control Panel has four collapsible sections: **Player Screen Server**, **Player Screen**, **Map Screen** and **COMBAT**. When Hydrus is enabled and has an API URL, a **Media from Hydrus** bar sits between them. Click a section title to fold it.
 
 ### Before the session
 
@@ -139,7 +139,7 @@ Drag a layer on the preview to move it. Two layers cannot share a label. **Clear
 
 *Per-layer fog on the DM preview. The zoom slider, Reset View and the green rectangle for the player's viewport are visible too. The map screen has its own fog system, described in [Fog, walls and vision](#fog-walls-and-vision).*
 
-**Background.** **Add BG** sets an image or video as the full-screen background, and **Stop BG** removes it. Videos loop and play muted by default (both are settings). The Hydrus explorer has a **Set as background** action too.
+**Background.** **Add BG** sets an image or video as the full-screen background, and **Stop BG** removes it. Videos loop and play muted by default (see the [Hydrus Library settings](#settings)). The Hydrus explorer has a **Set as background** action too.
 
 **DM preview.** The preview in the panel shows what the players see, scaled down. Middle-drag to pan, use the slider to zoom out and see around the player's view, and click **Reset View** to go back. With one screen connected, a green rectangle marks that screen's viewport. Your pan and zoom stay on your side and are never sent to the players.
 
@@ -159,7 +159,7 @@ The **COMBAT** section has two tabs: **Local Track** (manual or Initiative Track
 
 ![D&D Beyond encounter sync](docs/screenshots/dndbeyond-encounter.png)
 
-**What players see.** In round 1, the TV lists only the combatants up to the one acting, so the order is revealed as turns pass. From round 2 on, it lists everyone. With D&D Beyond, use **Show full turn order** instead; it turns on by itself when you join an encounter already past round 1. Hidden combatants never reach the TV. Monsters show a condition word (Well, Hurt, Bloodied, Down) instead of their HP.
+**What players see.** With the manual tracker and Initiative Tracker, the TV lists only the combatants up to the one acting in round 1, so the order is revealed as turns pass; from round 2 on, it lists everyone. With D&D Beyond, the TV hides the combatants after the one acting in every round until you turn on **Show full turn order**. It turns on by itself when you join an encounter already past round 1. Hidden combatants never reach the TV. Monsters show a condition word (Well, Hurt, Bloodied, Down) instead of their HP.
 
 **Statblocks.** With Fantasy Statblocks installed, expand a combatant synced from Initiative Tracker to read its statblock in the panel. A numbered name like "Goblin 3" falls back to "Goblin". Statblocks are never shown to players. Manual and D&D Beyond rows have no statblock.
 
@@ -167,28 +167,28 @@ The **COMBAT** section has two tabs: **Local Track** (manual or Initiative Track
 
 ### Map screen (table TV)
 
-The `/map` page shows one battle map, for playing with miniatures on a TV laid flat on the table. It is independent of the player screen: clearing one never touches the other, and both can run at once on different devices.
+The `/map` page shows one battle map on a TV laid flat on the table, for playing with miniatures. It is independent of the player screen: clearing one never touches the other, and both can run at once.
 
 **Setup**
 
-1. With the server running, open the map link on the table TV. The **Map Screen** section has it, with a **Copy** button so the access token comes along. Use the on-screen button to go fullscreen.
-2. The TV appears as a resolution badge in the panel. Click it and enter the screen's **diagonal in inches**. Turn on **Show test pattern** (a 6-inch ruler and a 1-inch square on the TV) and use **Fine-tune** until a real ruler agrees. The calibration is stored per resolution and reused. A calibrated badge shows `✓`.
+1. Open the map link from the **Map Screen** section (use **Copy**) on the table TV, then go fullscreen with the on-screen button.
+2. The TV appears as a resolution badge in the panel. Click it and enter the screen's **diagonal in inches**. Turn on **Show test pattern** (a 6-inch ruler and a 1-inch square on the TV) and use **Fine-tune** until a real ruler agrees. Calibration is stored per resolution; a calibrated badge shows `✓`.
 
    ![Calibration modal and the test pattern on the TV](docs/screenshots/map-calibration.png)
-3. Click **Add Map**. It offers the same sources as the background: images in the active note and `hydrus://` references (images or videos, so animated maps work). The Hydrus explorer also has a **Set as map** action.
+3. Click **Add Map**. It offers the same sources as Add BG, including `hydrus://` videos for animated maps. The Hydrus explorer also has **Set as map**.
 
 **At the table**
 
 - **Scale**: *fit screen* shows the whole map; *physical 1″* draws every grid square as one real inch, so miniatures sit at true scale.
-- **Pan**: in physical mode most maps are bigger than the TV. Drag the green rectangle on the panel's preview, or click anywhere in it, to choose what the TV shows. The mouse wheel zooms your preview only. Middle-drag looks around without moving the players' view, and the 🔒 lock stops you from moving it by accident.
+- **Pan**: in physical mode, drag the green rectangle on the panel's preview, or click in the preview, to choose what the TV shows. The wheel zooms your preview only, middle-drag looks around, and the 🔒 lock stops you moving the players' view by accident.
 - **Rotate**: 90° steps. In fit mode, a portrait map turned sideways uses the whole landscape TV.
-- **Grid overlay**: for gridless maps, a grid drawn over the map. `px/square` is how many map pixels one square spans (Czepeku full-resolution exports use 140; the default for new maps is a setting). `offset X/Y` shifts the grid for maps whose grid does not start at the image corner. Line colour and opacity are adjustable.
+- **Grid overlay**: a grid drawn over gridless maps. `px/square` is how many map pixels one square spans (the default is a setting), `offset X/Y` shifts the grid when it does not start at the image corner, and colour and opacity are adjustable.
 
 Scale mode, pan, rotation and grid are remembered per map and restored when you show the same map again.
 
-If the TV is not calibrated, physical mode assumes 96 px per inch, and both the TV and the panel show an "Uncalibrated screen" warning.
+If the TV is not calibrated, physical mode assumes 96 px per inch and both the TV and the panel show a warning.
 
-**Media sized to each screen.** By default each map screen gets a copy sized to what it shows. Images arrive as a downscaled WebP. Videos larger than 1080p are re-encoded to fit 1920×1080, because most TV hardware decoders refuse anything bigger. Encoding runs inside Obsidian on the computer's hardware video encoder; without one, the original is sent. To send a screen the untouched originals, set **Media quality** to *Original* in that screen's calibration window. Its badge then shows `· original`.
+**Media sized to each screen.** By default each map screen gets images as a downscaled WebP, and videos larger than 1080p re-encoded to fit 1920×1080, because most TV decoders refuse anything bigger. Encoding uses the computer's hardware video encoder; without one, the original is sent. To send a screen the originals, set **Media quality** to *Original* in its calibration window; its badge then shows `· original`.
 
 **A start page for the table TV.** On an Android or Google TV with Fully Kiosk Browser, [`tv-kiosk/`](tv-kiosk/README.md) installs a start page over Android Debug Bridge (ADB). It lists the computers that may run the server, opens the first one that answers after a short countdown, and lets you pick another (or type a one-off server) with the remote.
 
@@ -200,19 +200,19 @@ If the TV is not calibrated, physical mode assumes 96 px per inch, and both the 
 
 While a map is showing, the Map Screen section has a **Fog** button (it reads `Fog ●` once the map has fog). It opens an editor with two tabs.
 
-**Fog tab.** One mask over the map: black hides, transparent reveals. Pick **Reveal** or **Cover**, then paint with a **Brush** (size slider), a **Rectangle**, a snapped **Grid cell** or **Grid rect**, or the **Room** tool, which fills a whole walled room in one click. **Reveal All** and **Cover All** reset the map. The fog is saved per map in `.dm-screen/fog/` and comes back whenever you show that map again, for note images and Hydrus files alike. How dark the fog looks on the TV is a setting.
+**Fog tab.** One mask over the map: black hides, transparent reveals. Pick **Reveal** or **Cover**, then paint with a **Brush** (size slider), a **Rectangle**, a snapped **Grid cell** or **Grid rect**, or the **Room** tool, which fills a whole walled room in one click. **Reveal All** and **Cover All** reset the map. The fog is saved per map ([where](#urls-ports-and-files)) and comes back whenever you show that map again. How dark it looks on the TV is a setting.
 
-**Walls tab.** Draw line-of-sight **Walls** and **Doors** with chained clicks (right-click ends the chain) or a **Rect** drag. **Toggle door** opens and closes a door, **Erase** removes segments, and **Snap** aligns to the grid. Walls are saved in `.dm-screen/walls/`. They drive dynamic vision and the Room tool.
+**Walls tab.** Draw line-of-sight **Walls** and **Doors** with chained clicks (right-click ends the chain) or a **Rect** drag. **Toggle door** opens and closes a door, **Erase** removes segments, and **Snap** aligns to the grid. Walls are saved per map too, and drive dynamic vision and the Room tool.
 
 **Import walls.** You do not have to draw walls by hand. On the Walls tab:
 
 ![Importing a Foundry module zip fills in every wall and door](docs/screenshots/walls-import.gif)
 
 - **Import UVTT** loads a `.dd2vtt`, `.uvtt`, `.df2vtt` or `.json` export (Dungeondraft and most VTT map packs). Walls, objects and portals become walls and doors, and the map's grid size is set for you.
-- **Import Foundry** loads a Foundry VTT module `.zip`, the format Czepeku and other creators ship. The scene's walls and doors are extracted and scaled to your map. Both old (NeDB) and new (LevelDB) module layouts work. When a module holds several rooms or variants, the scene that matches your map's shape is picked, and a picker asks when more than one could fit.
+- **Import Foundry** loads a Foundry VTT module `.zip` (old NeDB or new LevelDB layout), the format Czepeku and other creators ship. Walls and doors are scaled to your map. With several scenes, the one matching your map's shape is picked, and a picker asks when more than one fits.
 - **From Hydrus**: when you set a Hydrus image as the map and your library has a Foundry module zip tagged `type:foundry module` with the same `name:` tag, the plugin asks "Import its walls and grid?". It reads only the few MB of scene data from the zip, not the artwork around it.
 
-**Dynamic vision.** Click **Add Vision** and pick **Circle 30 ft**, **Square 30 ft** or **Lights…**. Drag the vision onto a token and the fog opens for exactly what it can see. Each vision has a **bright** radius and an optional **dim** ring that stays half-shrouded. **Lights…** fills both from the 5e list (torch 20 ft plus 20 ft dim, lantern, *light*, *daylight*, darkvision 60 or 120 ft, and more). Give a vision a name and a marker colour to tell the torches apart, and use the 🔗 group toggle to drag them all together as the party moves. Walls stop the light; an open door lets it through and a closed one blocks it. **Bake into fog** burns the current vision into the fog for good (for areas already explored) and clears the live layer. **Clear All** removes every vision.
+**Dynamic vision.** Click **Add Vision** and pick **Circle 30 ft**, **Square 30 ft** or **Lights…**. Drag it onto a token and the fog opens for what it can see. Each vision has a **bright** radius and an optional **dim** ring that stays half-shrouded. **Lights…** fills both from the 5e list (torch 20 ft plus 20 ft dim, lanterns, *light*, *daylight*, darkvision 60 or 120 ft, and more). Name and colour visions to tell them apart; the 🔗 group toggle drags them all together. Walls stop the light; an open door lets it through and a closed one blocks it. **Bake into fog** burns the current vision into the fog for good (for areas already explored) and clears the live layer. **Clear All** removes every vision.
 
 ![Dynamic vision on the panel and the TV](docs/screenshots/map-vision.png)
 
@@ -282,8 +282,10 @@ The cookie is your login session. It is stored in the plugin's settings file in 
 
 When these community plugins are installed and enabled, DM Screen uses them:
 
-- [Initiative Tracker](https://github.com/javalent/initiative-tracker): its encounter (combatants, HP, statuses, round) appears in COMBAT and on the TV as soon as you start it. The sync is one way.
-- [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks): statblocks for combatants synced from Initiative Tracker, shown in the panel only.
+- [Initiative Tracker](https://github.com/javalent/initiative-tracker): its encounter (combatants, HP, statuses, round) feeds COMBAT and the TV as soon as you start it.
+- [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks): statblocks in the panel.
+
+[Combat](#combat) covers how both work during play.
 
 ### Webhooks (Telegram, Discord, any multipart endpoint)
 
@@ -317,9 +319,9 @@ No hotkeys are assigned by default; set them in **Settings → Hotkeys**.
 
 ### Settings
 
-**Settings → DM Screen** has six blocks. The first has no heading and holds the server settings.
+**Settings → DM Screen** has six blocks. The first block, under the page title, holds the server settings.
 
-**Server (top block)**
+**Server (first block)**
 
 | Setting | What it does | Default |
 |---|---|---|
@@ -345,14 +347,14 @@ Calibration (diagonal, fine-tune, media quality) is per screen, in the window th
 |---|---|---|
 | Enable Hydrus integration | Shows the Media from Hydrus button in the panel | off |
 | API URL | Base URL of the Hydrus Client API, no trailing slash | empty |
-| API key | Hydrus Client API access key. Kept locally, never sent to player screens. **Test connection** checks it | empty |
+| API key | Hydrus Client API access key. **Test connection** checks it | empty |
 | Tag services | Hydrus tag services to search. **Fetch services** lists them | none |
 | Cache base folder | Vault folder for cached files: Hydrus files in `<folder>/hydrus/`, D&D Beyond portraits in `<folder>/beyond/` | `.dm-screen` |
 | Cache TTL (days) | Cached files unused this long are removed | `30` |
 | Loop background media | Default loop setting for video backgrounds and maps | on |
-| Mute background media | Default mute setting. Browsers autoplay only muted video | on |
+| Mute background media | Default mute setting for video backgrounds and maps | on |
 | Default search tags | Tags filled into the explorer search, comma separated | empty |
-| Ignored tag patterns | Regular expressions, one per line; matching tags are hidden in the tile menu and in Copy tags | AI tagger namespaces and `rating:.*` |
+| Ignored tag patterns | Regular expressions, one per line, each matched against the whole tag; matching tags are hidden in the tile menu and in Copy tags | `wd eva02-large v3 tagger ai generated tags`, `wd v1\.4 vit v2 tagger ai generated tags`, `rating:.*` |
 | Clear Hydrus cache | **Clear cache** deletes everything in the cache folder. It cannot be undone | |
 
 **D&D Beyond**
@@ -420,7 +422,7 @@ Calibration (diagonal, fine-tune, media quality) is per screen, in the window th
 | `/vault/<path>` | Only the vault files currently on a screen | token |
 
 - The token travels as the `k` parameter in the join link, then as a cookie that lasts one day. The link text in the panel leaves it out.
-- The server listens on all network interfaces, port 3000 by default.
+- The server's port and network exposure are under [Network usage and privacy](#network-usage-and-privacy).
 - Files in the vault: `<cache folder>/hydrus/` and `<cache folder>/beyond/` (cache folder `.dm-screen` by default), and the per-map fog and walls in `.dm-screen/fog/` and `.dm-screen/walls/`. Fog and walls are kept when a map stops.
 - The TV start page installer uses ADB on port 5555 and, optionally, Fully Kiosk Remote Admin on port 2323, only while you run it.
 
@@ -428,11 +430,11 @@ Calibration (diagonal, fine-tune, media quality) is per screen, in the window th
 
 **The TV cannot open the link, or it times out.** Check that the TV and the computer are on the same network. Use the link from the panel's Copy button: it has the computer's network address, not `localhost`. Check that your operating system's firewall allows Obsidian to accept connections on the server port; Windows and macOS usually ask the first time the server starts. If another program uses the port, change **Server Port**.
 
-**The screen shows `401 Unauthorized`.** The link has no token, or the token was regenerated. Copy the link again from the panel.
+**The screen shows only the word `Unauthorized`.** The link has no token, or the token was regenerated. Copy the link again from the panel.
 
 **A screen drops with "Max clients reached".** Raise **Max connected clients**.
 
-**A video background or map does not play.** Browsers autoplay only muted video. Keep **Mute background media** on.
+**A video background or map does not play.** Browsers autoplay only muted video. Keep **Mute background media** on (it is on by default).
 
 **A video map is black or stutters on the TV.** Most TV decoders refuse video above 1080p. Keep **Media quality** on *Optimized* so the computer re-encodes the video to fit 1920×1080. If the computer has no hardware video encoder, the original is sent; convert large videos to 1080p yourself in that case.
 
@@ -456,11 +458,11 @@ Calibration (diagonal, fine-tune, media quality) is per screen, in the window th
 
 ## Network usage and privacy
 
-DM Screen starts a web server on your computer and, if you enable them, talks to a few outside services. This is all of it:
+DM Screen starts a web server on your computer and, if you enable them, talks to a few outside services:
 
 - **Local server.** HTTP and WebSocket on all network interfaces, port 3000 by default, so devices in the room can reach it. Every address except `/health` needs the access token, which the join links carry. Another device on the network cannot watch your screens or read vault files without it. The server serves only the vault files currently on a screen. Traffic is plain HTTP: the token controls access but does not encrypt, so use it on a network you trust. [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) has the details, including why TLS is not included.
-- **Hydrus Network** (optional). Connects to the Hydrus Client API at the URL you enter, to search and download files. The API key goes only to that address and never to player screens.
-- **D&D Beyond** (optional). Exchanges your `CobaltSession` cookie for a short-lived token with D&D Beyond's login service, then polls the encounter, character and monster data. Monster portraits are downloaded over https. The cookie is stored in the plugin's settings file in plain text.
+- **Hydrus Network** (optional). Connects to the Hydrus Client API at the URL you enter, to search and download files. The API key is kept in the plugin settings, goes only to that address and never reaches player screens.
+- **D&D Beyond** (optional). Exchanges your `CobaltSession` cookie for a short-lived token with D&D Beyond's login service, then polls the encounter, character and monster data. Monster portraits are downloaded over https. See [D&D Beyond](#dd-beyond) for how the cookie is stored.
 - **Webhooks** (optional). Sends an image only when you click Send.
 - **TV start page installer** (optional, [`tv-kiosk/`](tv-kiosk/README.md)). Talks to the TV over ADB and, optionally, Fully Kiosk Remote Admin, only while you run it.
 
@@ -474,12 +476,11 @@ Bug reports and feature requests go to [GitHub issues](https://github.com/hbermu
 
 ## Credits and attribution
 
-The battlemap in the map-screen screenshots and GIFs (*Adventurers' Guildhall*, walls imported from its Foundry module) and the scene art in the Hydrus screenshots are by **[Czepeku](https://www.czepeku.com/)**. They make beautiful maps, a lot of them, and if you run games in person or online their packs are worth every penny.
+The battlemap in the map-screen screenshots and GIFs (*Adventurers' Guildhall*, walls imported from its Foundry module) and the scene art in the Hydrus screenshots are by [Czepeku](https://www.czepeku.com/) ([Patreon](https://www.patreon.com/czepeku)); they are not bundled with DM Screen and all rights stay with Czepeku. The plugin ships no map assets of its own.
 
-- Website and shop: [czepeku.com](https://www.czepeku.com/)
-- Patreon: [patreon.com/czepeku](https://www.patreon.com/czepeku)
+The spell AoE and light-source catalogs are generated from [5etools](https://5e.tools/) spell and item data (light sources by `scripts/gen-light-sources.py`).
 
-The map is only here to show off the plugin. It isn't bundled with DM Screen, and all rights to it stay with Czepeku. The plugin ships no map assets of its own.
+The plugin bundles [fflate](https://github.com/101arrowz/fflate) (MIT), for reading Foundry module zips, and [Mediabunny](https://github.com/Vanilagy/mediabunny) (MPL-2.0), for re-encoding map videos.
 
 ## License
 
