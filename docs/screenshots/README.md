@@ -20,8 +20,11 @@ Stills:
 - `fog-of-war.png` — per-layer fog on the DM preview (player screen), with the fog drawing tools.
 - `hydrus-explorer.png` — the Hydrus explorer modal.
 - `hydrus-preview.png` — a Hydrus tile's full-resolution preview with its tags and action buttons.
+- `combat-round1-reveal.png` — the manual tracker in round 1 beside the player screen, which lists only the combatants who have acted.
+- `statblock-panel.png` — a combat synced from Initiative Tracker with a Fantasy Statblocks statblock expanded (SRD creatures only).
+- `note-hydrus-refs.png` — a note with `hydrus://` references and the Add BG picker listing them.
 - `dndbeyond-encounter.png` — D&D Beyond encounter sync: the COMBAT section beside the tracker on the player screen.
-- `map-calibration.png` — the calibration modal beside the TV's test pattern.
+- `map-calibration.png` — the calibration modal (diagonal, fine-tune, media quality) beside the TV's test pattern.
 - `map-fog-editor.png` — the Fog modal over a map, showing the Fog / Walls tabs and a partially revealed mask.
 - `map-vision.png` — vision rows and markers on the panel beside the line-of-sight reveal on the TV.
 - `map-explore-mode.png` — the near-fullscreen Exploration modal with door markers, AoEs and the Combat / AoEs / Vision windows.
