@@ -1,6 +1,6 @@
 # DM Screen
 
-> An Obsidian plugin that turns your notes into a live player screen and a true-scale battle map for in-person D&D 5e.
+> Turn your notes into a live player screen and a true-scale battle map for in-person D&D 5e.
 
 [![Latest release](https://img.shields.io/github/v/release/hbermu/obsidian-dm-screens)](https://github.com/hbermu/obsidian-dm-screens/releases)
 [![Minimum Obsidian version](https://img.shields.io/github/manifest-json/minAppVersion/hbermu/obsidian-dm-screens?label=obsidian)](manifest.json)

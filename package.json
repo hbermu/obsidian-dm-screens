@@ -1,7 +1,7 @@
 {
   "name": "dm-screen",
   "version": "1.7.0",
-  "description": "DM Screen - Obsidian plugin for D&D campaign management with player screen",
+  "description": "Turn your notes into a live player screen and a true-scale battle map for in-person D&D 5e.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

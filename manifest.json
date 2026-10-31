@@ -3,7 +3,7 @@
   "name": "DM Screen",
   "version": "1.7.0",
   "minAppVersion": "1.5.3",
-  "description": "Campaign management with player screen server and initiative tracker for D&D 5e.",
+  "description": "Turn your notes into a live player screen and a true-scale battle map for in-person D&D 5e.",
   "author": "Héctor Bermúdez",
   "authorUrl": "https://github.com/hbermu",
   "isDesktopOnly": true
