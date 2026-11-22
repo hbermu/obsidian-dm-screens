@@ -4,19 +4,26 @@
 
 ## Source files
 
-- `server/Cargo.toml`, `server/src/main.rs` — configuration from the environment, startup, graceful shutdown
-- `server/src/http.rs` — routes, token checks, cookie, `Origin` check
-- `server/src/viewers.rs` — player and map WebSocket channels, limits, `client-info`
+- `server/Cargo.toml`, `server/src/main.rs` — startup, the `listening on <addr>` line, graceful shutdown with a final state flush, the `healthcheck` subcommand
+- `server/src/config.rs` — `Config::from_lookup` (environment variables, requirement 1–2), `check_outbound_url` (the plugin's URL policy)
+- `server/src/lib.rs` — `open` (load state, allowlist the restored cache), `router` (every route, the `/api/` control-token layer, path-only request logs), `collect_garbage`, `spawn_background`
+- `server/src/auth.rs` — `role_for` (digest comparison, view vs control), `request_token` (`k`, then cookie), `api_token` (`Bearer` first)
+- `server/src/protocol.rs` — `PROTOCOL_VERSION`, the embedded screens, `player_page` (waiting-text slots), `message_channel`
+- `server/src/viewers.rs` — player and map pages and WebSocket channels, `/health`, `origin_ok`, limits, `client-info`, `drain` (waits for the client's close reply after a server-initiated close)
+- `server/src/state.rs` — `AppState`, `Session` (cache, allowlist, viewers, controllers, lease holder, map data), `relay`
+- `server/src/persist.rs` — atomic state files, corrupt-file quarantine, the one-second coalescing writer
 - `server/src/replay.rs` — `ReplayCache` with the same rules as `src/server.ts`, persisted to disk
 - `server/src/allowlist.rs` — the display allowlist over `/assets/` URLs
 - `server/src/mapdata.rs` — the map-data store
 - `server/src/control.rs` — the control channel (see `control-channel.md`)
 - `server/src/assets.rs`, `server/src/derivatives.rs`, `server/src/hydrus.rs` — media (see `assets.md`)
-- `server/build.rs` — embeds the player and map HTML, JS and CSS built from `src/player/` and `src/map/`
-- `server/Dockerfile` — multi-stage build: TypeScript bundles, Rust binary, runtime image with `ffmpeg`
+- `src/screenPages.ts`, `scripts/export-screens.mjs` — the page shells and bundles shared with the embedded server, written to `server/assets/` and embedded with `include_str!`
+- `server/Dockerfile` — multi-stage build: the exported screens, the Rust binary, a runtime image with `ffmpeg`; also the `dev` (toolchain) and `conformance` targets
+- `server/docker-compose.yml` — the deployment example (requirement 20)
 - `test/conformance/` — the black-box suite and its two drivers (`embedded.ts`, `remote.ts`)
-- `docker-compose.yml` — `server` service for local runs and the conformance and remote e2e jobs
-- `.github/workflows/release.yml` — builds and publishes the image with every release and prerelease
+- `docker-compose.yml` — the `server` (toolchain) and `conformance-remote` services behind `make server-test`, `make server-lint` and `CONFORMANCE_TARGET=remote make test-conformance`
+- `.github/workflows/release.yml` — the `image` and `image-manifest` jobs: native amd64 and arm64 builds pushed by digest, then one tagged manifest
+- `.github/workflows/ci.yml` — the `server` job and the two-target `conformance` matrix
 
 ## Settings used
 
@@ -26,7 +33,7 @@
 
 ### Configuration
 
-1. The server shall read its configuration from environment variables: `DM_SCREEN_VIEW_TOKEN` and `DM_SCREEN_CONTROL_TOKEN` (required), `DM_SCREEN_PORT` (default `8080`), `DM_SCREEN_DATA_DIR` (default `/data`), `DM_SCREEN_MAX_CLIENTS` (default `10`), `DM_SCREEN_MAX_ASSET_MB` (default `1024`), `DM_SCREEN_ASSET_RETENTION_DAYS` (default `90`), `DM_SCREEN_DERIVATIVE_CACHE_MB` (default `2048`), `DM_SCREEN_HYDRUS_URL` and `DM_SCREEN_HYDRUS_KEY` (optional, both or neither).
+1. The server shall read its configuration from environment variables: `DM_SCREEN_VIEW_TOKEN` and `DM_SCREEN_CONTROL_TOKEN` (required), `DM_SCREEN_PORT` (default `8080`), `DM_SCREEN_DATA_DIR` (default `/data`), `DM_SCREEN_MAX_CLIENTS` (default `10`), `DM_SCREEN_MAX_ASSET_MB` (default `1024`), `DM_SCREEN_ASSET_RETENTION_DAYS` (default `90`), `DM_SCREEN_DERIVATIVE_CACHE_MB` (default `2048`), `DM_SCREEN_HYDRUS_URL` and `DM_SCREEN_HYDRUS_KEY` (optional, both or neither), `DM_SCREEN_FFMPEG` and `DM_SCREEN_FFPROBE` (default `ffmpeg`, `ffprobe`); the log level follows `RUST_LOG` (default `info`).
 2. If either token is missing, shorter than 32 characters, or the two tokens are equal, or only one of the two Hydrus variables is set, then the server shall exit with a non-zero status and a message naming the variable, without printing any value.
 3. The server shall never write a token, the Hydrus key, or a `k` query value to its logs; request logs shall show the path with the query string removed.
 
@@ -55,9 +62,10 @@
 
 ### Image and release
 
-18. The container shall run as a non-root user, expose `DM_SCREEN_PORT`, declare `<data dir>` as a volume, and define a health check on `/health`.
+18. The container shall run as a non-root user, expose `DM_SCREEN_PORT`, declare `<data dir>` as a volume, and define a health check that runs `dm-screen-server healthcheck`, which requests `/health` on the local port and exits 0 only on a `200`.
 19. The image shall be built for `linux/amd64` and `linux/arm64` and published as `ghcr.io/<repository owner>/dm-screen-server:<version>` by the release workflow for every stable release and prerelease, with the same version string as the plugin release; stable releases shall also move the `latest` tag.
-20. The repository shall ship a `docker-compose.yml` example of the server alone, with the tokens supplied as variables and a named volume for the data directory.
+20. The repository shall ship `server/docker-compose.yml`, an example of the server alone, with the tokens supplied as variables and a named volume for the data directory.
+20b. When started with `DM_SCREEN_PORT=0`, the server shall bind an ephemeral port and print `dm-screen-server <version> listening on <address>` to standard output, which the conformance driver reads.
 
 ### Conformance
 
@@ -66,7 +74,8 @@
 
 ## Tests covering this
 
-- `server/tests/*.rs` — unit and integration tests per module (`cargo test` inside Docker via `make server-test`)
+- `server/src/*.rs` (`#[cfg(test)]` modules) — configuration and URL policy, token roles, replay-cache rules and UTF-16 budget, allowlist slots, atomic and corrupt state files, derivative width and video box, byte ranges, the asset store and retention sweep (`make server-test`)
+- `server/tests/assets.rs`, `server/tests/hydrus.rs`, `server/tests/derivatives.rs` — see `assets.md`
 - `test/conformance/*.conformance.ts` — the shared viewer contract against both servers (requirement 22)
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian against the container (see `overview.md`)
 

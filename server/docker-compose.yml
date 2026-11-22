@@ -1,0 +1,21 @@
+# Minimal deployment of the DM Screen remote server. Put it behind a reverse
+# proxy that terminates TLS and preserves the Host header, on a network you
+# trust (see docs/THREAT-MODEL.md). Generate each token with, for example,
+# `openssl rand -hex 32`, and enter the control token in the plugin settings.
+services:
+  dm-screen-server:
+    image: ghcr.io/hbermu/dm-screen-server:latest
+    restart: unless-stopped
+    environment:
+      DM_SCREEN_VIEW_TOKEN: ${DM_SCREEN_VIEW_TOKEN:?set a view token}
+      DM_SCREEN_CONTROL_TOKEN: ${DM_SCREEN_CONTROL_TOKEN:?set a control token}
+      # Optional: let the server fetch Hydrus files itself.
+      # DM_SCREEN_HYDRUS_URL: http://hydrus.local:45869
+      # DM_SCREEN_HYDRUS_KEY: ${DM_SCREEN_HYDRUS_KEY}
+    ports:
+      - "8080:8080"
+    volumes:
+      - dm-screen-data:/data
+
+volumes:
+  dm-screen-data: {}

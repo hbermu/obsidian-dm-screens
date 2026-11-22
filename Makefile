@@ -1,4 +1,4 @@
-.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-e2e test-conformance logs ps clean
+.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-e2e test-conformance server-screens server-test server-lint server-image logs ps clean
 
 help:                ## list available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -47,7 +47,24 @@ test-e2e:            ## real-Obsidian e2e suite (wdio; OBSIDIAN_VERSIONS=app/ins
 	docker compose --profile tools run --rm e2e
 
 test-conformance:    ## black-box server contract (CONFORMANCE_TARGET=embedded|remote, default embedded)
+ifeq ($(CONFORMANCE_TARGET),remote)
+	docker compose --profile tools build conformance-remote
+	docker compose --profile tools run --rm conformance-remote
+else
 	docker compose --profile tools run --rm conformance
+endif
+
+server-screens:      ## export the player/map screens into server/assets/ for the Rust build
+	docker compose --profile tools run --rm deps "npm install --no-audit --no-fund >/dev/null 2>&1 && node scripts/export-screens.mjs server/assets"
+
+server-test: server-screens  ## cargo test for the remote server
+	docker compose --profile tools run --rm server cargo test --locked
+
+server-lint: server-screens  ## rustfmt check + clippy (warnings are errors)
+	docker compose --profile tools run --rm server sh -c "cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings"
+
+server-image:        ## build the remote server container image (dm-screen-server:dev)
+	docker build -f server/Dockerfile -t dm-screen-server:dev .
 
 logs:                ## tail combined logs
 	docker compose logs -f --tail=50

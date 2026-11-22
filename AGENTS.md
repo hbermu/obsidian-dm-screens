@@ -14,6 +14,7 @@ Many of these rules are enforced locally: `.claude/hooks/bash-precheck.sh` (wire
 
 - No Node, npm, npx, or any JS toolchain runs on the host. Everything happens inside Docker via the Makefile.
 - Use `make <target>`. Never run `node`, `npx`, `npm install`, `tsc`, `vitest`, or `esbuild` directly.
+- The same holds for the remote server in `server/` (Rust): `cargo`, `rustc` and `ffmpeg` run only inside the `server` Compose service, through `make server-test` / `make server-lint`. Its behaviour is the same viewer contract as `src/server.ts`; a change to one side's routes, cache rules or limits must land on the other side in the same commit, with the conformance suite (`make test-conformance` for both targets) proving it.
 
 ### Code style
 
@@ -83,6 +84,9 @@ All targets run inside Docker; the container manages `node_modules`.
 | `make test-visual-update` | Refresh committed visual baselines (inside container — host-generated PNGs WILL diff) |
 | `make test-e2e` | Real-Obsidian end-to-end suite (WebdriverIO inside the Playwright image; first run downloads Obsidian into `.obsidian-cache/`) |
 | `make test-conformance` | Black-box server contract in `test/conformance/` (HTTP + WebSocket) against the embedded server, or the remote one with `CONFORMANCE_TARGET=remote`; a case only one server implements is marked with `onlyOn(...)` |
+| `make server-test` | `cargo test` for the remote server in `server/` (Rust toolchain + `ffmpeg` in the `server` service); exports the screens into `server/assets/` first |
+| `make server-lint` | `cargo fmt --check` + `cargo clippy -- -D warnings` |
+| `make server-image` | the remote server container image, `dm-screen-server:dev` |
 | `make build` | production esbuild bundle → `main.js` |
 | `make dev` | esbuild watcher only, no Obsidian GUI |
 | `make up` | Obsidian GUI at `https://localhost:3001` + esbuild watcher |
@@ -119,12 +123,22 @@ src/
   debug.ts               # Debug-mode logger
   redact.ts              # redactUrl / redactSecret for log and Notice text
   auth.ts                # Player-screen access token and join URL
+  protocol.ts            # PROTOCOL_VERSION shared with the remote server
+  screenPages.ts         # Player and map page shells (also exported to the remote server)
   mediaDerivative.ts     # Downscaled derivatives for /vault/?w= (WebP images, ≤1080p MP4 videos)
   sourceLabel.ts         # resolveSourceLabel — DM-side image label (Hydrus name: tag, Hydrus <hash8>, note basename)
   conditions.ts          # D&D 5e condition catalogue (icons, DDB id mapping, status encode/decode)
   global.d.ts            # Window augmentations (InitiativeTracker, FantasyStatblocks)
   net/
     urlPolicy.ts         # assertOutboundUrl — the outbound HTTP policy
+  transport/
+    transport.ts         # SceneTransport + MapDataStore: the seam every emitter and persister uses
+    embedded.ts          # EmbeddedTransport: in-process server, ReplayCache, settings, vault sidecars
+  scenes/
+    format.ts            # dm-scene format, source references, paths
+    capture.ts           # Scene from panel state; writes the note and its fog masks
+    load.ts              # Resolve sources, apply through the panels, list scenes
+    codeBlock.ts         # The dm-scene card
   combat/
     tracker.ts           # Pure initiative helpers (sort, scale clamp, turn advance, round-1 reveal)
   player/
@@ -190,6 +204,8 @@ src/
     layerContextMenu.ts  # Right-click context menu for image-layer rows
   __tests__/             # Vitest unit and integration tests
 tv-kiosk/                # Fully Kiosk start page for a table TV + its ADB installer (start.html, install.sh, README.md)
+server/                  # Remote server (Rust): relay, replay cache, control channel, assets, derivatives; Dockerfile, deployment compose
+test/conformance/        # Black-box server contract run against the embedded and the remote server
 ```
 
 ## Release process

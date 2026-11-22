@@ -27,6 +27,7 @@ export interface Target {
 export async function startTarget(options?: TargetOptions): Promise<Target> {
   const which = process.env.CONFORMANCE_TARGET ?? "embedded";
   if (which === "embedded") return (await import("./drivers/embedded")).startEmbedded(options);
+  if (which === "remote") return (await import("./drivers/remote")).startRemote(options);
   throw new Error(`unknown CONFORMANCE_TARGET ${which}`);
 }
 

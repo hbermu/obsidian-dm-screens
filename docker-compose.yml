@@ -88,6 +88,45 @@ services:
         npx vitest run -c vitest.conformance.config.mts
       "
 
+  # Rust toolchain for the remote server (server/): cargo test, clippy, fmt.
+  # The screens it embeds come from `make server-screens`.
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      target: dev
+    profiles: ["tools"]
+    working_dir: /app/server
+    environment:
+      CARGO_TARGET_DIR: /target
+    volumes:
+      - .:/app
+      - cargo_registry:/usr/local/cargo/registry
+      - server_target:/target
+
+  # The conformance suite against the remote server binary, which the remote
+  # driver starts per test with a fresh data directory. Own node_modules: this
+  # glibc image cannot use the alpine services' native binaries.
+  conformance-remote:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      target: conformance
+    profiles: ["tools"]
+    working_dir: /app
+    environment:
+      CONFORMANCE_TARGET: remote
+      DM_SCREEN_SERVER_BIN: /usr/local/bin/dm-screen-server
+    volumes:
+      - .:/app
+      - conformance_modules:/app/node_modules
+    command: >
+      sh -c "
+        npm install --no-audit --no-fund &&
+        npx tsc -p test/conformance --noEmit &&
+        npx vitest run -c vitest.conformance.config.mts
+      "
+
   # Dependency maintenance. Writes package-lock.json through the bind mount while
   # keeping node_modules in the container-only volume, so the host never needs a
   # JS toolchain (see AGENTS.md).
@@ -154,3 +193,6 @@ volumes:
   node_modules: {}
   playwright_modules: {}
   e2e_modules: {}
+  conformance_modules: {}
+  cargo_registry: {}
+  server_target: {}

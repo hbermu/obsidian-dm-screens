@@ -4,6 +4,7 @@ import type DmScreenPlugin from "./main";
 import { debug, debugWarn, debugError } from "./debug";
 import { tokenMatches } from "./auth";
 import { PROTOCOL_VERSION } from "./protocol";
+import { mapPageHtml, playerPageHtml, waitingSubtitleHtml, waitingTitleHtml } from "./screenPages";
 import { DerivativeCache, derivativeKind, encodeMedia, parseDerivativeWidth } from "./mediaDerivative";
 
 const MAX_WS_PAYLOAD_BYTES = 64 * 1024;
@@ -421,7 +422,7 @@ export class PlayerScreenServer {
       res.end(PLAYER_CSS);
     } else if (url === "/map") {
       res.writeHead(200, this.pageHeaders("text/html; charset=utf-8", req));
-      res.end(buildMapHtml());
+      res.end(mapPageHtml());
     } else if (url === "/map.js") {
       res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
       res.end(mapJs);
@@ -530,77 +531,10 @@ export class PlayerScreenServer {
   }
 
   private buildPlayerHtml(): string {
-    const waitingTitle = this.plugin.settings.waitingTitle;
-    const waitingSubtitle = this.plugin.settings.waitingSubtitle;
-    const titleHtml = waitingTitle ? `<h1>${escapeHtml(waitingTitle)}</h1>` : "";
-    const subtitleHtml = waitingSubtitle ? `<p>${escapeHtml(waitingSubtitle)}</p>` : "";
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DM Screen - Player View</title>
-  <link rel="stylesheet" href="/player.css">
-</head>
-<body>
-  <div id="app">
-    <div id="waiting-screen">
-      ${titleHtml}
-      ${subtitleHtml}
-      <div class="pulse-dot"></div>
-    </div>
-    <video id="video-background" muted loop playsinline></video>
-    <img id="image-background" alt="" />
-    <div id="image-layers-container"></div>
-    <div id="initiative-tracker" style="display:none;">
-      <h2>Initiative</h2>
-      <ul id="initiative-list"></ul>
-    </div>
-    <button id="fullscreen-btn" aria-label="Toggle fullscreen">⛶</button>
-  </div>
-  <script src="/player.js"></script>
-</body>
-</html>`;
+    const { waitingTitle, waitingSubtitle } = this.plugin.settings;
+    return playerPageHtml(waitingTitleHtml(waitingTitle), waitingSubtitleHtml(waitingSubtitle));
   }
-}
 
-function buildMapHtml(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DM Screen - Map View</title>
-  <link rel="stylesheet" href="/map.css">
-</head>
-<body>
-  <div id="app">
-    <div id="waiting-screen">
-      <h1>Map Screen</h1>
-      <p>Waiting for DM to push a map...</p>
-      <div class="pulse-dot"></div>
-    </div>
-    <div id="map-stage">
-      <video id="map-video" muted loop playsinline></video>
-      <img id="map-image" alt="" />
-      <canvas id="map-fog"></canvas>
-    </div>
-    <canvas id="grid-overlay"></canvas>
-    <div id="calibration-overlay"></div>
-    <div id="scale-hint"></div>
-    <button id="fullscreen-btn" aria-label="Toggle fullscreen">⛶</button>
-  </div>
-  <script src="/map.js"></script>
-</body>
-</html>`;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 interface AppLike {

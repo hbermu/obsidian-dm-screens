@@ -4,8 +4,9 @@
 
 ## Source files
 
-- `server/src/control.rs` — handshake, the lease (`ControlLease`), relay handling, mirror fan-out, screen-list pushes
-- `server/src/protocol.rs` — `PROTOCOL_VERSION`, message (de)serialisation
+- `server/src/control.rs` — handshake checks, `hello`, the lease transitions, relay handling, `send_roles`
+- `server/src/state.rs` — `Session.holder` (the lease), `Session::is_active`, `AppState::relay` (processing and mirror fan-out), `Session::send_screens`
+- `server/src/protocol.rs` — `PROTOCOL_VERSION`
 - `src/protocol.ts` — the same message types on the plugin side
 - `src/transport/remote.ts` — the plugin's client of this channel
 
@@ -22,6 +23,7 @@
 3. If `device` does not match `^[0-9a-f]{32}$`, or `name` is absent or longer than 64 characters, then the server shall close the socket with code `1008`.
 4. If `protocol` is not exactly the server's `PROTOCOL_VERSION`, then the server shall close the socket with code `4001` and reason `protocol-mismatch:<server PROTOCOL_VERSION>`.
 5. If four control sockets are already open, then the server shall close the new one with code `1013`.
+5b. After any close the server initiates, it shall keep reading until the client answers the close (two seconds at most), so the client observes the close code instead of a reset connection.
 6. The `Origin` rule of `../player-server/websocket-protocol.md` requirement 11 shall apply to control handshakes too.
 
 ### Lease
@@ -38,7 +40,7 @@
 13. After processing a relay, the server shall send `mirror {message}` to every `readonly` control socket.
 14. When a `readonly` socket sends `relay`, the server shall drop the message and answer `control-error {code: "not-active"}`.
 15. If `message` lacks a string `type` or an object `payload`, then the server shall answer `control-error {code: "bad-message"}` and change nothing.
-16. The server shall cap control frames at 1 MiB (`maxPayload`) and close a control socket that sends more than 200 messages within one window, counted like `../player-server/websocket-protocol.md` requirement 13, with code `1008`. Media never travels on this channel (`assets.md`).
+16. The server shall close a control socket that sends a frame over 1 MiB with code `1009`, and close a control socket that sends more than 200 messages within one window, counted like `../player-server/websocket-protocol.md` requirement 13, with code `1008`. Media never travels on this channel (`assets.md`).
 
 ### Screens
 
@@ -58,8 +60,7 @@
 
 ## Tests covering this
 
-- `server/tests/control.rs` — handshake rejections (token, view token, device id, protocol `4001`, fifth socket `1013`, Origin), lease assignment, same-device reclaim after reconnect, claim hand-over, multi-socket holder, relay processing, read-only refusal, bad message, mirror fan-out, rate limit, screens push
-- `test/conformance/control.conformance.ts` — the same contract over real sockets against the running container
+- `test/conformance/control.conformance.ts` — over real sockets against the server binary: handshake rejections (token, view token, device id, name, protocol `4001` with its reason, fifth socket `1013`, Origin), the hello contents, lease assignment, same-device reclaim after reconnect, claim hand-over, multi-socket holder, relay to viewers and mirror, read-only refusal, bad messages, cache hand-off, rate limit, oversized frame `1009`, screens push, the map-data API, persistence across a restart
 
 ## Non-goals
 

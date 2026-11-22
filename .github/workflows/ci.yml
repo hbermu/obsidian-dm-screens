@@ -70,14 +70,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: make build
 
-  # Informational until the remote server lands and both targets run here.
+  # The shared server contract, against the embedded server and the Rust one.
   conformance:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [embedded, remote]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make test-conformance
+        env:
+          CONFORMANCE_TARGET: ${{ matrix.target }}
+
+  server:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: make test-conformance
+      - run: make server-lint
+      - run: make server-test
 
   visual:
     runs-on: ubuntu-latest

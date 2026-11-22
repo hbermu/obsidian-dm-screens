@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `server/src/assets.rs` — content-addressed store, fingerprint index, chunked uploads, retention sweep, `/assets/` serving with `Range`
+- `server/src/assets.rs` — content-addressed store, fingerprint index, chunked uploads, retention sweep, `/assets/` serving with `Range`; the encoders run as `ffmpeg`/`ffprobe` subprocesses (`DM_SCREEN_FFMPEG`, `DM_SCREEN_FFPROBE` override their paths)
 - `server/src/derivatives.rs` — WebP and MP4 derivatives, the on-disk derivative cache
 - `server/src/hydrus.rs` — server-side Hydrus download with hash verification
 - `server/src/allowlist.rs` — the display allowlist over `/assets/` URLs
@@ -59,9 +59,9 @@
 
 ## Tests covering this
 
-- `server/tests/assets.rs` — store layout, extension refusal, lookup hit and miss, chunk ordering and resume, size mismatch, idle and concurrency limits, retention sweep sparing referenced assets
-- `server/tests/hydrus.rs` — fetch against a stub Hydrus: success, hash mismatch, upstream error, unconfigured, URL policy at startup
-- `server/tests/derivatives.rs` — width rounding, WebP output, ffmpeg box, original fallback, cache sharing and eviction
+- `server/tests/assets.rs` — upload by hash with fingerprint lookup hit and miss, resume after a wrong offset, size mismatch, extension, size and concurrency limits, view token kept off the API and unlisted assets, retention sweep sparing a referenced asset
+- `server/tests/hydrus.rs` — fetch against a stub Hydrus: success, hash mismatch, upstream error, unconfigured (the URL policy at startup is a unit test in `server/src/config.rs`)
+- `server/tests/derivatives.rs` — with the real `ffmpeg`: a WebP at the rounded width, the original when it fits, a video fitted inside 1080p and served by range, no derivative for a GIF
 - `src/__tests__/asset-upload.test.ts` — the plugin side (requirements 14–18)
 - `src/__tests__/safe-url.test.ts` — `/assets/` acceptance and rejection of malformed hashes and extensions
 - `test/conformance/assets.conformance.ts` — the display allowlist against both servers, `Range` and the `map-fog` entry against the remote one
