@@ -51,6 +51,31 @@ Regenerating the token in settings disconnects every connected screen with code 
 
 **A malicious player device is in scope for the DM's own content only.** A client that holds the token sees what the DM broadcasts. There is no per-client authorisation — the player and map channels are broadcast channels by design.
 
+## Remote server mode
+
+In remote mode (`.agent/features/remote-server/`) the plugin does not listen at all. It connects out to a standalone server — a container on a machine you run — and the screens connect to that server. Everything above about the viewer surface still holds, because the standalone server implements the same contract and a shared conformance suite checks both. What changes:
+
+**Where it runs and who reaches it.** The intended deployment is an internal network behind a reverse proxy that terminates TLS with a certificate the devices already trust. Unlike a laptop on `192.168.1.x`, a server with a DNS name on an internal domain can get a real certificate, so plaintext is no longer the forced trade it is for the embedded server. The server itself speaks plain HTTP and must not be published to the internet: it has no account system, no lockout, and one controller credential. The plugin refuses a plaintext `http` server URL unless the host is loopback, RFC1918 or `.local`.
+
+**Two tokens instead of one.**
+
+| Token | Opens | Held by |
+|---|---|---|
+| View token | `/`, `/map`, the player and map sockets, `/assets/` (allowlisted only) | Every screen, through the join link |
+| Control token | Everything the view token opens, plus `/control` and every `/api/` route (uploads, map data, Hydrus fetch) | The controlling plugin only |
+
+A screen's token can no longer push anything: broadcasts arrive only over `/control`, which the view token cannot open. Leaking a join link therefore exposes what is shown, as before, but not control of the table. The control token is entered once per device in the plugin settings; the view token is handed to the plugin by the server and never typed.
+
+**One controller at a time.** Any holder of the control token can take the session over after confirming it on their device; the previous device becomes read-only and is told who took over. The lease is a coordination aid between your own devices, not an authorisation boundary — the control token is.
+
+**Media.** Assets are named by their SHA-256, so an asset URL cannot be guessed; a viewer still gets `404` for any asset not currently on the display allowlist, exactly like `/vault/` today. The server never reads a vault: media reaches it only through authenticated uploads or its own Hydrus fetch.
+
+**Resource limits.** An authenticated controller can store data, so its writes are bounded: a per-asset size cap (`DM_SCREEN_MAX_ASSET_MB`), at most four uploads in flight, idle uploads discarded after an hour, 1 MiB control frames, 200 control messages per second, at most four control sockets, and a retention sweep that deletes unreferenced assets. Viewer limits are unchanged.
+
+**Secrets on the server.** The two tokens and, optionally, a Hydrus Client API key arrive as environment variables. None of them is ever logged, and request logs drop query strings. The Hydrus URL obeys the same outbound rule as the plugin (`http` only to a private host), and the key is sent only to that URL. Per-device credentials — the D&D Beyond cookie, webhook targets, the plugin's own Hydrus key — never reach the server.
+
+**`Origin` behind a proxy.** The server compares the `Origin` host with the `Host` header it receives, so the reverse proxy must preserve `Host`.
+
 ## Untrusted-input rules the code follows
 
 These exist because the boundary is the network, and they are enforced in the specs under `.agent/features/`:
