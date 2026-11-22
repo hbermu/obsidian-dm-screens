@@ -38,7 +38,7 @@
 13. After processing a relay, the server shall send `mirror {message}` to every `readonly` control socket.
 14. When a `readonly` socket sends `relay`, the server shall drop the message and answer `control-error {code: "not-active"}`.
 15. If `message` lacks a string `type` or an object `payload`, then the server shall answer `control-error {code: "bad-message"}` and change nothing.
-16. The server shall cap control frames at 1 MiB (`maxPayload`) and close a control socket that sends more than 200 messages in any rolling one-second window with code `1008`. Media never travels on this channel (`assets.md`).
+16. The server shall cap control frames at 1 MiB (`maxPayload`) and close a control socket that sends more than 200 messages within one window, counted like `../player-server/websocket-protocol.md` requirement 13, with code `1008`. Media never travels on this channel (`assets.md`).
 
 ### Screens
 

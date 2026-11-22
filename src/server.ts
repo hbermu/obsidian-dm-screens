@@ -3,6 +3,7 @@ import { TFile } from "obsidian";
 import type DmScreenPlugin from "./main";
 import { debug, debugWarn, debugError } from "./debug";
 import { tokenMatches } from "./auth";
+import { PROTOCOL_VERSION } from "./protocol";
 import { DerivativeCache, derivativeKind, encodeMedia, parseDerivativeWidth } from "./mediaDerivative";
 
 const MAX_WS_PAYLOAD_BYTES = 64 * 1024;
@@ -303,6 +304,13 @@ export class PlayerScreenServer {
 
         this.replayCachedState(ws, channel);
 
+        // ws reports an oversized frame or a protocol violation as an `error`
+        // on the server-side socket before closing it; unheard, that event is
+        // an uncaught exception in the plugin process.
+        ws.on("error", (e: unknown) => {
+          debugWarn("WS client error:", (e as { code?: string })?.code ?? e);
+        });
+
         ws.on("close", () => {
           this.clients.delete(ws);
           this.clientChannels.delete(ws);
@@ -422,7 +430,14 @@ export class PlayerScreenServer {
       res.end(MAP_CSS);
     } else if (url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", clients: this.clients.size }));
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          clients: this.clients.size,
+          protocol: PROTOCOL_VERSION,
+          version: this.plugin.manifest?.version ?? "dev",
+        })
+      );
     } else if (url.startsWith("/vault/")) {
       this.serveVaultFile(url.slice(7), parseDerivativeWidth(req.url || "/"), res);
     } else {

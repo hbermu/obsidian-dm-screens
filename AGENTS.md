@@ -82,6 +82,7 @@ All targets run inside Docker; the container manages `node_modules`.
 | `make test-visual` | Playwright visual regression suite (inside the official `mcr.microsoft.com/playwright` image) |
 | `make test-visual-update` | Refresh committed visual baselines (inside container — host-generated PNGs WILL diff) |
 | `make test-e2e` | Real-Obsidian end-to-end suite (WebdriverIO inside the Playwright image; first run downloads Obsidian into `.obsidian-cache/`) |
+| `make test-conformance` | Black-box server contract in `test/conformance/` (HTTP + WebSocket) against the embedded server, or the remote one with `CONFORMANCE_TARGET=remote`; a case only one server implements is marked with `onlyOn(...)` |
 | `make build` | production esbuild bundle → `main.js` |
 | `make dev` | esbuild watcher only, no Obsidian GUI |
 | `make up` | Obsidian GUI at `https://localhost:3001` + esbuild watcher |

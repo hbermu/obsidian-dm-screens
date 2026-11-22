@@ -32,7 +32,7 @@
 
 ### Viewer surface (shared with the embedded server)
 
-4. The server shall serve `/`, `/index.html`, `/player.js`, `/player.css`, `/map`, `/map.js`, `/map.css` with the same bodies the embedded server builds, embedded at build time from the same sources and the same commit.
+4. The server shall serve `/`, `/index.html`, `/player.js`, `/player.css`, `/map`, `/map.js`, `/map.css` with the same bodies the embedded server builds, embedded at build time from the same sources and the same commit. The player page's waiting title and subtitle shall come from the cached `waiting-screen` message, or the embedded defaults (`Player Screen`, `Waiting for DM to push content...`) when none is cached, HTML-escaped and omitted when empty as in `../player-server/overview.md` requirement 19.
 5. The server shall serve `GET /health` with `{ status: "ok", clients: <viewer count>, protocol: <PROTOCOL_VERSION>, version: <server version> }` without authentication. The embedded server's `/health` shall carry the same four fields.
 6. For every viewer route other than `/health`, the server shall require the view token or the control token as `k` or as the `dmScreenKey` cookie, answer `401` otherwise, and set the cookie on `/` and `/map`, per `../player-server/overview.md` requirements 25–27.
 7. The player and map WebSocket channels shall follow `../player-server/websocket-protocol.md` requirements 1b, 2, 3, 10–14 and 18–19 with the view token or the control token, and shall enforce `DM_SCREEN_MAX_CLIENTS` with close code `1013`.
@@ -62,7 +62,7 @@
 ### Conformance
 
 21. `make test-conformance` shall run the suite in `test/conformance/` against the embedded server (a real `PlayerScreenServer` driven in-process) and against the server container (driven through the control channel), and both runs shall pass in CI.
-22. The suite shall cover: routes and bodies, `/health` shape, token and cookie handling, `Origin`, client limit, channel routing, every cache rule of requirement 9, late-joiner replay order, frame and rate limits, the display allowlist, and derivative requests.
+22. The suite shall cover: routes and content types, `/health` shape, token and cookie handling, `Origin`, client limit, channel routing, every cache rule of requirement 9, late-joiner replay order, frame and rate limits, and the display allowlist. Cases that only one server implements (`/vault/` traversal on the embedded server; `Range`, the `map-fog` allowlist entry and the control channel on the remote one) shall be marked as such and skipped on the other. Derivatives are left to each server's own tests, because the embedded encoder needs Electron's WebCodecs.
 
 ## Tests covering this
 

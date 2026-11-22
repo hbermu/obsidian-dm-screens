@@ -70,6 +70,24 @@ services:
         npx vitest run
       "
 
+  # Black-box conformance suite (test/conformance/): the viewer contract both
+  # servers implement. CONFORMANCE_TARGET picks the server under test.
+  conformance:
+    image: node:22-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    environment:
+      CONFORMANCE_TARGET: ${CONFORMANCE_TARGET:-embedded}
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    command: >
+      sh -c "
+        npm install --no-audit --no-fund &&
+        npx tsc -p test/conformance --noEmit &&
+        npx vitest run -c vitest.conformance.config.mts
+      "
+
   # Dependency maintenance. Writes package-lock.json through the bind mount while
   # keeping node_modules in the container-only volume, so the host never needs a
   # JS toolchain (see AGENTS.md).

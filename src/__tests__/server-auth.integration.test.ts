@@ -134,6 +134,26 @@ describe("PlayerScreenServer WebSocket authentication", () => {
     expect(await closed).toBe(1008);
   });
 
+  it("closes a client that sends a frame over 64 KiB with 1009 and absorbs the socket error", async () => {
+    const uncaught: unknown[] = [];
+    const onUncaught = (e: unknown) => uncaught.push(e);
+    process.on("uncaughtException", onUncaught);
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?k=${TEST_TOKEN}`);
+      await new Promise<void>((done, fail) => {
+        ws.on("open", () => done());
+        ws.on("error", fail);
+      });
+      const closed = new Promise<number>((done) => ws.on("close", (code: number) => done(code)));
+      ws.send(JSON.stringify({ type: "client-info", payload: { pad: "x".repeat(70 * 1024) } }));
+      expect(await closed).toBe(1009);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
+
   it("disconnectAllClients drops every socket", async () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/?k=${TEST_TOKEN}`);
     await new Promise<void>((done, fail) => {

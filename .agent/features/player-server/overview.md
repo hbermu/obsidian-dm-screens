@@ -8,6 +8,7 @@
 - `src/main.ts` — wires `startServer` / `stopServer` / `toggleServer`, applies `maxClients`, forwards client-info callbacks to the DM panel
 - `src/views/DmControlPanel.ts` — renders the server status row, Start/Stop button, and connected-client badges; the player LAN URL + Copy row lives at the top of the Player Screen section (mirroring the Map Screen section's URL row)
 - `src/player/player.ts` — client side of the WebSocket connection, handles reconnect, reads the access token from `?k=` or the `dmScreenKey` cookie
+- `src/protocol.ts` — `PROTOCOL_VERSION`, reported by `/health`
 - `src/auth.ts` — `generateAccessToken()`, `tokenMatches()` (length-independent compare), `buildJoinUrl()`
 - `src/views/MapScreenPanel.ts` — the map join link, built with the same `buildJoinUrl`
 - `docs/THREAT-MODEL.md` — trust boundary, what the token covers, and why TLS is not shipped
@@ -30,7 +31,7 @@
 3. The server shall serve `GET /player.js` with the bundled player script.
 4. The server shall serve `GET /player.css` with the inline CSS.
 4b. The server shall serve `GET /map` (inline HTML from `buildMapHtml()`), `GET /map.js` (bundled map script), and `GET /map.css` (inline map CSS).
-5. The server shall serve `GET /health` with JSON `{ status: "ok", clients: <count> }`.
+5. The server shall serve `GET /health` with JSON `{ status: "ok", clients: <count>, protocol: <PROTOCOL_VERSION>, version: <plugin version> }`, where `PROTOCOL_VERSION` comes from `src/protocol.ts` and the version is `manifest.version` (`"dev"` when absent). The remote server answers the same shape (`../remote-server/server.md` requirement 5).
 6. The server shall serve `GET /vault/<path>` via the vault-routing rules defined in `vault-routing.md`.
 7. The server shall return HTTP 404 for any other path.
 8. When a WebSocket client connects, the server shall reject it with close code `1013` and reason `"Max clients reached"` if `clientCount >= maxClients`.
@@ -77,6 +78,7 @@ The server is the transport for every DM → player and player → DM message. T
 - `src/__tests__/smoke.test.ts` — module loads, exports present
 - `src/__tests__/server-stop-keepalive.integration.test.ts` — `stop()` destroys idle keep-alive sockets so the port rebinds immediately (req 15)
 - `src/__tests__/dm-control-render-guard.test.ts` — a background re-render is deferred while a panel input is focused, kept deferred when focus moves to another control in the panel, and flushed once focus leaves it (req 17)
+- `test/conformance/*.conformance.ts` — the black-box viewer contract shared with the remote server (`make test-conformance`): routes and content types, `/health` shape, token and cookie, `Origin`, client limit, channel routing, cache rules and replay order, frame and rate limits, display allowlist
 - `src/__tests__/bundle-smoke.integration.test.ts` — production `main.js` builds and contains the server class
 - `test/visual/*.spec.ts` — Playwright visual regression suite. Boots a real `PlayerScreenServer` against the production player bundle (via `scripts/build-player.mjs` + a CJS-bundled `server-entry.ts` built in `test/visual/harness/build-host.mjs`) and asserts pixel-stable screenshots of waiting screen, background image, image-layers-sync, fog overlays (full / circle / rect / freehand), and the initiative tracker. Baselines must be generated inside the official Microsoft Playwright container so local and CI render identically.
 - `test/e2e/specs/smoke.e2e.ts` — real Obsidian: plugin loads and enables, both commands registered, ribbon icon present, DM Control Panel opens with its sections

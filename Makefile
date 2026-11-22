@@ -1,4 +1,4 @@
-.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-e2e logs ps clean
+.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-e2e test-conformance logs ps clean
 
 help:                ## list available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -45,6 +45,9 @@ test-visual-update:  ## refresh visual baselines (inside container — host PNGs
 
 test-e2e:            ## real-Obsidian e2e suite (wdio; OBSIDIAN_VERSIONS=app/installer pairs, default latest/latest)
 	docker compose --profile tools run --rm e2e
+
+test-conformance:    ## black-box server contract (CONFORMANCE_TARGET=embedded|remote, default embedded)
+	docker compose --profile tools run --rm conformance
 
 logs:                ## tail combined logs
 	docker compose logs -f --tail=50

@@ -64,7 +64,7 @@
 - `server/tests/derivatives.rs` — width rounding, WebP output, ffmpeg box, original fallback, cache sharing and eviction
 - `src/__tests__/asset-upload.test.ts` — the plugin side (requirements 14–18)
 - `src/__tests__/safe-url.test.ts` — `/assets/` acceptance and rejection of malformed hashes and extensions
-- `test/conformance/assets.conformance.ts` — allowlist, `Range` and derivatives against both servers where they apply
+- `test/conformance/assets.conformance.ts` — the display allowlist against both servers, `Range` and the `map-fog` entry against the remote one
 
 ## Non-goals
 
