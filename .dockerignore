@@ -1,14 +1,22 @@
+# The build context of server/Dockerfile (the remote server image and the
+# Compose `server` and `conformance-remote` services) is the repository root.
+# Keep git history, local vault state, caches, crash dumps and the
+# container-only node_modules out of it; bind mounts are not filtered.
+
+.git
+.github
 node_modules
 **/node_modules
-.git
+main.js
 .dev
 .obsidian-cache
 coverage
 playwright-report
 test-results
 wdio-logs
+docs
 core
-main.js
 server/target
 server/assets
-docs
+*.log
+.DS_Store
