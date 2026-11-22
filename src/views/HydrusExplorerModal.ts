@@ -511,7 +511,7 @@ export class HydrusExplorerModal extends Modal {
       const base = layerLabelFromTags(tile.knownTags, entry.hash);
       const label = uniqueLayerLabel(panel.imageLayers, base);
       debug("HydrusExplorer: handleAddAsLayer", entry.hash.slice(0, 12), "as", label);
-      panel.addImageLayer(label, dataUrl, "hydrus", false);
+      panel.addImageLayer(label, dataUrl, "hydrus", false, `hydrus:${entry.hash}`);
       await this.cache.markUsed(entry.hash);
       new Notice("Added as image layer.");
     } catch (err) {

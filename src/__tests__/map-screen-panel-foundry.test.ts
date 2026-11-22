@@ -4,6 +4,7 @@ import { MapScreenPanel } from "../views/MapScreenPanel";
 import { FoundryImportConfirmModal, FoundrySceneModal } from "../views/FoundryImportModals";
 import type { FoundryScene } from "../map/foundry";
 import type { HydrusFile } from "../hydrus/client";
+import { EmbeddedTransport } from "../transport/embedded";
 
 const lookup = vi.hoisted(() => ({
   findFoundryModules: vi.fn(),
@@ -29,6 +30,7 @@ function makePanel(client: object | null = {}) {
     buildHydrusClient: () => client,
     app: { vault: { adapter: { exists: () => Promise.resolve(false) } } },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panel = new MapScreenPanel(plugin as any, { render: vi.fn(), beginDrag: vi.fn() } as any);
   panel.activeMap = { url: "/vault/abbey.jpg", mediaType: "image", naturalWidth: 2000, naturalHeight: 1600 };

@@ -5,10 +5,11 @@
 ## Source files
 
 - `src/server.ts` — `broadcast()`, `ReplayCache` (the late-joiner cache), message parsing (`PlayerMessage` interface)
-- `src/main.ts` — `broadcast()` (the entry point every DM-side state emitter uses), `initReplayCache()` (owns the cache and persists it); `sendInitiativeUpdate()`, `broadcastWaitingScreen()`, `broadcastInspirationStyle()`, `broadcastMapCalibration()` are live-only — they call the server directly and are re-sent on every server start
+- `src/main.ts` — `broadcast()` (the entry point every DM-side state emitter uses), `initReplayCache()` (owns the cache and persists it); `sendInitiativeUpdate()`, `broadcastWaitingScreen()`, `broadcastInspirationStyle()`, `broadcastMapCalibration()` are live-only — they go through `transport.sendLive`, which drops them unless live, and are re-sent on every server start
+- `src/transport/embedded.ts` — `EmbeddedTransport.broadcast` / `sendLive` / `isLive`: the in-process server and the `ReplayCache`
 - `src/views/DmControlPanel.ts` — emits `image-layers-sync`, `combat-scale`, `viewport-update`, `show-background-media`, `hide-background-media`, `clear`
 - `src/views/MapScreenPanel.ts` — emits every `map-*` type except `map-calibration` and `map-calibration-overlay`
-- `src/views/MapCalibrationModal.ts` — emits `map-calibration-overlay` (live-only: the test pattern is meaningless without a connected screen)
+- `src/views/MapCalibrationModal.ts` — emits `map-calibration-overlay` through `transport.sendLive` (live-only: the test pattern is meaningless without a connected screen)
 - `src/views/HydrusExplorerModal.ts` — emits `show-background-media` for files chosen from the Hydrus library
 - `src/player/player.ts` — handles every DM → player message, emits `client-info`
 
@@ -22,7 +23,7 @@
 1b. When a WebSocket connection is established, the server shall tag it with channel `map` if the upgrade request path starts with `/map`, else `player` (`messageChannel(type)` maps a message type to its channel: `map-` prefix → `map`, everything else → `player`).
 2. The server shall send a serialised broadcast message exactly once per connected client of the message's channel whose `readyState` is `1` (OPEN); clients of the other channel shall not receive it.
 2b. The late-joiner cache shall be a `ReplayCache` owned by the plugin, not by the server: the plugin seeds it from `settings.lastBroadcastCache` on load (`initReplayCache`) and passes it to every `PlayerScreenServer` it constructs, so the cache outlives a server stop and start.
-2c. DM-side state emitters (`DmControlPanel`, `MapScreenPanel`, `HydrusExplorerModal`) shall send through `plugin.broadcast(message)`. While the server is running it shall forward to `server.broadcast(message)`; while it is stopped it shall apply the message to the `ReplayCache` with the same cache rules (requirements 4–5, 19) and send nothing. Setting, replacing or stopping a background or a map with the server stopped therefore changes what the next server start replays and what the next Obsidian start restores.
+2c. DM-side state emitters (`DmControlPanel`, `MapScreenPanel`, `HydrusExplorerModal`) shall send through `plugin.broadcast(message)`, which delegates to the active `SceneTransport` (`../remote-server/overview.md` requirement 2). The embedded transport (`src/transport/embedded.ts`) shall, while the server is running, forward to `server.broadcast(message)`; while it is stopped it shall apply the message to the `ReplayCache` with the same cache rules (requirements 4–5, 19) and send nothing. Setting, replacing or stopping a background or a map with the server stopped therefore changes what the next server start replays and what the next Obsidian start restores.
 2d. Every change to the `ReplayCache` shall copy it into `settings.lastBroadcastCache` and schedule one `saveSettings()` 1 s later, coalescing the changes in between; `onunload` shall flush a pending save. Persistence shall not depend on the DM Control Panel closing, because quitting Obsidian does not reliably close views or unload plugins.
 2e. When a `PlayerScreenServer` is constructed with a non-empty `ReplayCache`, it shall feed every cached message to its display allowlist (`vault-routing.md` requirement 3), so a background or map recorded while the server was stopped is servable from the first request.
 3. When a client connects, the server shall replay every cached message of the client's channel in insertion order before any new broadcast can be sent to that client.
@@ -76,6 +77,7 @@
 
 - `src/__tests__/server-broadcast.test.ts` — late-joiner replay; `readyState` filtering; `clear` cache purge
 - `src/__tests__/restore-state.test.ts` — `hide-background-media` and `map-clear` purge rules; `ReplayCache.onChange` subscribe/unsubscribe (requirement 20)
+- `src/__tests__/transport-embedded.test.ts` — the embedded transport forwards to a running server, records into the cache while stopped, drops live-only messages while stopped (requirement 2c)
 - `src/__tests__/main.test.ts` — `plugin.broadcast` records into the cache and persists it debounced while the server is stopped, forwards to a running server, and `onunload` flushes a pending save (requirements 2c, 2d)
 - `src/__tests__/server-vault-allowlist.integration.test.ts` — a server built on a seeded `ReplayCache` serves the cached background and map (requirement 2e)
 - `src/__tests__/server-map-channel.test.ts` — channel tagging, channel-filtered broadcast/replay, channel-scoped `clear`/`map-clear` purges

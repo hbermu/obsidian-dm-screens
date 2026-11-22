@@ -4,6 +4,7 @@ import { MapScreenPanel } from "../views/MapScreenPanel";
 import { fogSidecarPath, loadFogSidecar } from "../map/fog";
 import { loadWallsSidecar } from "../map/walls";
 import type { MapVision, MapWall } from "../map/types";
+import { EmbeddedTransport } from "../transport/embedded";
 
 const PNG_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -40,6 +41,7 @@ function makeServer() {
     app: { vault: { getAbstractFileByPath: () => null, readBinary: async () => new ArrayBuffer(0), adapter: {} } },
     settings: { serverPort: 3000 },
   } as any;
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
   return new PlayerScreenServer(plugin);
 }
 
@@ -67,6 +69,7 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
     broadcastMapCalibration: () => {},
     app: { vault: { adapter } },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
   const host = { render: () => {} };
   const panel = new MapScreenPanel(plugin as any, host as any);
   return { panel, broadcasts, files, adapter };

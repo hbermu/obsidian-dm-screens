@@ -13,6 +13,8 @@ import type { VaultAdapterLike } from "./hydrus/cache";
 import { HydrusClient } from "./hydrus/client";
 import { DdbImageCache } from "./dndbeyond/imageCache";
 import { initDebug, debug, debugWarn, debugError } from "./debug";
+import { EmbeddedTransport } from "./transport/embedded";
+import type { SceneTransport } from "./transport/transport";
 import { generateAccessToken } from "./auth";
 import { redactUrl } from "./redact";
 
@@ -20,6 +22,7 @@ export default class DmScreenPlugin extends Plugin {
   settings: DmScreenSettings = DEFAULT_SETTINGS;
   server: PlayerScreenServer | null = null;
   replayCache: ReplayCache = new ReplayCache();
+  transport: SceneTransport = new EmbeddedTransport(this);
   private replayCacheSaveTimer: number | null = null;
   hydrusCache: HydrusCache | null = null;
   ddbImageCache: DdbImageCache | null = null;
@@ -139,15 +142,10 @@ export default class DmScreenPlugin extends Plugin {
     });
   }
 
-  // Every state broadcast goes through here so the replay cache stays current
-  // while the server is stopped; the server replays it to clients on start.
+  // Every state broadcast goes through here; the transport decides whether it
+  // reaches screens now or only the replay cache.
   broadcast(message: PlayerMessage) {
-    if (this.server) {
-      this.server.broadcast(message);
-      return;
-    }
-    debug("broadcast (server stopped, cached only):", message.type);
-    this.replayCache.record(message);
+    this.transport.broadcast(message);
   }
 
   async loadSettings() {
@@ -239,9 +237,9 @@ export default class DmScreenPlugin extends Plugin {
   }
 
   broadcastWaitingScreen(): void {
-    if (!this.server) return;
+    if (!this.transport.isLive()) return;
     debug("broadcastWaitingScreen: title=", this.settings.waitingTitle, "subtitle=", this.settings.waitingSubtitle);
-    this.server.broadcast({
+    this.transport.sendLive({
       type: "waiting-screen",
       payload: {
         title: this.settings.waitingTitle,
@@ -251,20 +249,21 @@ export default class DmScreenPlugin extends Plugin {
   }
 
   broadcastInspirationStyle(): void {
-    if (!this.server) return;
+    if (!this.transport.isLive()) return;
     debug("broadcastInspirationStyle: pulse=", this.settings.ddbInspirationPulse);
-    this.server.broadcast({
+    this.transport.sendLive({
       type: "inspiration-style",
       payload: { pulse: this.settings.ddbInspirationPulse },
     });
   }
 
   broadcastMapCalibration(): void {
-    if (!this.server) return;
-    debug("broadcastMapCalibration: profiles=", Object.keys(this.settings.mapScreenProfiles).length);
-    this.server.broadcast({
+    if (!this.transport.isLive()) return;
+    const profiles = this.transport.mapData.profiles();
+    debug("broadcastMapCalibration: profiles=", Object.keys(profiles).length);
+    this.transport.sendLive({
       type: "map-calibration",
-      payload: { profiles: this.settings.mapScreenProfiles },
+      payload: { profiles },
     });
   }
 
@@ -373,10 +372,10 @@ export default class DmScreenPlugin extends Plugin {
     active: boolean; friendly?: boolean; isPlayer?: boolean;
     hidden?: boolean; statuses?: string[]; inspired?: boolean;
   }>, round?: number) {
-    if (!this.server) return;
+    if (!this.transport.isLive()) return;
     const visible = combatants.filter(c => !c.hidden);
     debug("sendInitiativeUpdate: round=", round ?? 0, "total=", combatants.length, "visible=", visible.length);
-    this.server.broadcast({
+    this.transport.sendLive({
       type: "initiative-update",
       payload: { combatants: visible, round: round ?? 0 },
     });

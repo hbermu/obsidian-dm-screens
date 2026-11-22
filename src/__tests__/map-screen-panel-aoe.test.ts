@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapScreenPanel } from "../views/MapScreenPanel";
 import type { MapAoe, MapVision } from "../map/types";
 import { anchorToView } from "../map/vision";
+import { EmbeddedTransport } from "../transport/embedded";
 
 interface Broadcast {
   type: string;
@@ -28,6 +29,7 @@ function makePanel() {
     broadcastMapCalibration: () => {},
     app: { vault: { adapter: { exists: () => Promise.resolve(false) } } },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
   const releases: Array<ReturnType<typeof vi.fn>> = [];
   const host = {
     render: vi.fn(),

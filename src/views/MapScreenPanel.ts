@@ -6,8 +6,7 @@ import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { resolveSourceLabel } from "../sourceLabel";
 import { recoverVaultImage } from "../hydrus/recoverImage";
 import { vaultPathFromUrl, type ClientInfo } from "../server";
-import { fogCanvasSize, loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
-import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
+import { fogCanvasSize } from "../map/fog";
 import { MapFogModal } from "./MapFogModal";
 import { MapExploreModal } from "./MapExploreModal";
 import { FoundryImportConfirmModal, FoundrySceneModal } from "./FoundryImportModals";
@@ -108,7 +107,7 @@ export class MapScreenPanel {
       return;
     }
     this.state =
-      this.plugin.settings.mapConfigs[this.activeMap.url] ??
+      this.plugin.transport.mapData.config(this.activeMap.url) ??
       defaultMapState(
         this.activeMap.naturalWidth,
         this.activeMap.naturalHeight,
@@ -185,7 +184,7 @@ export class MapScreenPanel {
   }
 
   async republish() {
-    if (!this.plugin.server) return;
+    if (!this.plugin.transport.isLive()) return;
     this.plugin.broadcastMapCalibration();
     if (!this.activeMap) return;
     debug("MapScreenPanel: republish —", this.activeMap.url);
@@ -329,12 +328,7 @@ export class MapScreenPanel {
 
   private persistState() {
     if (!this.activeMap) return;
-    this.plugin.settings.mapConfigs[this.activeMap.url] = { ...this.state };
-    void this.plugin.saveSettings();
-  }
-
-  private fogAdapter(): FogAdapter {
-    return this.plugin.app.vault.adapter as unknown as FogAdapter;
+    this.plugin.transport.mapData.setConfig(this.activeMap.url, this.state);
   }
 
   broadcastFog() {
@@ -346,7 +340,7 @@ export class MapScreenPanel {
 
   async commitFog(dataUrl: string) {
     this.fogDataUrl = dataUrl;
-    if (this.activeMap) await saveFogSidecar(this.fogAdapter(), this.activeMap.url, dataUrl);
+    if (this.activeMap) await this.plugin.transport.mapData.saveFog(this.activeMap.url, dataUrl);
     this.broadcastFog();
   }
 
@@ -356,7 +350,7 @@ export class MapScreenPanel {
 
   async commitWalls(walls: MapWall[]) {
     this.walls = walls;
-    if (this.activeMap) await saveWallsSidecar(this.fogAdapter(), this.activeMap.url, walls);
+    if (this.activeMap) await this.plugin.transport.mapData.saveWalls(this.activeMap.url, walls);
     this.broadcastWalls();
   }
 
@@ -378,7 +372,7 @@ export class MapScreenPanel {
       return;
     }
     const url = `/vault/${encodeForVaultUrl(vaultPath)}`;
-    const stored = this.plugin.settings.mapConfigs[url];
+    const stored = this.plugin.transport.mapData.config(url);
     this.state = stored
       ? { ...stored }
       : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
@@ -399,8 +393,8 @@ export class MapScreenPanel {
     void this.plugin.saveSettings();
 
     this.releasePreviewThumb();
-    this.fogDataUrl = await loadFogSidecar(this.fogAdapter(), url);
-    this.walls = await loadWallsSidecar(this.fogAdapter(), url);
+    this.fogDataUrl = await this.plugin.transport.mapData.loadFog(url);
+    this.walls = await this.plugin.transport.mapData.loadWalls(url);
     this.aoes = [];
     this.visions = [];
     this.previewZoom = 1;
@@ -580,7 +574,7 @@ export class MapScreenPanel {
     calibrated: boolean;
   } {
     const profile =
-      this.plugin.settings.mapScreenProfiles[profileKey(client.width, client.height, client.devicePixelRatio)];
+      this.plugin.transport.mapData.profiles()[profileKey(client.width, client.height, client.devicePixelRatio)];
     return { ppi: cssPixelsPerInch(client.width, client.height, profile), calibrated: (profile?.diagonalInches ?? 0) > 0 };
   }
 
@@ -637,7 +631,7 @@ export class MapScreenPanel {
         if (seen.has(key)) continue;
         seen.add(key);
         const { calibrated } = this.clientPpi(c);
-        const original = this.plugin.settings.mapScreenProfiles[key]?.quality === "original";
+        const original = this.plugin.transport.mapData.profiles()[key]?.quality === "original";
         const badge = clientInfo.createSpan({
           text: `${c.width}×${c.height}${calibrated ? " ✓" : " — calibrate"}${original ? " · original" : ""}`,
           cls: "dm-client-resolution",

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { DmControlPanel } from "../views/DmControlPanel";
 import { ReplayCache } from "../server";
+import { EmbeddedTransport } from "../transport/embedded";
 
 beforeAll(() => {
   // Polyfill the few HTMLElement extensions used by DmControlPanel render paths
@@ -14,7 +15,7 @@ beforeAll(() => {
 });
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
-  return {
+  const plugin = {
     settings: {
       ddbEnabled: false,
       ddbCobaltSession: "",
@@ -32,6 +33,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     app: { workspace: { getLeavesOfType: () => [] } },
     ...overrides,
   } as any;
+  plugin.transport = new EmbeddedTransport(plugin);
+  return plugin;
 }
 
 function makePanel(plugin = makePlugin()): DmControlPanel {
@@ -480,5 +483,36 @@ describe("DmControlPanel.broadcastManualInitiative round-1 hide", () => {
 
     const [combatants] = (plugin.sendInitiativeUpdate as any).mock.calls[0];
     expect(combatants.every((c: any) => c.hidden === false)).toBe(true);
+  });
+});
+
+describe("DmControlPanel.addImageLayer source", () => {
+  it("keeps the layer's source on the DM side and never sends it to screens", () => {
+    class MockImage {
+      onload: () => void = () => {};
+      naturalWidth = 100;
+      naturalHeight = 100;
+      set src(_v: string) {
+        this.onload();
+      }
+    }
+    const originalImage = (globalThis as any).Image;
+    (globalThis as any).Image = MockImage as any;
+    try {
+      const sent: Array<{ type: string; payload: any }> = [];
+      const plugin = makePlugin({ server: { broadcast: (m: any) => sent.push(m) } });
+      const panel = makePanel(plugin);
+      (panel as any).getEffectiveResolution = () => ({ width: 1000, height: 1000 });
+      (panel as any).render = vi.fn();
+      panel.addImageLayer("Map", "data:image/png;base64,1", "image", true, "vault:Maps/keep.png");
+      panel.addImageLayer("Old", "data:image/png;base64,2", "image", true);
+
+      expect(panel.imageLayers.map((l) => l.source)).toEqual(["vault:Maps/keep.png", undefined]);
+      const sync = sent.filter((m) => m.type === "image-layers-sync").pop()!;
+      expect(sync.payload.layers).toHaveLength(2);
+      for (const layer of sync.payload.layers) expect(layer).not.toHaveProperty("source");
+    } finally {
+      (globalThis as any).Image = originalImage;
+    }
   });
 });

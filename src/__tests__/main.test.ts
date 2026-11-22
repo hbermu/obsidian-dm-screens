@@ -45,6 +45,7 @@ import { HydrusClient } from "../hydrus/client";
 import { HydrusCache } from "../hydrus/cache";
 import { DdbImageCache } from "../dndbeyond/imageCache";
 import { Notice } from "obsidian";
+import { EmbeddedTransport } from "../transport/embedded";
 
 function makeFakeServer() {
   return {
@@ -60,6 +61,7 @@ function makeFakeServer() {
 
 function makePlugin(settingsOverrides: Record<string, unknown> = {}): DmScreenPlugin {
   const plugin = Object.create(DmScreenPlugin.prototype) as DmScreenPlugin;
+  plugin.transport = new EmbeddedTransport(plugin);
   plugin.settings = { ...DEFAULT_SETTINGS, ...settingsOverrides } as any;
   plugin.server = null;
   plugin.replayCache = new ReplayCache();

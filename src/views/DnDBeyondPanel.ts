@@ -500,7 +500,7 @@ export class DnDBeyondPanel {
           const vaultPath = await cache.getOrDownload(monsterId, imageUrl, name);
           const dataUrl = await this.plugin.imageToDataUrl(vaultPath);
           if (dataUrl) {
-            dmPanel.addImageLayer(name, dataUrl, "monster", false);
+            dmPanel.addImageLayer(name, dataUrl, "monster", false, `vault:${vaultPath}`);
             debug("loadMonsterImages: added layer", name);
           }
         })

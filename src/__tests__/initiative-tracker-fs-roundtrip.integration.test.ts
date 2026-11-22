@@ -20,6 +20,7 @@ vi.mock("../debug", () => ({
 import DmScreenPlugin from "../main";
 import { DmControlPanel } from "../views/DmControlPanel";
 import { DEFAULT_SETTINGS } from "../settings";
+import { EmbeddedTransport } from "../transport/embedded";
 
 beforeAll(() => {
   if (!HTMLElement.prototype.addClass) {
@@ -43,6 +44,7 @@ function makeFakeServer() {
 
 function makePlugin(): DmScreenPlugin {
   const plugin = Object.create(DmScreenPlugin.prototype) as DmScreenPlugin;
+  plugin.transport = new EmbeddedTransport(plugin);
   plugin.settings = { ...DEFAULT_SETTINGS } as any;
   plugin.server = null;
   plugin.hydrusCache = null;

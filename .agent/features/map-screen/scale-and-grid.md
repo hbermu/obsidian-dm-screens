@@ -13,7 +13,7 @@
 
 ## Settings used
 
-- `mapConfigs` — per-map remembered `StoredMapState` (all values below)
+- `mapConfigs` — per-map remembered `StoredMapState` (all values below), read and written through `transport.mapData` (`src/transport/embedded.ts` in embedded mode; the server in remote mode)
 - `mapDefaultPxPerSquare` — cell size assumed for maps without a remembered config (settings-tab field, default `140`, values < 5 rejected)
 - `lastMapScreenClient`, `tvWidth`, `tvHeight` — the screen the DM pan preview assumes when no map client is connected (requirement 6)
 

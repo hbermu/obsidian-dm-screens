@@ -247,7 +247,7 @@ export class DmControlPanel extends ItemView {
       "cache entries:", Object.keys(s.lastBroadcastCache ?? {}).length,
       "bg:", this.activeBackgroundUrl ?? "(none)"
     );
-    if (this.plugin.server && this.imageLayers.length > 0) {
+    if (this.plugin.transport.isLive() && this.imageLayers.length > 0) {
       this.broadcastImageLayers();
     }
   }
@@ -277,7 +277,7 @@ export class DmControlPanel extends ItemView {
   }
 
   async republishToServer() {
-    if (!this.plugin.server) return;
+    if (!this.plugin.transport.isLive()) return;
     if (this.restored) await this.restored;
     if (this.imageLayers.length > 0) {
       debug("DmControlPanel: republishToServer — layers:", this.imageLayers.length);
@@ -1477,7 +1477,7 @@ export class DmControlPanel extends ItemView {
     }
   }
 
-  addImageLayer(label: string, dataUrl: string, noteType?: string, visible = true) {
+  addImageLayer(label: string, dataUrl: string, noteType?: string, visible = true, source?: string) {
     const exists = this.imageLayers.some(
       (l) => l.label.toLowerCase() === label.toLowerCase()
     );
@@ -1524,6 +1524,7 @@ export class DmControlPanel extends ItemView {
         fogEnabled: false,
         fogDataUrl: "",
         bordered: true,
+        ...(source ? { source } : {}),
       };
 
       this.imageLayers.push(layer);
@@ -2076,7 +2077,7 @@ export class DmControlPanel extends ItemView {
       } else {
         const dataUrl = await this.plugin.imageToDataUrl(entry.vaultPath);
         if (dataUrl) {
-          this.addImageLayer(uniqueLayerLabel(this.imageLayers, ref.label), dataUrl, "hydrus", false);
+          this.addImageLayer(uniqueLayerLabel(this.imageLayers, ref.label), dataUrl, "hydrus", false, `hydrus:${ref.hash}`);
         }
       }
       await this.plugin.hydrusCache!.markUsed(ref.hash);
@@ -2145,7 +2146,7 @@ export class DmControlPanel extends ItemView {
         const img = images[0];
         const dataUrl = await this.plugin.imageToDataUrl(img.path);
         if (dataUrl) {
-          this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false);
+          this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false, `vault:${img.path}`);
           new Notice(`Added: ${img.label} (hidden)`);
         }
       } else {
@@ -2162,7 +2163,7 @@ export class DmControlPanel extends ItemView {
         item.onClick(async () => {
           const dataUrl = await this.plugin.imageToDataUrl(img.path);
           if (dataUrl) {
-            this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false);
+            this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false, `vault:${img.path}`);
             new Notice(`Added: ${img.label} (hidden)`);
           }
         });
@@ -2193,7 +2194,7 @@ export class DmControlPanel extends ItemView {
           dataUrls.forEach((dataUrl, i) => {
             if (dataUrl) {
               const img = images[i];
-              this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false);
+              this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false, `vault:${img.path}`);
               added++;
             }
           });
@@ -2400,7 +2401,7 @@ export class DmControlPanel extends ItemView {
     debug("DmControlPanel: broadcastImageLayers —", this.imageLayers.length, "layer(s)");
     this.plugin.broadcast({
       type: "image-layers-sync",
-      payload: { layers: this.imageLayers },
+      payload: { layers: this.imageLayers.map(({ source: _source, ...wire }) => wire) },
     });
     // A fresh geometry snapshot always follows the full sync so the cached
     // image-layers-geometry can never be staler than the cached sync —

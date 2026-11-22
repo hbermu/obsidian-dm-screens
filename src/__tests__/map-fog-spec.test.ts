@@ -15,6 +15,7 @@ import { messageChannel } from "../server";
 import { MapScreenPanel } from "../views/MapScreenPanel";
 import { DEFAULT_SETTINGS } from "../settings";
 import type { MapVision, MapWall } from "../map/types";
+import { EmbeddedTransport } from "../transport/embedded";
 
 const PNG_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -53,6 +54,7 @@ function makePanel(fogOpacity = 1) {
       },
     },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
   const host = { render: () => {} };
   const panel = new MapScreenPanel(plugin as any, host as any);
   return { panel, broadcasts };

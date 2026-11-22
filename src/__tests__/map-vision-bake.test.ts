@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNapiCanvas, pixelAt } from "../../test/canvas/napi-canvas-shim";
+import { EmbeddedTransport } from "../transport/embedded";
 
 let uninstall: () => void;
 
@@ -78,6 +79,7 @@ function makePanel() {
     broadcastMapCalibration: () => {},
     app: { vault: { adapter } },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
   const host = { render: vi.fn() };
   return { plugin, host, broadcasts };
 }

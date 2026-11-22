@@ -12,7 +12,7 @@
 
 ## Settings used
 
-- `mapScreenProfiles` — `Record<"WxH@dpr", { diagonalInches, fineTune, quality? }>`; `quality` is `"original"` or absent (optimized)
+- `mapScreenProfiles` — `Record<"WxH@dpr", { diagonalInches, fineTune, quality? }>`; `quality` is `"original"` or absent (optimized), read and written through `transport.mapData.profiles` / `setProfile`
 
 ## Requirements
 
