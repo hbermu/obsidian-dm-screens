@@ -1,6 +1,6 @@
 import type DmScreenPlugin from "../main";
 import type { PlayerMessage } from "../server";
-import { loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
+import { fogSidecarPath, loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
 import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
 import type { MapWall, ScreenProfile, StoredMapState } from "../map/types";
 import { debug } from "../debug";
@@ -36,8 +36,11 @@ class EmbeddedMapData implements MapDataStore {
     return loadFogSidecar(this.adapter(), mapUrl);
   }
 
-  saveFog(mapUrl: string, dataUrl: string): Promise<void> {
-    return saveFogSidecar(this.adapter(), mapUrl, dataUrl);
+  async saveFog(mapUrl: string, dataUrl: string | null): Promise<void> {
+    if (dataUrl) return saveFogSidecar(this.adapter(), mapUrl, dataUrl);
+    const path = fogSidecarPath(mapUrl);
+    const adapter = this.plugin.app.vault.adapter;
+    if (await adapter.exists(path)) await adapter.remove(path);
   }
 
   loadWalls(mapUrl: string): Promise<MapWall[]> {
@@ -59,6 +62,10 @@ export class EmbeddedTransport implements SceneTransport {
 
   isLive(): boolean {
     return !!this.plugin.server;
+  }
+
+  canEdit(): boolean {
+    return true;
   }
 
   // The replay cache stays current while the server is stopped; the server

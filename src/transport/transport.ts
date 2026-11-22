@@ -10,7 +10,8 @@ export interface MapDataStore {
   profiles(): Record<string, ScreenProfile>;
   setProfile(key: string, profile: ScreenProfile | null): void;
   loadFog(mapUrl: string): Promise<string | null>;
-  saveFog(mapUrl: string, dataUrl: string): Promise<void>;
+  // `null` removes the stored mask: the map then shows no fog at all.
+  saveFog(mapUrl: string, dataUrl: string | null): Promise<void>;
   loadWalls(mapUrl: string): Promise<MapWall[]>;
   saveWalls(mapUrl: string, walls: MapWall[]): Promise<void>;
 }
@@ -21,6 +22,9 @@ export interface SceneTransport {
   // Screens can receive messages right now: the embedded server is running,
   // or the remote control socket is connected and holds the lease.
   isLive(): boolean;
+  // This device may change the session: always in embedded mode; in remote
+  // mode only while connected and holding the lease.
+  canEdit(): boolean;
   // A state message: recorded in the replay cache and sent when live.
   broadcast(message: PlayerMessage): void;
   // A live-only message: dropped unless live, so the caller re-sends it

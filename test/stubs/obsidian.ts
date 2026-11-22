@@ -80,6 +80,11 @@ export class App {}
 export const Platform = { isDesktop: true, isMobile: false };
 export type MarkdownPostProcessorContext = unknown;
 
+// YAML is a superset of JSON, so a JSON round trip stands in for Obsidian's
+// YAML codec in unit tests; the e2e suite exercises the real one.
+export const parseYaml = (text: string): unknown => JSON.parse(text);
+export const stringifyYaml = (data: unknown): string => `${JSON.stringify(data, null, 2)}\n`;
+
 // Standalone helper: real Obsidian injects a lucide SVG into the element.
 // The stub just records the icon name so tests can assert on it.
 export function setIcon(el: { setAttribute?: (k: string, v: string) => void }, iconName: string): void {

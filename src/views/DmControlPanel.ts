@@ -123,7 +123,7 @@ export class DmControlPanel extends ItemView {
   private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
   private layerGeometryTimer: ReturnType<typeof setTimeout> | null = null;
   private panZoomAbort: AbortController | null = null;
-  private restored: Promise<void> | null = null;
+  restored: Promise<void> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DmScreenPlugin) {
     super(leaf);
@@ -476,6 +476,20 @@ export class DmControlPanel extends ItemView {
 
   private collapsedSections = new Set<string>();
 
+  // Save and Load sit in the section header, beside the collapsible title, so
+  // they work while the section is folded and never toggle it.
+  renderSceneButtons(header: HTMLElement, kind: "player" | "map", hasContent: boolean): HTMLElement {
+    const actions = header.createDiv("dm-section-actions");
+    const editable = this.plugin.canEditSession();
+    const save = actions.createEl("button", { text: "Save scene", cls: "dm-scene-save-btn" });
+    save.disabled = !editable || !hasContent;
+    save.addEventListener("click", () => void this.plugin.saveScene(kind));
+    const load = actions.createEl("button", { text: "Load scene", cls: "dm-scene-load-btn" });
+    load.disabled = !editable;
+    load.addEventListener("click", () => void this.plugin.pickScene(kind));
+    return actions;
+  }
+
   makeCollapsible(section: HTMLElement, title: HTMLElement, key: string) {
     title.classList.add("dm-section-toggle");
     if (this.collapsedSections.has(key)) section.classList.add("dm-section-collapsed");
@@ -551,8 +565,10 @@ export class DmControlPanel extends ItemView {
 
   private renderPlayerScreenSection(container: HTMLElement) {
     const section = container.createDiv("dm-section");
-    const title = section.createEl("h3", { text: "Player Screen" });
+    const header = section.createDiv("dm-section-header");
+    const title = header.createEl("h3", { text: "Player Screen" });
     this.makeCollapsible(section, title, "player-screen");
+    this.renderSceneButtons(header, "player", !!this.activeBackgroundUrl || this.imageLayers.length > 0);
 
     if (this.plugin.server) {
       const port = this.plugin.settings.serverPort;
@@ -2273,6 +2289,35 @@ export class DmControlPanel extends ItemView {
       payload: { url, mediaType: "image" },
     });
     this.render();
+  }
+
+  // The scene loader's entry point: replaces the background and every layer
+  // in one step, through the same broadcasts the DM's own actions use.
+  applyPlayerScene(
+    background: { vaultPath: string; mediaType: "image" | "video"; loop: boolean; muted: boolean; hydrusHash?: string } | null,
+    layers: ImageLayer[]
+  ): void {
+    this.imageLayers = layers;
+    if (layers.length > 0) {
+      this.nextZIndex = Math.max(this.nextZIndex, ...layers.map((l) => l.zIndex + 1));
+    }
+    if (background) {
+      const url = `/vault/${encodeForVaultUrl(background.vaultPath)}`;
+      this.activeBackgroundUrl = url;
+      this.activeVideoPath = background.mediaType === "video" ? background.vaultPath : null;
+      this.setBackgroundLabel(resolveSourceLabel({ url, hydrusHash: background.hydrusHash, plugin: this.plugin }));
+      this.plugin.broadcast({
+        type: "show-background-media",
+        payload: { url, mediaType: background.mediaType, loop: background.loop, muted: background.muted },
+      });
+    } else if (this.activeBackgroundUrl) {
+      this.activeBackgroundUrl = null;
+      this.activeVideoPath = null;
+      this.setBackgroundLabel(null);
+      this.plugin.broadcast({ type: "hide-background-media", payload: {} });
+    }
+    debug("DmControlPanel: applyPlayerScene — layers:", layers.length, "background:", background ? background.vaultPath : "(none)");
+    this.broadcastAndRender();
   }
 
   getImagesFromNote(file: TFile): Array<{ path: string; label: string }> {

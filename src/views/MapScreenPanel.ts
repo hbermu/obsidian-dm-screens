@@ -363,7 +363,11 @@ export class MapScreenPanel {
     this.host.render();
   }
 
-  async setVaultMap(vaultPath: string, mediaType: "image" | "video", opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string }) {
+  async setVaultMap(
+    vaultPath: string,
+    mediaType: "image" | "video",
+    opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string; offerFoundryWalls?: boolean }
+  ) {
     const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
     const resourceUrl = adapter.getResourcePath?.(vaultPath);
     const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
@@ -411,7 +415,46 @@ export class MapScreenPanel {
     this.broadcastWalls();
     this.persistState();
     this.host.render();
-    if (opts?.hydrusHash) void this.offerFoundryWalls(url);
+    if (opts?.hydrusHash && opts.offerFoundryWalls !== false) void this.offerFoundryWalls(url);
+  }
+
+  // The scene loader's entry point: applies the map as Add Map does, then
+  // overrides everything the scene carries and persists it as the map's
+  // current state, so a loaded scene behaves like the DM's own edits.
+  async applyMapScene(
+    vaultPath: string,
+    mediaType: "image" | "video",
+    opts: { hydrusHash?: string; knownTags?: string[] },
+    scene: {
+      view: Pick<StoredMapState, "mode" | "panX" | "panY" | "rotation">;
+      grid: Pick<StoredMapState, "pxPerSquare" | "gridOffsetX" | "gridOffsetY" | "showGrid" | "gridColor" | "gridOpacity">;
+      fog: string | null;
+      walls: MapWall[];
+      aoes: MapAoe[];
+      visions: MapVision[];
+    }
+  ): Promise<boolean> {
+    await this.setVaultMap(vaultPath, mediaType, { ...opts, offerFoundryWalls: false });
+    const url = `/vault/${encodeForVaultUrl(vaultPath)}`;
+    if (this.activeMap?.url !== url) return false;
+    this.state = { ...this.state, ...scene.view, ...scene.grid };
+    this.clampStateToViewport();
+    this.aoes = scene.aoes.map((a) => ({ ...a }));
+    this.visions = scene.visions.map((v) => ({ ...v }));
+    this.walls = scene.walls.map((w) => ({ ...w }));
+    this.fogDataUrl = scene.fog;
+    await this.plugin.transport.mapData.saveFog(url, scene.fog);
+    await this.plugin.transport.mapData.saveWalls(url, this.walls);
+    this.broadcastConfig();
+    this.broadcastView(true);
+    this.broadcastAoes(true);
+    this.broadcastVisions(true);
+    this.broadcastFog();
+    this.broadcastWalls();
+    this.persistState();
+    this.host.render();
+    debug("MapScreenPanel: applyMapScene", vaultPath, "walls:", this.walls.length, "aoes:", this.aoes.length, "visions:", this.visions.length);
+    return true;
   }
 
   // Scale imported walls (UVTT or Foundry, in their own pixel space) onto the
@@ -585,7 +628,8 @@ export class MapScreenPanel {
     const header = section.createDiv("dm-section-header");
     const title = header.createEl("h3", { text: "Map Screen" });
     this.host.makeCollapsible(section, title, "map-screen");
-    const exploreBtn = header.createEl("button", { text: "Explore", cls: "dm-explore-open-btn" });
+    const actions = this.host.renderSceneButtons(header, "map", !!this.activeMap);
+    const exploreBtn = actions.createEl("button", { text: "Explore", cls: "dm-explore-open-btn" });
     const exploreMap = this.activeMap;
     if (exploreMap) {
       exploreBtn.title = "Table-play exploration: toggle doors and reveal rooms";

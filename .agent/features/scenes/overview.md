@@ -4,14 +4,17 @@
 
 ## Source files
 
-- `src/scenes/format.ts` — `PlayerScene`, `MapScene`, `parseScene`, `serializeScene`, `SCENE_FORMAT_VERSION`, source references (`vault:<path>`, `hydrus:<sha256>`)
-- `src/scenes/capture.ts` — builds a scene from the panel's current state and writes the note and its fog files
-- `src/scenes/load.ts` — applies a scene through the DM panel, reporting missing sources
-- `src/scenes/codeBlock.ts` — the `dm-scene` code block processor rendering the scene card
+- `src/scenes/format.ts` — `PlayerScene`, `MapScene`, `parseScene`, `serializeSceneNote`, `extractSceneBlock`, `SCENE_FORMAT_VERSION`, `SCENE_CODE_BLOCK`, source references (`parseSceneSource`, `sourceFromVaultPath`, `sourceFromVaultUrl`), `sceneNotePath`, `sceneFogFolder`, `sanitizeSceneFileName`, `sceneSummary`
+- `src/scenes/capture.ts` — `capturePlayerScene`, `captureMapScene` (a scene from the panels' current state), `writeScene` (the note and its fog files), `sceneExists`, `saveCapturedScene`
+- `src/scenes/load.ts` — `resolveSceneSource`, `loadPlayerScene`, `loadMapScene`, `loadScene` (opens the panel, waits for its restore), `listScenes`
+- `src/scenes/codeBlock.ts` — `renderSceneCard`, the `dm-scene` code block processor's output
 - `src/views/SaveSceneModal.ts` — the name prompt with overwrite confirmation
 - `src/views/SceneSuggestModal.ts` — fuzzy picker over the scenes of one kind
-- `src/views/DmControlPanel.ts`, `src/views/MapScreenPanel.ts` — Save scene and Load scene buttons
-- `src/main.ts` — code block registration and the four commands
+- `src/views/DmControlPanel.ts` — `renderSceneButtons` (the header group shared by both sections), `applyPlayerScene`
+- `src/views/MapScreenPanel.ts` — `applyMapScene`; `setVaultMap` takes `offerFoundryWalls: false` from it
+- `src/transport/transport.ts` — `canEdit()`, and `MapDataStore.saveFog(url, null)` to clear a stored mask
+- `src/main.ts` — code block registration, the four commands, `saveScene`, `pickScene`, `openDmControlPanel`, `canEditSession`
+- `src/settings.ts` — the Scenes folder field
 - `src/types.ts` — `ImageLayer.source`, the layer's origin, needed to save a layer by reference
 
 ## Settings used
@@ -32,22 +35,22 @@
 
 ### Saving
 
-8. The Player Screen and Map Screen section headers shall each carry a `Save scene` button (`.dm-scene-save-btn`), enabled when that screen has content (a background or at least one layer; an active map).
-9. When pressed, the button shall open `SaveSceneModal`; on confirm the plugin shall write `<scenesFolder>/<name>.md` with a level-one heading of the name followed by the `dm-scene` block, creating the folder if needed, and write the fog files.
+8. The Player Screen and Map Screen section headers (`.dm-section-header`) shall each carry a `.dm-section-actions` group with a `Save scene` button (`.dm-scene-save-btn`), enabled when that screen has content (a background or at least one layer; an active map). The group sits beside the collapsible title, so it never folds the section.
+9. When pressed, the button shall open `SaveSceneModal` with the name prefilled (`Player screen`, or the map's label from `lastSourceLabels.map`); on confirm the plugin shall write `<scenesFolder>/<name>.md` with a level-one heading of the name followed by the `dm-scene` block, creating the folder if needed, and write the fog files.
 10. If the note already exists, then the modal shall ask for confirmation before overwriting it, and an overwrite shall delete fog files the new scene no longer uses.
-11. A layer whose `source` is unknown (added before layers recorded their origin) shall be skipped with a Notice naming its label.
+11. A layer whose `source` is unknown (added before layers recorded their origin, `../image-layers/overview.md` requirement 1b), or a background that is not a vault file, shall be skipped, and the save Notice shall name what was left out.
 12. A file name shall have the characters `\ / : * ? " < > |` replaced by `-`.
 
 ### Loading
 
-13. The `dm-scene` code block processor shall render a `.dm-scene-card` showing the name, the kind, and a summary (`N layers`, or the map label and `N walls`), with a `Load` button; a block that fails `parseScene` shall render the error instead.
-14. The Player Screen and Map Screen sections shall each carry a `Load scene` button (`.dm-scene-load-btn`) opening `SceneSuggestModal` over the scenes of that kind found in `scenesFolder` and its subfolders.
-15. When a scene is loaded, the plugin shall open the DM panel if it is closed and apply the scene through the same panel methods the DM's own actions use, so broadcasts, persistence and server-mode behaviour follow every other spec unchanged.
-16. Loading a player scene shall clear the background and every layer, then set the background and add the layers with their geometry, visibility, border and fog.
-17. Loading a map scene shall apply the map as Add Map does, then set the view, grid, fog, walls, AoEs and visions from the scene, persisting them as the map's current state (`mapConfigs` and sidecars in embedded mode, the map-data store in remote mode).
+13. The `dm-scene` code block processor shall render a `.dm-scene-card` showing the name (`.dm-scene-name`) and a summary (`.dm-scene-summary`: `Player screen · N layers` plus ` + background` when there is one, or `Map · N walls, N AoE, N vision`), with a `Load` button (`.dm-scene-card-load`); a block that fails `parseScene` shall render `DM Screen scene: <error>` in a `.dm-scene-error` element instead.
+14. The same header groups shall each carry a `Load scene` button (`.dm-scene-load-btn`) opening `SceneSuggestModal` over the scenes of that kind found in `scenesFolder` and its subfolders, sorted by name; with none, a Notice says so.
+15. When a scene is loaded, the plugin shall open the DM panel if it is closed, wait for the panel's state restore, and apply the scene through `applyPlayerScene` / `applyMapScene`, which use the same broadcasts and persistence as the DM's own actions, so server-mode behaviour follows every other spec unchanged.
+16. Loading a player scene shall replace every layer with the scene's layers (geometry, visibility, border, fog and `source` kept; fresh ids) and set the scene's background, or stop the current one when the scene has none.
+17. Loading a map scene shall apply the map as Add Map does (without offering Foundry walls), then set the view, grid, fog, walls, AoEs and visions from the scene, re-clamp the pan, and persist them as the map's current state through `transport.mapData` — a scene without fog clears the stored mask.
 18. A `hydrus:` source shall resolve to the vault cache when the file is there, otherwise to the existing Hydrus download path, or, in remote mode with server-side Hydrus, to the server fetch (`../remote-server/assets.md` requirement 15).
 19. If a source cannot be resolved, then that item shall be skipped, the rest shall load, and one Notice shall list every skipped item; a map scene whose map is missing shall load nothing and say so.
-20. While the remote role is `readonly` or disconnected, every Save scene and Load button shall be disabled.
+20. While `transport.canEdit()` is false (remote role `readonly`, or disconnected), every Save scene, Load scene and card Load button shall be disabled, and the four commands shall do nothing.
 
 ### Commands
 

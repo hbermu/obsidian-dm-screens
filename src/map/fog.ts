@@ -54,8 +54,17 @@ export function gridCellRectAt(
 export async function loadFogSidecar(adapter: FogAdapter, mapUrl: string): Promise<string | null> {
   const path = fogSidecarPath(mapUrl);
   if (!(await adapter.exists(path))) return null;
-  const buf = await adapter.readBinary(path);
-  const bytes = new Uint8Array(buf);
+  return pngDataUrl(new Uint8Array(await adapter.readBinary(path)));
+}
+
+export async function saveFogSidecar(adapter: FogAdapter, mapUrl: string, dataUrl: string): Promise<void> {
+  for (const dir of [".dm-screen", ".dm-screen/fog"]) {
+    if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+  }
+  await adapter.writeBinary(fogSidecarPath(mapUrl), dataUrlBuffer(dataUrl));
+}
+
+export function pngDataUrl(bytes: Uint8Array): string {
   let bin = "";
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -64,15 +73,10 @@ export async function loadFogSidecar(adapter: FogAdapter, mapUrl: string): Promi
   return `data:image/png;base64,${btoa(bin)}`;
 }
 
-export async function saveFogSidecar(adapter: FogAdapter, mapUrl: string, dataUrl: string): Promise<void> {
-  for (const dir of [".dm-screen", ".dm-screen/fog"]) {
-    if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
-  }
-  const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
+export function dataUrlBuffer(dataUrl: string): ArrayBuffer {
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  const buf = new ArrayBuffer(bin.length);
+  const bytes = new Uint8Array(buf);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const buf = new ArrayBuffer(bytes.length);
-  new Uint8Array(buf).set(bytes);
-  await adapter.writeBinary(fogSidecarPath(mapUrl), buf);
+  return buf;
 }

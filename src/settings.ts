@@ -68,6 +68,7 @@ export interface DmScreenSettings {
   hydrusAvailableTagServices: { name: string; key: string }[];
   hydrusTagServices: string[]; // selected service keys
   cacheBaseFolder: string;
+  scenesFolder: string;
   hydrusCacheTtlDays: number;
   hydrusDefaultLoop: boolean;
   hydrusDefaultMuted: boolean;
@@ -117,6 +118,7 @@ export const DEFAULT_SETTINGS: DmScreenSettings = {
   hydrusAvailableTagServices: [],
   hydrusTagServices: [],
   cacheBaseFolder: ".dm-screen",
+  scenesFolder: "DM Screen/Scenes",
   hydrusCacheTtlDays: 30,
   hydrusDefaultLoop: true,
   hydrusDefaultMuted: true,
@@ -264,6 +266,25 @@ export class DmScreenSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             const panel = await this.plugin.findOpenDmControlPanel();
             panel?.mapPanel.broadcastFog();
+          })
+      );
+
+    containerEl.createEl("h3", { text: "Scenes" });
+
+    new Setting(containerEl)
+      .setName("Scenes folder")
+      .setDesc("Vault folder where Save scene writes scene notes; Load scene lists the scenes in it and its subfolders.")
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.scenesFolder)
+          .onChange(async (value) => {
+            const normalized = value.trim().replace(/^\/+|\/+$/g, "");
+            if (normalized.includes("..")) {
+              new Notice('Scenes folder must be relative to the vault, no ".." segments', 6000);
+              return;
+            }
+            this.plugin.settings.scenesFolder = normalized || "DM Screen/Scenes";
+            await this.plugin.saveSettings();
           })
       );
 

@@ -15,6 +15,12 @@ import { DdbImageCache } from "./dndbeyond/imageCache";
 import { initDebug, debug, debugWarn, debugError } from "./debug";
 import { EmbeddedTransport } from "./transport/embedded";
 import type { SceneTransport } from "./transport/transport";
+import { SCENE_CODE_BLOCK, type Scene } from "./scenes/format";
+import { renderSceneCard } from "./scenes/codeBlock";
+import { captureMapScene, capturePlayerScene, saveCapturedScene, sceneExists } from "./scenes/capture";
+import { listScenes, loadScene } from "./scenes/load";
+import { SaveSceneModal } from "./views/SaveSceneModal";
+import { SceneSuggestModal } from "./views/SceneSuggestModal";
 import { generateAccessToken } from "./auth";
 import { redactUrl } from "./redact";
 
@@ -67,6 +73,30 @@ export default class DmScreenPlugin extends Plugin {
       name: "Open DM Control Panel",
       callback: () => this.activateView(DM_CONTROL_VIEW_TYPE),
     });
+
+    this.addCommand({
+      id: "save-player-scene",
+      name: "Save player screen as scene",
+      callback: () => void this.saveScene("player"),
+    });
+    this.addCommand({
+      id: "save-map-scene",
+      name: "Save map as scene",
+      callback: () => void this.saveScene("map"),
+    });
+    this.addCommand({
+      id: "load-player-scene",
+      name: "Load player scene",
+      callback: () => void this.pickScene("player"),
+    });
+    this.addCommand({
+      id: "load-map-scene",
+      name: "Load map scene",
+      callback: () => void this.pickScene("map"),
+    });
+    this.registerMarkdownCodeBlockProcessor(SCENE_CODE_BLOCK, (source, el, ctx) =>
+      renderSceneCard(this, source, el, ctx.sourcePath)
+    );
 
     this.addCommand({
       id: "toggle-player-server",
@@ -311,6 +341,50 @@ export default class DmScreenPlugin extends Plugin {
     } else {
       this.startServer();
     }
+  }
+
+  canEditSession(): boolean {
+    return this.transport.canEdit();
+  }
+
+  async openDmControlPanel(): Promise<DmControlPanel | null> {
+    await this.activateView(DM_CONTROL_VIEW_TYPE);
+    return this.findOpenDmControlPanel();
+  }
+
+  async saveScene(kind: Scene["kind"]): Promise<void> {
+    if (!this.canEditSession()) return;
+    const panel = await this.openDmControlPanel();
+    if (!panel) return;
+    if (panel.restored) await panel.restored;
+    const capture = (name: string) =>
+      kind === "player" ? capturePlayerScene(this, panel, name) : captureMapScene(this, panel.mapPanel, name);
+    const probe = capture("");
+    if (!probe || (probe.scene.kind === "player" && !probe.scene.background && probe.scene.layers.length === 0 && probe.skipped.length === 0)) {
+      new Notice(kind === "player" ? "Nothing on the player screen to save." : "Add a map before saving a map scene.");
+      return;
+    }
+    const initial = kind === "player" ? "Player screen" : this.settings.lastSourceLabels?.map?.label ?? "Map";
+    new SaveSceneModal(
+      this.app,
+      kind === "player" ? "player screen" : "map",
+      initial,
+      (name) => sceneExists(this.app, this.settings.scenesFolder, name),
+      (name) => {
+        const captured = capture(name);
+        if (captured) void saveCapturedScene(this, captured);
+      }
+    ).open();
+  }
+
+  async pickScene(kind: Scene["kind"]): Promise<void> {
+    if (!this.canEditSession()) return;
+    const entries = await listScenes(this.app, this.settings.scenesFolder, kind);
+    if (entries.length === 0) {
+      new Notice(`No ${kind === "player" ? "player" : "map"} scenes in "${this.settings.scenesFolder}".`);
+      return;
+    }
+    new SceneSuggestModal(this.app, entries, (entry) => void loadScene(this, entry.scene, entry.file.path)).open();
   }
 
   async activateView(viewType: string) {
