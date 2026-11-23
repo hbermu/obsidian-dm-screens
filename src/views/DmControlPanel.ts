@@ -524,9 +524,12 @@ export class DmControlPanel extends ItemView {
       for (const { section, chip } of chips) chip.toggleClass("dm-section-chip-active", section === active);
     };
 
-    let queued = false;
+    // Read straight from the scroll event rather than through
+    // `requestAnimationFrame`: Electron does not run animation frames for a
+    // window that is not on screen, and a queued one that never arrived left
+    // the bar stuck on whatever it last marked. Four rect reads per scroll
+    // cost nothing.
     const sync = () => {
-      queued = false;
       // Nothing to track while the bar is hidden (a panel wide enough to show
       // every section at once).
       if (nav.offsetParent === null) return;
@@ -542,15 +545,7 @@ export class DmControlPanel extends ItemView {
     };
     // Captured on the document: a scroll event does not bubble, and the
     // scrolling element here is whichever ancestor Obsidian gave the view.
-    document.addEventListener(
-      "scroll",
-      () => {
-        if (queued) return;
-        queued = true;
-        requestAnimationFrame(sync);
-      },
-      { signal, passive: true, capture: true }
-    );
+    document.addEventListener("scroll", sync, { signal, passive: true, capture: true });
     // The panel opens at the top, so the first section is the one being read
     // until a scroll says otherwise.
     markActive(chips[0].section);

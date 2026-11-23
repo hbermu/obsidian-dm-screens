@@ -189,7 +189,12 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
       before,
       after,
       scrolled: panel.scrollTop,
-      chips: chips.map((c) => ({ h: c.getBoundingClientRect().height, right: c.getBoundingClientRect().right })),
+      chips: chips.map((c) => ({
+        h: c.getBoundingClientRect().height,
+        right: c.getBoundingClientRect().right,
+        bg: getComputedStyle(c).backgroundColor,
+        active: c.classList.contains("dm-section-chip-active"),
+      })),
       panelRight: panelBox.right,
       sections: panel.querySelectorAll(".dm-section").length,
     };
@@ -205,6 +210,11 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
   // It does not travel with the content it is there to navigate.
   expect(nav.after).toBeCloseTo(nav.before, 0);
   expect(nav.chips.length).toBeGreaterThanOrEqual(3);
+  // The current section has to look current: a theme's `button:not(...)` rule
+  // outweighs a lone class, and the active chip kept the theme's grey.
+  const active = nav.chips.filter((c) => c.active);
+  expect(active).toHaveLength(1);
+  expect(active[0].bg).not.toBe(nav.chips.find((c) => !c.active)!.bg);
   for (const chip of nav.chips) {
     expect(chip.h).toBeGreaterThanOrEqual(44);
     // All of them fit the width: a nav bar you scroll sideways navigates badly.

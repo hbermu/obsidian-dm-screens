@@ -56,7 +56,7 @@
     content: none;
   }
 }
-.dm-section-chip {
+.dm-section-nav button.dm-section-chip {
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
@@ -72,7 +72,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dm-section-chip-active {
+/* Themes style plain buttons through `button:not(.clickable-icon)`, which
+   outweighs a lone class: the active chip kept the theme's grey and the bar
+   showed nothing as current. Element plus class wins it back. */
+.dm-section-nav button.dm-section-chip-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
 }

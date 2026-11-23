@@ -26,13 +26,35 @@ async function buildTouchPage() {
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>${css}</style>
 <style>
-html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
+/* The variables Obsidian gives a theme. Without them every var() in the
+   plugin stylesheet is invalid at computed value time, which silently turns
+   each colour transparent and makes a colour assertion meaningless. */
+:root {
+  --background-primary: #1e1e1e;
+  --background-secondary: #262626;
+  --background-modifier-border: #3f3f3f;
+  --background-modifier-hover: #333333;
+  --interactive-normal: #3a3a3a;
+  --interactive-accent: #7b6cd9;
+  --text-normal: #dadada;
+  --text-muted: #999999;
+  --text-on-accent: #ffffff;
+  --text-accent: #a390f5;
+}
+/* Obsidian's own base reset: borders and padding count inside an element's
+   width there, and the plugin stylesheet is written for that. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--background-primary); color: var(--text-normal); }
 .dm-explore-content { height: 100vh; }
 .dm-explore-inner { width: 600px; height: 400px; background: #40506a; }
 .dm-explore-overlay { background: rgba(0,0,0,0.25); }
 .dm-floating-window { left: 12px; top: 12px; width: 220px; }
 .dm-floating-window-body { max-height: 120px; }
 .dm-floating-window-body p { margin: 0 0 240px; }
+/* Obsidian's themes style plain buttons like this, with more weight than a
+   lone class. The page carries it so the plugin's own rules are tested
+   against the pressure they meet in the app. */
+button:not(.clickable-icon) { background: #3a3a3a; color: #dadada; }
 .dm-control-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: #262626; padding: 8px; overflow-y: auto; }
 .dm-control-panel .dm-section:last-of-type { margin-bottom: 600px; }
 .dm-layer-preview { position: relative; height: 120px; }
