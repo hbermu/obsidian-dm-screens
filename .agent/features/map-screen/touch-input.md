@@ -1,13 +1,15 @@
 # Map Screen Touch Input
 
-> The DM panel's map gestures work with a finger. Every drag, hit-test and context action in the Map Screen section and Exploration Mode is written once against Pointer Events, so a mouse, a finger and a pen all drive the same code; on top of that the stage takes a two-finger pinch to zoom and pan, a finger explores on the lift rather than the press so a pinch never toggles a door, a long press stands in for the right-click a touchscreen does not have, and hit targets grow to a finger's size while the drawn markers stay small. This is what lets a tablet or a phone run the session (`../remote-server/overview.md`), and it changes nothing for a DM on a mouse.
+> The DM panel works with a finger. Every drag, hit-test and context action in it — the Map Screen section, Exploration Mode, the fog and walls editor, and the Player Screen section's preview, layer rectangles and per-layer fog — is written once against Pointer Events, so a mouse, a finger and a pen all drive the same code; on top of that the stage takes a two-finger pinch to zoom and pan, a finger explores on the lift rather than the press so a pinch never toggles a door, a long press stands in for the right-click a touchscreen does not have, and hit targets grow to a finger's size while the drawn markers stay small. This is what lets a tablet or a phone run the session (`../remote-server/overview.md`), and it changes nothing for a DM on a mouse.
 
 ## Source files
 
-- `src/views/pointerDrag.ts` — `trackPointerDrag` (one drag for mouse, touch and pen, listening on `document` and filtered by `pointerId`), `LONG_PRESS_MS`, `onLongPress`, `blockWebkitGestures`
+- `src/views/pointerDrag.ts` — `trackPointerDrag` (one drag for mouse, touch and pen, listening on `document` and filtered by `pointerId`), `TAP_SLOP`, `GestureIntent`, `trackTapOrDrag` (a cursor acts on the press, a finger once the gesture is unambiguous), `LONG_PRESS_MS`, `onLongPress`, `blockWebkitGestures`
 - `src/views/pinchZoom.ts` — `StageView`, `IDENTITY_VIEW`, `MIN_ZOOM`, `MAX_ZOOM`, `clampView`, `zoomAbout`, `panBy`, `trackPinch`, `trackWheelZoom`
 - `src/views/MapExploreModal.ts` — the exploration stage's pinch/wheel zoom, the deferred exploration tap, long-press AoE removal, `blockWebkitGestures` on the modal
 - `src/views/MapScreenPanel.ts` — `trackDrag(start: PointerEvent, onMove, onEnd?)`: the panel-side drags (pan preview, viewport rectangle, AoE and vision dots) over the same helper
+- `src/views/MapFogModal.ts` — the fog and walls editor: the deferred press behind every walls tool (`natAt`, `placeWall`), the brush and marquee strokes, the long press that ends a wall chain, and the zoomable `dm-fog-inner` stage
+- `src/views/DmControlPanel.ts` — the Player Screen section: the preview's look-around pan (middle button for a mouse, a plain drag for a finger), `makeDraggable` for the layer rectangles, `setupInlineFogDrawing` for the per-layer fog, and the long press that opens a layer row's context menu
 - `styles.css` — the `Touch` block: `touch-action: none` on every drag surface, and the `@media (pointer: coarse)` rules that grow the hit targets
 - `test/visual/harness/touch-entry.ts` — the harness page that runs the two gesture modules and the real stylesheet under a browser's own fingers
 
@@ -17,14 +19,19 @@
 
 ## Requirements
 
-1. Every DM-side map gesture shall be driven by Pointer Events (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), so one implementation serves a mouse, a finger and a pen. No map gesture listens for `mousedown`, `mousemove` or `mouseleave`.
+1. Every gesture in the DM panel shall be driven by Pointer Events (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), so one implementation serves a mouse, a finger and a pen. Nothing in the Map Screen section, Exploration Mode, the fog and walls editor or the Player Screen section listens for `mousedown`, `mousemove`, `mouseup` or `mouseleave`. `contextmenu` stays where it is: a right-click is a mouse action, and the finger's equivalent is the long press of requirement 6.
 2. `trackPointerDrag(start, { onMove, onEnd?, onRelease? })` shall attach its `pointermove`, `pointerup` and `pointercancel` listeners to `document` and ignore every event whose `pointerId` differs from the starting one, so a drag survives leaving the element and a second finger never steers it. It returns a function that detaches the listeners; `onRelease` runs whichever way the drag ends, including that teardown, and `onEnd` runs only on a real `pointerup`/`pointercancel`.
 3. When the browser takes a gesture over and fires `pointercancel`, `trackPointerDrag` shall end the drag exactly as a `pointerup` does, so no drag or drag lock can outlive the finger.
-4. Every element that starts a drag shall carry `touch-action: none` (`.dm-explore-overlay`, `.dm-explore-markers`, `.dm-explore-inner`, `.dm-map-preview-stage`, `.dm-fog-stage`, the AoE/vision dots and handles, the viewport rectangles), or the browser would claim the gesture for a scroll and cancel the pointer stream mid-drag. The exploration stage itself shall not, so the AoE, Vision and Combat windows floating over it keep scrolling under a finger.
+4. Every element that starts a drag shall carry `touch-action: none` (`.dm-explore-overlay`, `.dm-explore-markers`, `.dm-explore-inner`, `.dm-map-preview-stage`, `.dm-fog-stage`, `.dm-layer-rect`, `.dm-fog-draw-canvas-inline`, the AoE/vision dots and handles, the viewport rectangles), or the browser would claim the gesture for a scroll and cancel the pointer stream mid-drag. The exploration stage itself shall not, so the AoE, Vision and Combat windows floating over it keep scrolling under a finger.
 5. While the pointer is coarse (`@media (pointer: coarse)`), the marker hit areas shall grow to a finger's size through the `::before` inset (`-17px × var(--dm-map-zoom)`, against `-9px` on a fine pointer) without changing what is drawn, and the bar buttons (`.dm-explore-bar button`, `.dm-section-actions button`, `.dm-explore-open-btn`) shall be at least 44 px in both dimensions.
 6. `onLongPress(el, run)` shall run `run` when a touch or pen pointer is held on `el` for `LONG_PRESS_MS` (500) without travelling more than 10 px, and shall not arm for a mouse, which has a button of its own. Lifting, cancelling or moving beyond the slop before the timer fires cancels it. It returns a disposer that clears the timer and detaches.
 7. The Exploration Mode markers shall offer a long press as the touch equivalent of the right-click that removes an AoE (`fog-of-war.md` requirement 52), and the handlers shall be torn down with each `renderMarkers` and on close so a re-render leaves no duplicate.
 8. `blockWebkitGestures(el)` shall `preventDefault` WebKit's own `gesturestart`, `gesturechange` and `gestureend` on `el`, so a pinch inside the stage does not also zoom the whole Obsidian window on iOS and macOS Safari. Exploration Mode applies it to `modalEl` and drops it on close.
+
+### The deferred press
+
+8a. `trackTapOrDrag(start, { act, onMove?, onEnd?, intent?, slop? })` shall run `act` once: immediately for any pointer type other than touch and pen; for those, on the release when the pointer stayed within `slop` (`TAP_SLOP`, 12 px), or — with `intent: "stroke"` — as soon as it travels beyond it, passing the starting event so the stroke belongs to the point the finger landed on. `onMove` and `onEnd` shall fire only after `act` has run, so cancelling the returned disposer (what a pinch does) commits nothing.
+8b. Every gesture that writes something on a press — the exploration door/room toggle, the fog brush and marquee, Wall, Door, Erase and Toggle door, and the per-layer fog strokes — shall go through it, so one rule covers the panel: a cursor acts on the press, and a finger acts once the gesture cannot still turn into a pinch or a pan.
 
 ### Pinch, wheel and the stage view
 
@@ -40,17 +47,26 @@
 18. While the stage is zoomed, `.dm-explore-inner` shall carry `--dm-map-zoom` set to the zoom, so the marker dots counter-scale and their touch targets stay the same size on screen however far the map is zoomed in (requirement 5).
 19. On close, the modal shall detach the pinch and wheel listeners and reset the stage view to `IDENTITY_VIEW`, so the next session opens at fit.
 
+### The rest of the panel
+
+20. The fog and walls editor's stage shall carry the same pinch, two-finger pan and ctrl/trackpad-wheel zoom as the exploration stage, on a `dm-fog-inner` box the stage clips, with a `dm-fog-zoom-btn` in the tab row (`fog-of-war.md` requirement 19b). A pinch shall abandon the stroke in flight through `cleanupDrag` rather than commit it, and a long press on the overlay shall end a wall chain the way a right-click does.
+21. The Player Screen section shall be usable with a finger: a layer rectangle moves under a touch drag, a long press on a layer row opens its context menu (`../image-layers/layer-controls.md` requirement 22), and the per-layer fog tools draw through the deferred press (`../fog-of-war/drawing-tools.md` requirement 11). The preview area itself shall keep scrolling the panel, so its look-around pan stays on the middle mouse button (`../dm-preview/pan-zoom.md` requirement 2a).
+22. While the pointer is coarse, the fog editor's tab and toolbar buttons shall be at least 44 px in both dimensions and a range slider's thumb at least 28 px. The layer row's icon buttons shall grow in height only: they sit side by side in a narrow column, and a 44 px floor on both axes would push the row wider than the panel.
+
 ## Tests covering this
 
 - `src/__tests__/pointer-drag.test.ts` — `trackPointerDrag` follows its own pointer and ignores a second finger, ends on release, ends on `pointercancel`, and can be torn down mid-drag without firing `onEnd`; `onLongPress` fires for a held finger, never for a mouse, and not when the finger moves away or lifts first; `blockWebkitGestures` cancels Safari's pinch events until disposed (reqs 2, 3, 6, 8)
 - `src/__tests__/pinch-zoom.test.ts` — the stage-view maths (zoom clamp, overhang clamp and re-centring at fit, anchor preservation, round trip back to fit, pan clamp) and the trackers: a spread zooms by its ratio, a moving midpoint pans, a single finger and a mouse are ignored, a lifted finger starts a fresh gesture, disposal detaches; `trackWheelZoom` zooms a ctrl/meta wheel about the cursor and leaves a plain wheel alone (reqs 10–13, 16)
 - `src/__tests__/map-explore-modal.test.ts` — the touch cases: a tap explores on the lift and not the press, a finger that slides explores nothing, a second finger takes the gesture over (no fog commit, the stage at `scale(2)`), the zoom button reports the zoom and resets it to fit, and a closed modal no longer zooms (reqs 14, 15, 17–19)
 - `src/__tests__/map-screen-panel-aoe.test.ts` — the panel's drags start from a `PointerEvent`, hold and release the panel drag lock, and a newer drag tears the previous one down without running its `onEnd` (reqs 1, 2)
+- `src/__tests__/map-fog-modal.test.ts` — the editor under a finger: a tap stamps the brush once and commits on the lift, a slide paints from where it landed, a second finger zooms the stage and paints nothing, a tap places a wall segment on the lift while a long press ends the chain, and a tap with the Rect tool commits nothing (reqs 8a, 8b, 20)
+- `src/__tests__/dm-control-touch.test.ts` — the Player Screen section: the preview's look-around pans on a middle-button drag and ignores a finger, and a layer rectangle's drag moves the layer, broadcasts geometry during and the layers once on release, keeps the press away from the preview, and is a no-op on a detached preview (req 21)
 - `test/visual/touch.spec.ts` — real fingers in Chromium and WebKit against the harness page carrying the shipped stylesheet: the tablet profiles report a coarse pointer while the drawn dot stays small, the drag surfaces are `touch-action: none` and the floating windows are not, a tap explores on the lift as `touch`, a tap 15 px off a marker still hits it, holding a marker fires the long press; and under Chromium's touch injection: a marker drag keeps the whole pointer stream with no cancel, a finger dragged across the map explores nothing, a pinch out zooms to 2× while exploring nothing, and a pinch back in returns the stage to fit (reqs 4, 5, 7, 12, 14, 15)
 
 ## Non-goals
 
-- Touch in the Fog and Walls editor, the Hydrus explorer and the player-screen panels. Those still assume a cursor; only the Map Screen section and Exploration Mode are converted.
+- Touch in the Hydrus explorer, the calibration modal and the settings tab. Those are forms and lists a finger can already operate; nothing in them is a drag.
 - Rotating the map with two fingers. Rotation stays the bar's 90° steps, because the map screen's rotation is a per-screen orientation rather than a free angle.
+- A finger's look-around pan in the Player Screen preview. Claiming those drags would cost the panel its scrolling, and look-around only matters while the preview is zoomed out, where Reset View does the job.
 - Zooming what the players see. The stage view is the DM's own magnifier; it broadcasts nothing, and the players' window is still moved by the viewport rectangle (`fog-of-war.md` requirement 51).
 - Multi-touch on more than two pointers. A third finger invalidates the gesture rather than starting a new kind of one.

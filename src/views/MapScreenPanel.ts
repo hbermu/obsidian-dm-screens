@@ -286,7 +286,7 @@ export class MapScreenPanel {
   }
 
   // The Exploration modal owns its own listener plumbing (it has to tear down a
-  // drag whose mouseup was missed), so it takes the lock directly.
+  // drag whose release was missed), so it takes the lock directly.
   beginPanelDrag(): () => void {
     return this.host.beginDrag();
   }
@@ -1300,7 +1300,7 @@ export class MapScreenPanel {
       const startX = e.clientX;
       const startY = e.clientY;
       const fromRect = e.target === rect;
-      // A bare click used to re-centre on mousedown, so a near miss on a marker
+      // A bare click used to re-centre on the press, so a near miss on a marker
       // moved what the players see. The pan waits for real movement; a drag that
       // starts on the rectangle is already deliberate and starts immediately.
       let panStarted = fromRect;

@@ -16,6 +16,7 @@ import { uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
 import { resolveSourceLabel, type SourceLabel } from "../sourceLabel";
 import { debug, debugWarn, debugError } from "../debug";
 import { CONDITIONS, decodeStatus, encodeExhaustion } from "../conditions";
+import { onLongPress, trackPointerDrag, trackTapOrDrag } from "./pointerDrag";
 
 export const DM_CONTROL_VIEW_TYPE = "dm-control-panel";
 
@@ -903,7 +904,7 @@ export class DmControlPanel extends ItemView {
 
     // Zoom controls inside the preview (overlay, top-right — mirrors the map panel)
     const zoomControls = previewArea.createDiv("dm-preview-zoom-controls");
-    zoomControls.addEventListener("mousedown", (e: MouseEvent) => e.stopPropagation());
+    zoomControls.addEventListener("pointerdown", (e: PointerEvent) => e.stopPropagation());
 
     const zoomSlider = zoomControls.createEl("input", { type: "range", cls: "dm-zoom-slider" });
     zoomSlider.min = "67";
@@ -934,6 +935,10 @@ export class DmControlPanel extends ItemView {
           evt.preventDefault();
           this.openLayerContextMenu(evt, layer);
         });
+        // The same menu for a finger, which has no second button. A
+        // `PointerEvent` is a `MouseEvent`, so Obsidian places the menu at the
+        // press like it does for a right-click.
+        onLongPress(row, (evt) => this.openLayerContextMenu(evt, layer));
 
         // Left column: eye on top (full width), fog + border side-by-side below
         const leftCol = row.createDiv("dm-layer-left-col");
@@ -1762,7 +1767,7 @@ export class DmControlPanel extends ItemView {
     const fogCanvas = this.getFogCanvas(layer);
     const fogCtx = fogCanvas.getContext("2d")!;
 
-    const toFogCoord = (e: MouseEvent) => {
+    const toFogCoord = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * fogCanvas.width;
       const y = ((e.clientY - r.top) / r.height) * fogCanvas.height;
@@ -1808,26 +1813,35 @@ export class DmControlPanel extends ItemView {
       ctx.globalAlpha = 1.0;
     };
 
-    canvas.addEventListener("mousedown", (e) => {
+    canvas.addEventListener("pointerdown", (e: PointerEvent) => {
       e.stopPropagation();
-      drawing = true;
+      e.preventDefault();
       const { x, y } = toFogCoord(e);
       startX = x;
       startY = y;
       debug(
-        "fog: mousedown layer", layer.id,
+        "fog: press layer", layer.id,
         "tool=", this.fogTool,
         "start=", x.toFixed(0), ",", y.toFixed(0)
       );
-      if (isFreehand()) {
-        applyFreehand(x, y);
-        refreshOverlay();
-      }
+      // A finger's stroke starts once the gesture is unambiguous, so the first
+      // finger of a pinch paints nothing (`pointerDrag.ts`).
+      trackTapOrDrag(e, {
+        intent: "stroke",
+        act: () => {
+          drawing = true;
+          if (isFreehand()) {
+            applyFreehand(startX, startY);
+            refreshOverlay();
+          }
+        },
+        onMove: drawMove,
+        onEnd: finishDraw,
+      });
     });
 
-    canvas.addEventListener("mousemove", (e) => {
+    const drawMove = (e: PointerEvent) => {
       if (!drawing) return;
-      e.stopPropagation();
       const { x, y } = toFogCoord(e);
       if (isFreehand()) {
         applyFreehand(x, y);
@@ -1858,9 +1872,9 @@ export class DmControlPanel extends ItemView {
         }
         ctx.setLineDash([]);
       }
-    });
+    };
 
-    const finishDraw = (e: MouseEvent) => {
+    const finishDraw = (e: PointerEvent) => {
       if (!drawing) return;
       drawing = false;
       let endX = startX;
@@ -1874,7 +1888,7 @@ export class DmControlPanel extends ItemView {
         }
       }
       debug(
-        "fog: mouseup layer", layer.id,
+        "fog: release layer", layer.id,
         "tool=", this.fogTool,
         "end=", endX.toFixed(0), ",", endY.toFixed(0),
         "shiftHeld=", e.shiftKey,
@@ -1898,17 +1912,16 @@ export class DmControlPanel extends ItemView {
       }
     };
 
-    canvas.addEventListener("mouseup", finishDraw);
-    canvas.addEventListener("mouseleave", (e) => {
+    canvas.addEventListener("pointerleave", (e: PointerEvent) => {
       if (drawing && isFreehand()) finishDraw(e);
     });
   }
 
   private setupPreviewPanZoom(previewArea: HTMLElement, previewInner: HTMLElement) {
-    // render() runs frequently and re-binds these listeners. Without an abort
-    // signal, the document-level mousemove/mouseup handlers accumulate every
-    // render and leak. The previewArea-bound listeners are GC'd with the old
-    // DOM, but we route them through the same controller for symmetry.
+    // render() runs frequently and re-binds this listener. The previewArea it
+    // sits on is GC'd with the old DOM, but the abort controller makes that
+    // explicit — and a gesture in flight keeps its own document listeners only
+    // until the pointer is released.
     this.panZoomAbort?.abort();
     this.panZoomAbort = new AbortController();
     const { signal } = this.panZoomAbort;
@@ -1917,37 +1930,23 @@ export class DmControlPanel extends ItemView {
     // whenever the cursor was over the preview. Zoom is driven exclusively
     // by the `.dm-zoom-slider` + reset button rendered above the preview.
 
-    let panning = false;
-    let panStartX = 0;
-    let panStartY = 0;
-    let panStartPanX = 0;
-    let panStartPanY = 0;
-
-    previewArea.addEventListener("mousedown", (e) => {
-      if (e.button === 1) {
-        e.preventDefault();
-        panning = true;
-        panStartX = e.clientX;
-        panStartY = e.clientY;
-        panStartPanX = this.dmPanX;
-        panStartPanY = this.dmPanY;
-      }
-    }, { signal });
-
-    document.addEventListener("mousemove", (e) => {
-      if (!panning) return;
-      const bounds = previewArea.getBoundingClientRect();
-      const dx = ((e.clientX - panStartX) / bounds.width) * 100;
-      const dy = ((e.clientY - panStartY) / bounds.height) * 100;
-      this.dmPanX = panStartPanX + dx;
-      this.dmPanY = panStartPanY + dy;
-      previewInner.style.transform = `translate(${this.dmPanX}%, ${this.dmPanY}%) scale(${this.dmZoom})`;
-    }, { signal });
-
-    document.addEventListener("mouseup", (e) => {
-      if (panning && e.button === 1) {
-        panning = false;
-      }
+    // Middle button only, for a cursor. A finger has no middle button, and
+    // claiming its drags here would cost the panel its scrolling — the preview
+    // is a tall area in a long column, and look-around only matters while
+    // zoomed out. The layer rectangles keep their own touch drags.
+    previewArea.addEventListener("pointerdown", (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      const startPanX = this.dmPanX;
+      const startPanY = this.dmPanY;
+      trackPointerDrag(e, {
+        onMove: (m) => {
+          const bounds = previewArea.getBoundingClientRect();
+          this.dmPanX = startPanX + ((m.clientX - e.clientX) / bounds.width) * 100;
+          this.dmPanY = startPanY + ((m.clientY - e.clientY) / bounds.height) * 100;
+          previewInner.style.transform = `translate(${this.dmPanX}%, ${this.dmPanY}%) scale(${this.dmZoom})`;
+        },
+      });
     }, { signal });
   }
 
@@ -1967,173 +1966,6 @@ export class DmControlPanel extends ItemView {
         panY: (this.playerPanY / 100) * tvH,
         zoom: this.playerZoom,
       },
-    });
-  }
-
-  private initFogDrawCanvas(drawCanvas: HTMLCanvasElement, layer: ImageLayer) {
-    // Load source image to get aspect ratio for the draw canvas
-    const img = new Image();
-    img.onload = () => {
-      const wrapper = drawCanvas.parentElement!;
-      const wrapperWidth = wrapper.clientWidth || 300;
-      const aspect = img.naturalHeight / img.naturalWidth;
-      const canvasW = wrapperWidth;
-      const canvasH = Math.round(canvasW * aspect);
-      drawCanvas.width = canvasW;
-      drawCanvas.height = canvasH;
-      drawCanvas.style.width = `${canvasW}px`;
-      drawCanvas.style.height = `${canvasH}px`;
-
-      this.drawFogPreviewOnCanvas(drawCanvas, layer);
-      this.setupFogDrawInteraction(drawCanvas, layer);
-    };
-    img.src = layer.dataUrl;
-  }
-
-  private drawFogPreviewOnCanvas(drawCanvas: HTMLCanvasElement, layer: ImageLayer) {
-    const ctx = drawCanvas.getContext("2d")!;
-    const cw = drawCanvas.width;
-    const ch = drawCanvas.height;
-
-    // Draw the image first (as background reference)
-    ctx.clearRect(0, 0, cw, ch);
-    const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, cw, ch);
-      // Draw fog overlay on top
-      const fogCanvas = this.getFogCanvas(layer);
-      ctx.globalAlpha = 0.7;
-      ctx.drawImage(fogCanvas, 0, 0, cw, ch);
-      ctx.globalAlpha = 1.0;
-    };
-    img.src = layer.dataUrl;
-  }
-
-  private setupFogDrawInteraction(drawCanvas: HTMLCanvasElement, layer: ImageLayer) {
-    let drawing = false;
-    let startX = 0;
-    let startY = 0;
-    const fogCanvas = this.getFogCanvas(layer);
-    const fogCtx = fogCanvas.getContext("2d")!;
-
-    const toFogCoord = (canvasX: number, canvasY: number) => {
-      const rect = drawCanvas.getBoundingClientRect();
-      const x = ((canvasX - rect.left) / rect.width) * fogCanvas.width;
-      const y = ((canvasY - rect.top) / rect.height) * fogCanvas.height;
-      return { x, y };
-    };
-
-    const isReveal = () => this.fogTool.startsWith("reveal");
-    const isFreehand = () => this.fogTool === "reveal-eraser" || this.fogTool === "fog-pen";
-    const brushSize = fogCanvas.width * 0.05; // 5% of fog width
-
-    const applyFreehand = (cx: number, cy: number) => {
-      fogCtx.globalCompositeOperation = isReveal() ? "destination-out" : "source-over";
-      fogCtx.fillStyle = isReveal() ? "rgba(0,0,0,1)" : "black";
-      fogCtx.beginPath();
-      fogCtx.arc(cx, cy, brushSize, 0, Math.PI * 2);
-      fogCtx.fill();
-      fogCtx.globalCompositeOperation = "source-over";
-    };
-
-    const applyShape = (x1: number, y1: number, x2: number, y2: number) => {
-      fogCtx.globalCompositeOperation = isReveal() ? "destination-out" : "source-over";
-      fogCtx.fillStyle = isReveal() ? "rgba(0,0,0,1)" : "black";
-
-      const isCircle = this.fogTool === "reveal-circle" || this.fogTool === "fog-circle";
-      if (isCircle) {
-        const cx = (x1 + x2) / 2;
-        const cy = (y1 + y2) / 2;
-        const rx = Math.abs(x2 - x1) / 2;
-        const ry = Math.abs(y2 - y1) / 2;
-        fogCtx.beginPath();
-        fogCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        fogCtx.fill();
-      } else {
-        const sx = Math.min(x1, x2);
-        const sy = Math.min(y1, y2);
-        const sw = Math.abs(x2 - x1);
-        const sh = Math.abs(y2 - y1);
-        fogCtx.fillRect(sx, sy, sw, sh);
-      }
-      fogCtx.globalCompositeOperation = "source-over";
-    };
-
-    const refreshPreview = () => {
-      this.drawFogPreviewOnCanvas(drawCanvas, layer);
-    };
-
-    const onMouseDown = (e: MouseEvent) => {
-      drawing = true;
-      const { x, y } = toFogCoord(e.clientX, e.clientY);
-      startX = x;
-      startY = y;
-      if (isFreehand()) {
-        applyFreehand(x, y);
-        refreshPreview();
-      }
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!drawing) return;
-      const { x, y } = toFogCoord(e.clientX, e.clientY);
-      if (isFreehand()) {
-        applyFreehand(x, y);
-        refreshPreview();
-      } else {
-        // Show preview of shape being drawn
-        refreshPreview();
-        const ctx = drawCanvas.getContext("2d")!;
-        const cw = drawCanvas.width;
-        const ch = drawCanvas.height;
-        const sx1 = (startX / fogCanvas.width) * cw;
-        const sy1 = (startY / fogCanvas.height) * ch;
-        const sx2 = (x / fogCanvas.width) * cw;
-        const sy2 = (y / fogCanvas.height) * ch;
-
-        ctx.strokeStyle = isReveal() ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.8)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 3]);
-
-        const isCircle = this.fogTool === "reveal-circle" || this.fogTool === "fog-circle";
-        if (isCircle) {
-          const cx = (sx1 + sx2) / 2;
-          const cy = (sy1 + sy2) / 2;
-          const rx = Math.abs(sx2 - sx1) / 2;
-          const ry = Math.abs(sy2 - sy1) / 2;
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
-        }
-        ctx.setLineDash([]);
-      }
-    };
-
-    const onMouseUp = (e: MouseEvent) => {
-      if (!drawing) return;
-      drawing = false;
-      if (!isFreehand()) {
-        const { x, y } = toFogCoord(e.clientX, e.clientY);
-        // Skip tiny drags
-        if (Math.abs(x - startX) > 3 || Math.abs(y - startY) > 3) {
-          applyShape(startX, startY, x, y);
-        }
-      }
-      this.syncFogToLayer(layer);
-      refreshPreview();
-    };
-
-    drawCanvas.addEventListener("mousedown", onMouseDown);
-    drawCanvas.addEventListener("mousemove", onMouseMove);
-    drawCanvas.addEventListener("mouseup", onMouseUp);
-    drawCanvas.addEventListener("mouseleave", () => {
-      if (drawing && isFreehand()) {
-        drawing = false;
-        this.syncFogToLayer(layer);
-        refreshPreview();
-      }
     });
   }
 
@@ -2455,64 +2287,49 @@ export class DmControlPanel extends ItemView {
   }
 
   private makeDraggable(rect: HTMLElement, layer: ImageLayer, preview: HTMLElement) {
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
-    // Cached at mousedown so a mid-drag re-render that detaches `preview`
-    // can't poison the math: a detached element returns width/height = 0,
-    // which would otherwise produce Infinity for dx/dy and corrupt layer.x/y.
-    let startBounds: DOMRect | null = null;
-
-    const onMouseDown = (e: MouseEvent) => {
+    rect.addEventListener("pointerdown", (e: PointerEvent) => {
       e.preventDefault();
+      // Stops the preview's own look-around pan from starting under the finger
+      // that is moving this layer.
       e.stopPropagation();
-      startX = e.clientX;
-      startY = e.clientY;
-      startLeft = layer.x;
-      startTop = layer.y;
-      startBounds = preview.getBoundingClientRect();
+      const startLeft = layer.x;
+      const startTop = layer.y;
+      // Cached at the press so a mid-drag re-render that detaches `preview`
+      // can't poison the math: a detached element returns width/height = 0,
+      // which would otherwise produce Infinity for dx/dy and corrupt layer.x/y.
+      const startBounds = preview.getBoundingClientRect();
       debug(
-        "makeDraggable: mousedown layer", layer.id,
+        "makeDraggable: press layer", layer.id,
         "startLeft=", startLeft.toFixed(2),
         "startTop=", startTop.toFixed(2),
         "bounds=", startBounds.width.toFixed(0), "x", startBounds.height.toFixed(0)
       );
       if (!Number.isFinite(startLeft) || !Number.isFinite(startTop)) {
-        debugWarn("makeDraggable: layer has non-finite coords at mousedown — drag will be a no-op until reset");
+        debugWarn("makeDraggable: layer has non-finite coords at press — drag will be a no-op until reset");
       }
       if (startBounds.width === 0 || startBounds.height === 0) {
-        debugWarn("makeDraggable: preview has zero-size bounds at mousedown — drag will be a no-op");
+        debugWarn("makeDraggable: preview has zero-size bounds at press — drag will be a no-op");
+        return;
       }
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!startBounds || startBounds.width === 0 || startBounds.height === 0) return;
-      const dx = ((e.clientX - startX) / startBounds.width) * 100;
-      const dy = ((e.clientY - startY) / startBounds.height) * 100;
-      layer.x = startLeft + dx;
-      layer.y = startTop + dy;
-      rect.style.left = `${layer.x}%`;
-      rect.style.top = `${layer.y}%`;
-      this.broadcastLayerGeometry();
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-      debug(
-        "makeDraggable: mouseup layer", layer.id,
-        "x=", layer.x.toFixed(2),
-        "y=", layer.y.toFixed(2),
-        "finite=", Number.isFinite(layer.x) && Number.isFinite(layer.y)
-      );
-      startBounds = null;
-      this.broadcastImageLayers();
-    };
-
-    rect.addEventListener("mousedown", onMouseDown);
+      trackPointerDrag(e, {
+        onMove: (m) => {
+          layer.x = startLeft + ((m.clientX - e.clientX) / startBounds.width) * 100;
+          layer.y = startTop + ((m.clientY - e.clientY) / startBounds.height) * 100;
+          rect.style.left = `${layer.x}%`;
+          rect.style.top = `${layer.y}%`;
+          this.broadcastLayerGeometry();
+        },
+        onEnd: () => {
+          debug(
+            "makeDraggable: release layer", layer.id,
+            "x=", layer.x.toFixed(2),
+            "y=", layer.y.toFixed(2),
+            "finite=", Number.isFinite(layer.x) && Number.isFinite(layer.y)
+          );
+          this.broadcastImageLayers();
+        },
+      });
+    });
   }
 
   private moveLayerUp(layer: ImageLayer) {

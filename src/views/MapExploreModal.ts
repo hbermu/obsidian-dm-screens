@@ -12,7 +12,7 @@ import { debug } from "../debug";
 import { fitScale } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
 import { FloatingWindow, type WindowState } from "./FloatingWindow";
-import { blockWebkitGestures, onLongPress, trackPointerDrag } from "./pointerDrag";
+import { blockWebkitGestures, onLongPress, trackPointerDrag, trackTapOrDrag } from "./pointerDrag";
 import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pinchZoom";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
@@ -22,10 +22,6 @@ import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pin
 // the panel. Doors are ALWAYS room boundaries here (regardless of open/closed),
 // so a room stays discrete even with an open door; open/closed only affects LoS
 // on the player screen via the map-walls broadcast.
-// A finger that travels further than this was panning or pinching, not
-// tapping a room.
-const EXPLORE_TAP_SLOP = 12;
-
 export class MapExploreModal extends Modal {
   private fogCanvas: HTMLCanvasElement;
   private redrawOverlay: (() => void) | null = null;
@@ -534,28 +530,8 @@ export class MapExploreModal extends Modal {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      if (e.pointerType !== "touch" && e.pointerType !== "pen") {
-        explore(e.clientX, e.clientY);
-        return;
-      }
       abortTap();
-      const { clientX: sx, clientY: sy } = e;
-      let aborted = false;
-      const stop = trackPointerDrag(e, {
-        onMove: (m) => {
-          if (Math.hypot(m.clientX - sx, m.clientY - sy) > EXPLORE_TAP_SLOP) aborted = true;
-        },
-        onEnd: (u) => {
-          if (!aborted) explore(u.clientX, u.clientY);
-        },
-        onRelease: () => {
-          cancelTap = null;
-        },
-      });
-      cancelTap = () => {
-        aborted = true;
-        stop();
-      };
+      cancelTap = trackTapOrDrag(e, { act: (p) => explore(p.clientX, p.clientY) });
     };
 
     const onMove = (e: PointerEvent) => {

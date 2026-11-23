@@ -83,6 +83,29 @@ test("the drag surfaces hold the gesture, the windows over them still scroll", a
   expect(await touchAction(page, ".dm-floating-window-body")).toBe("auto");
 });
 
+test("the panel's own drag surfaces hold the gesture, and its targets fit a finger", async ({ page }) => {
+  // The DM panel's Player Screen section: a layer rectangle moves and the
+  // inline fog canvas paints, so both keep the gesture, while the preview
+  // around them stays scrollable (`touch-input.md` requirements 4 and 21).
+  expect(await touchAction(page, ".dm-layer-rect")).toBe("none");
+  // The preview area itself keeps scrolling the panel.
+  expect(await touchAction(page, ".dm-layer-preview")).toBe("auto");
+  expect(await touchAction(page, ".dm-fog-draw-canvas-inline")).toBe("none");
+
+  const sizes = await page.evaluate(() => {
+    const box = (sel: string) => {
+      const r = (document.querySelector(sel) as HTMLElement).getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    };
+    return { layerBtn: box(".dm-layer-btn"), toolbarBtn: box(".dm-fog-toolbar button"), slider: box("input[type=range]") };
+  });
+  expect(sizes.toolbarBtn.h).toBeGreaterThanOrEqual(44);
+  expect(sizes.toolbarBtn.w).toBeGreaterThanOrEqual(44);
+  // The layer row's icon buttons grow in height only — see the stylesheet.
+  expect(sizes.layerBtn.h).toBeGreaterThanOrEqual(44);
+  expect(sizes.slider.h).toBeGreaterThanOrEqual(28);
+});
+
 test("a tap explores on the lift, as touch", async ({ page }) => {
   const overlay = await centre(page, ".dm-explore-overlay");
   await page.touchscreen.tap(overlay.x, overlay.y);

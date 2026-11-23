@@ -33,8 +33,9 @@ async function setZoom(value: number): Promise<void> {
   }, value);
 }
 
-// Middle-button drag: the handler binds mousedown on the preview (button 1) and
-// mousemove/mouseup on document; dmPanX/Y advance by delta/bounds * 100.
+// Middle-button drag: the handler takes a middle-button `pointerdown` on the
+// preview and tracks the pointer on document; dmPanX/Y advance by
+// delta/bounds * 100. A finger drags with no button instead (`touch-input.md`).
 async function panMiddle(fracX: number, fracY: number): Promise<void> {
   await browser.executeObsidian((_app, f: { fx: number; fy: number }) => {
     const preview = document.querySelector(".dm-control-panel .dm-layer-preview") as HTMLElement;
@@ -43,9 +44,10 @@ async function panMiddle(fracX: number, fracY: number): Promise<void> {
     const cy = b.top + b.height / 2;
     const tx = cx + b.width * f.fx;
     const ty = cy + b.height * f.fy;
-    preview.dispatchEvent(new MouseEvent("mousedown", { button: 1, clientX: cx, clientY: cy, bubbles: true }));
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: tx, clientY: ty, bubbles: true }));
-    document.dispatchEvent(new MouseEvent("mouseup", { button: 1, clientX: tx, clientY: ty, bubbles: true }));
+    const base = { pointerId: 1, pointerType: "mouse", bubbles: true };
+    preview.dispatchEvent(new PointerEvent("pointerdown", { ...base, button: 1, clientX: cx, clientY: cy }));
+    document.dispatchEvent(new PointerEvent("pointermove", { ...base, clientX: tx, clientY: ty }));
+    document.dispatchEvent(new PointerEvent("pointerup", { ...base, button: 1, clientX: tx, clientY: ty }));
   }, { fx: fracX, fy: fracY });
 }
 

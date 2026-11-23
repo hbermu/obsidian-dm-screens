@@ -9,6 +9,8 @@ import type { MapWall } from "../map/types";
 import { parseUvttWalls } from "../map/uvtt";
 import { collectFoundryScenes, sceneImportResult, type FoundryScene } from "../map/foundry";
 import { debug } from "../debug";
+import { blockWebkitGestures, onLongPress, trackTapOrDrag } from "./pointerDrag";
+import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pinchZoom";
 
 type FogTool = "brush" | "rect" | "cell" | "gridrect" | "room";
 type FogMode = "reveal" | "cover";
@@ -25,6 +27,12 @@ export class MapFogModal extends Modal {
   private fogCanvas: HTMLCanvasElement;
   private redrawOverlay: (() => void) | null = null;
   private cleanupDrag: (() => void) | null = null;
+  private cancelStageZoom: Array<() => void> = [];
+  private cancelWebkitGestures: (() => void) | null = null;
+  private cancelChainLongPress: (() => void) | null = null;
+  // Painting fog with a finger needs the map bigger than the modal; the stage
+  // carries the same pinch/wheel zoom as Exploration Mode.
+  private stageView: StageView = { ...IDENTITY_VIEW };
   // local working copy; mutations call commitWalls
   private walls: MapWall[] = [];
   // chain anchor in natural map coords
@@ -75,6 +83,7 @@ export class MapFogModal extends Modal {
     const tabRow = contentEl.createDiv("dm-fog-tabs");
     const fogTabBtn = tabRow.createEl("button", { text: "Fog" });
     const wallsTabBtn = tabRow.createEl("button", { text: "Walls" });
+    const zoomBtn = tabRow.createEl("button", { cls: "dm-fog-zoom-btn" });
     const syncTabActive = () => {
       fogTabBtn.classList.toggle("dm-fog-active", this.editorMode === "fog");
       wallsTabBtn.classList.toggle("dm-fog-active", this.editorMode === "walls");
@@ -86,10 +95,12 @@ export class MapFogModal extends Modal {
     const stage = contentEl.createDiv("dm-fog-stage");
     stage.style.aspectRatio = `${this.map.naturalWidth} / ${this.map.naturalHeight}`;
 
+    const inner = stage.createDiv("dm-fog-inner");
+
     const resourceUrl = this.plugin.transport.displayUrl(this.map.url);
     if (resourceUrl) {
       if (this.map.mediaType === "video") {
-        const v = stage.createEl("video");
+        const v = inner.createEl("video");
         v.src = resourceUrl;
         v.muted = true;
         v.loop = true;
@@ -97,7 +108,7 @@ export class MapFogModal extends Modal {
         v.playsInline = true;
         v.play().catch(() => {});
       } else {
-        const img = stage.createEl("img");
+        const img = inner.createEl("img");
         img.src = this.panel.previewMediaSrc(this.map, resourceUrl);
         img.alt = "";
       }
@@ -105,12 +116,47 @@ export class MapFogModal extends Modal {
       debug("MapFogModal: no resource path for", this.map.url);
     }
 
-    const overlay = stage.createEl("canvas", { cls: "dm-fog-overlay" });
+    const overlay = inner.createEl("canvas", { cls: "dm-fog-overlay" });
     overlay.width = this.fogCanvas.width;
     overlay.height = this.fogCanvas.height;
     const octx = overlay.getContext("2d")!;
 
     const fogScale = this.fogCanvas.width / this.map.naturalWidth;
+
+    const applyStageView = () => {
+      const { zoom, offsetX, offsetY } = this.stageView;
+      inner.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${zoom})`;
+      zoomBtn.textContent = `Zoom: ${Math.round(zoom * 100)}%`;
+      zoomBtn.title = zoom > 1 ? "Click to fit the map to the stage" : "Pinch, or ctrl+wheel, to zoom in";
+      zoomBtn.toggleClass("dm-fog-active", zoom > 1);
+    };
+    const stageSize = () => ({ width: stage.clientWidth, height: stage.clientHeight });
+    const setStageView = (view: StageView) => {
+      this.stageView = view;
+      applyStageView();
+    };
+    applyStageView();
+    this.cancelStageZoom.push(
+      trackPinch(stage, {
+        view: () => this.stageView,
+        apply: setStageView,
+        size: stageSize,
+        // The finger that started painting is the first finger of a pinch, so
+        // the stroke is abandoned rather than committed.
+        onStart: () => {
+          this.cleanupDrag?.();
+          this.cleanupDrag = null;
+        },
+      }),
+      trackWheelZoom(stage, { view: () => this.stageView, apply: setStageView, size: stageSize })
+    );
+    zoomBtn.addEventListener("click", () => {
+      if (this.stageView.zoom === 1) return;
+      setStageView({ ...IDENTITY_VIEW });
+    });
+    // Safari would pinch-zoom the whole app on top of the stage's own gesture.
+    this.cancelWebkitGestures = blockWebkitGestures(this.modalEl);
+
 
     const redraw = () => {
       octx.clearRect(0, 0, overlay.width, overlay.height);
@@ -428,13 +474,22 @@ export class MapFogModal extends Modal {
       this.commit();
     };
 
-    overlay.addEventListener("mousedown", (e: MouseEvent) => {
+    overlay.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
+      this.cleanupDrag?.();
       const start = this.toFog(overlay, e.clientX, e.clientY);
 
       if (this.tool === "room") {
-        handleRoomClick(start.x, start.y);
+        this.cleanupDrag = trackTapOrDrag(e, {
+          act: (p) => {
+            const at = this.toFog(overlay, p.clientX, p.clientY);
+            handleRoomClick(at.x, at.y);
+          },
+          onEnd: () => {
+            this.cleanupDrag = null;
+          },
+        });
         return;
       }
 
@@ -445,7 +500,7 @@ export class MapFogModal extends Modal {
           gridOffsetX: this.panel.state.gridOffsetX,
           gridOffsetY: this.panel.state.gridOffsetY,
         };
-        const onMove = (me: MouseEvent) => {
+        const onMove = (me: PointerEvent) => {
           const cur = this.toFog(overlay, me.clientX, me.clientY);
           redraw();
           const octx = overlay.getContext("2d")!;
@@ -455,11 +510,13 @@ export class MapFogModal extends Modal {
           octx.strokeRect(start.x, start.y, cur.x - start.x, cur.y - start.y);
           octx.setLineDash([]);
         };
-        const onUp = (me: MouseEvent) => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
+        const onUp = (me: PointerEvent) => {
           this.cleanupDrag = null;
           const end = this.toFog(overlay, me.clientX, me.clientY);
+          if (Math.abs(end.x - start.x) < 1 || Math.abs(end.y - start.y) < 1) {
+            redraw();
+            return;
+          }
           const ctx = this.ctx();
           this.applyMode(ctx);
           if (snapToGrid) {
@@ -482,35 +539,27 @@ export class MapFogModal extends Modal {
           redraw();
           this.commit();
         };
-        this.cleanupDrag = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+        this.cleanupDrag = trackTapOrDrag(e, { onMove, onEnd: onUp, intent: "stroke" });
         return;
       }
 
       const paint = this.tool === "brush" ? stampBrush : paintCell;
-      paint(start.x, start.y);
-      redraw();
-      const onMove = (me: MouseEvent) => {
-        const p = this.toFog(overlay, me.clientX, me.clientY);
-        paint(p.x, p.y);
-        redraw();
-      };
-      const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        this.cleanupDrag = null;
-        this.commit();
-      };
-      this.cleanupDrag = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      this.cleanupDrag = trackTapOrDrag(e, {
+        intent: "stroke",
+        act: () => {
+          paint(start.x, start.y);
+          redraw();
+        },
+        onMove: (me) => {
+          const p = this.toFog(overlay, me.clientX, me.clientY);
+          paint(p.x, p.y);
+          redraw();
+        },
+        onEnd: () => {
+          this.cleanupDrag = null;
+          this.commit();
+        },
+      });
     });
   }
 
@@ -540,140 +589,153 @@ export class MapFogModal extends Modal {
       return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
     };
 
-    overlay.addEventListener("mousemove", (e: MouseEvent) => {
+    overlay.addEventListener("pointermove", (e: PointerEvent) => {
       this.cursorNatural = this.toNatural(overlay, e.clientX, e.clientY);
       if (this.chainAnchor || this.rectAnchor) redraw();
     });
 
-    overlay.addEventListener("mouseleave", () => {
+    overlay.addEventListener("pointerleave", () => {
       this.cursorNatural = null;
       if (this.chainAnchor || this.rectAnchor) redraw();
     });
 
+    const endChain = () => {
+      if (!this.chainAnchor) return;
+      this.chainAnchor = null;
+      redraw();
+    };
     overlay.addEventListener("contextmenu", (e: MouseEvent) => {
       e.preventDefault();
       // Right-click ends the chain
-      if (this.chainAnchor) {
-        this.chainAnchor = null;
-        redraw();
-      }
+      endChain();
+    });
+    // A finger has no second button, so holding the map closes the chain.
+    this.cancelChainLongPress?.();
+    this.cancelChainLongPress = onLongPress(overlay, () => {
+      this.cleanupDrag?.();
+      this.cleanupDrag = null;
+      endChain();
     });
 
-    overlay.addEventListener("mousedown", (e: MouseEvent) => {
+    overlay.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
+      this.cleanupDrag?.();
 
-      let nat = this.toNatural(overlay, e.clientX, e.clientY);
-      if (this.wallsSnap) nat = this.snapPoint(nat.x, nat.y);
+      // The Rect tool is a drag; every other walls tool places or removes one
+      // thing, so a finger commits it on the lift (`pointerDrag.ts`).
+      if (this.wallsTool !== "rect") {
+        this.cleanupDrag = trackTapOrDrag(e, {
+          act: (p) => this.placeWall(this.natAt(overlay, p), distToSegment, redraw, fogScale),
+          onEnd: () => {
+            this.cleanupDrag = null;
+          },
+        });
+        return;
+      }
 
-      if (this.wallsTool === "wall" || this.wallsTool === "door") {
-        if (!this.chainAnchor) {
-          this.chainAnchor = nat;
+      this.rectAnchor = this.natAt(overlay, e);
+      const onMove = (me: PointerEvent) => {
+        this.cursorNatural = this.toNatural(overlay, me.clientX, me.clientY);
+        redraw();
+      };
+      const onUp = (me: PointerEvent) => {
+        this.cleanupDrag = null;
+        const end = this.toNatural(overlay, me.clientX, me.clientY);
+        const snapped = this.wallsSnap ? this.snapPoint(end.x, end.y) : end;
+        const anchor = this.rectAnchor!;
+        this.rectAnchor = null;
+        const minX = Math.min(anchor.x, snapped.x);
+        const minY = Math.min(anchor.y, snapped.y);
+        const maxX = Math.max(anchor.x, snapped.x);
+        const maxY = Math.max(anchor.y, snapped.y);
+        if (maxX - minX < 0.5 || maxY - minY < 0.5) {
           redraw();
           return;
         }
-        const anchor = this.chainAnchor;
-        // Ignore zero-length segments
-        if (Math.hypot(nat.x - anchor.x, nat.y - anchor.y) > 0.5) {
-          const wall: MapWall = {
-            x1: anchor.x,
-            y1: anchor.y,
-            x2: nat.x,
-            y2: nat.y,
-            ...(this.wallsTool === "door" ? { door: true, open: false } : {}),
-          };
-          this.walls = [...this.walls, wall];
-          void this.panel.commitWalls([...this.walls]);
-        }
+        const newWalls: MapWall[] = [
+          { x1: minX, y1: minY, x2: maxX, y2: minY },
+          { x1: maxX, y1: minY, x2: maxX, y2: maxY },
+          { x1: maxX, y1: maxY, x2: minX, y2: maxY },
+          { x1: minX, y1: maxY, x2: minX, y2: minY },
+        ];
+        this.walls = [...this.walls, ...newWalls];
+        void this.panel.commitWalls([...this.walls]);
+        redraw();
+      };
+      const stop = trackTapOrDrag(e, { onMove, onEnd: onUp, intent: "stroke" });
+      this.cleanupDrag = () => {
+        stop();
+        this.rectAnchor = null;
+      };
+    });
+  }
+
+  private natAt(overlay: HTMLCanvasElement, e: PointerEvent): { x: number; y: number } {
+    const nat = this.toNatural(overlay, e.clientX, e.clientY);
+    return this.wallsSnap ? this.snapPoint(nat.x, nat.y) : nat;
+  }
+
+  // Wall, Door, Erase and Toggle door: one press places or removes one thing.
+  private placeWall(
+    nat: { x: number; y: number },
+    distToSegment: (px: number, py: number, w: MapWall) => number,
+    redraw: () => void,
+    fogScale: number
+  ) {
+    if (this.wallsTool === "wall" || this.wallsTool === "door") {
+      if (!this.chainAnchor) {
         this.chainAnchor = nat;
         redraw();
         return;
       }
-
-      const hitRadius = 12 / fogScale;
-
-      if (this.wallsTool === "erase") {
-        let nearest: MapWall | null = null;
-        let nearestDist = Infinity;
-        for (const w of this.walls) {
-          const d = distToSegment(nat.x, nat.y, w);
-          if (d < hitRadius && d < nearestDist) {
-            nearestDist = d;
-            nearest = w;
-          }
-        }
-        if (nearest) {
-          this.walls = this.walls.filter((w) => w !== nearest);
-          void this.panel.commitWalls([...this.walls]);
-          redraw();
-        }
-        return;
-      }
-
-      if (this.wallsTool === "toggle") {
-        let nearest: MapWall | null = null;
-        let nearestDist = Infinity;
-        for (const w of this.walls) {
-          if (!w.door) continue;
-          const d = distToSegment(nat.x, nat.y, w);
-          if (d < hitRadius && d < nearestDist) {
-            nearestDist = d;
-            nearest = w;
-          }
-        }
-        if (nearest) {
-          const toggled = nearest;
-          this.walls = this.walls.map((w) => (w === toggled ? { ...w, open: !w.open } : w));
-          void this.panel.commitWalls([...this.walls]);
-          redraw();
-        }
-        return;
-      }
-
-      if (this.wallsTool === "rect") {
-        this.rectAnchor = nat;
-        const onMove = (me: MouseEvent) => {
-          this.cursorNatural = this.toNatural(overlay, me.clientX, me.clientY);
-          redraw();
+      const anchor = this.chainAnchor;
+      // Ignore zero-length segments
+      if (Math.hypot(nat.x - anchor.x, nat.y - anchor.y) > 0.5) {
+        const wall: MapWall = {
+          x1: anchor.x,
+          y1: anchor.y,
+          x2: nat.x,
+          y2: nat.y,
+          ...(this.wallsTool === "door" ? { door: true, open: false } : {}),
         };
-        const onUp = (me: MouseEvent) => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          this.cleanupDrag = null;
-          const end = this.toNatural(overlay, me.clientX, me.clientY);
-          const snapped = this.wallsSnap ? this.snapPoint(end.x, end.y) : end;
-          const anchor = this.wallsSnap && this.rectAnchor
-            ? this.snapPoint(this.rectAnchor.x, this.rectAnchor.y)
-            : this.rectAnchor!;
-          this.rectAnchor = null;
-          const minX = Math.min(anchor.x, snapped.x);
-          const minY = Math.min(anchor.y, snapped.y);
-          const maxX = Math.max(anchor.x, snapped.x);
-          const maxY = Math.max(anchor.y, snapped.y);
-          if (maxX - minX < 0.5 || maxY - minY < 0.5) {
-            redraw();
-            return;
-          }
-          const newWalls: MapWall[] = [
-            { x1: minX, y1: minY, x2: maxX, y2: minY },
-            { x1: maxX, y1: minY, x2: maxX, y2: maxY },
-            { x1: maxX, y1: maxY, x2: minX, y2: maxY },
-            { x1: minX, y1: maxY, x2: minX, y2: minY },
-          ];
-          this.walls = [...this.walls, ...newWalls];
-          void this.panel.commitWalls([...this.walls]);
-          redraw();
-        };
-        this.cleanupDrag = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          this.rectAnchor = null;
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-        return;
+        this.walls = [...this.walls, wall];
+        void this.panel.commitWalls([...this.walls]);
       }
-    });
+      this.chainAnchor = nat;
+      redraw();
+      return;
+    }
+
+    const hitRadius = 12 / fogScale;
+    const nearest = (eligible: (w: MapWall) => boolean): MapWall | null => {
+      let found: MapWall | null = null;
+      let foundDist = Infinity;
+      for (const w of this.walls) {
+        if (!eligible(w)) continue;
+        const d = distToSegment(nat.x, nat.y, w);
+        if (d < hitRadius && d < foundDist) {
+          foundDist = d;
+          found = w;
+        }
+      }
+      return found;
+    };
+
+    if (this.wallsTool === "erase") {
+      const hit = nearest(() => true);
+      if (!hit) return;
+      this.walls = this.walls.filter((w) => w !== hit);
+      void this.panel.commitWalls([...this.walls]);
+      redraw();
+      return;
+    }
+
+    const door = nearest((w) => !!w.door);
+    if (!door) return;
+    this.walls = this.walls.map((w) => (w === door ? { ...w, open: !w.open } : w));
+    void this.panel.commitWalls([...this.walls]);
+    redraw();
   }
 
   importUvttDoc(doc: unknown) {
@@ -715,6 +777,12 @@ export class MapFogModal extends Modal {
     this.cursorNatural = null;
     this.rectAnchor = null;
     this.redrawOverlay = null;
+    for (const cancel of this.cancelStageZoom.splice(0)) cancel();
+    this.cancelWebkitGestures?.();
+    this.cancelWebkitGestures = null;
+    this.cancelChainLongPress?.();
+    this.cancelChainLongPress = null;
+    this.stageView = { ...IDENTITY_VIEW };
     this.contentEl.empty();
   }
 }

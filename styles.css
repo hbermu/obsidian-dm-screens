@@ -2178,6 +2178,12 @@
   overflow: hidden;
   background: var(--background-secondary);
 }
+/* The zoomed box the media and the overlay ride on; the stage clips it. */
+.dm-fog-inner {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+}
 .dm-fog-stage img,
 .dm-fog-stage video {
   position: absolute;
@@ -2198,6 +2204,11 @@
   display: flex;
   gap: 4px;
   margin-bottom: 6px;
+}
+/* Zoom is a property of the stage, not of a tab, so it sits apart from the
+   two tab buttons. */
+.dm-fog-zoom-btn {
+  margin-left: auto;
 }
 
 .dm-explore-modal {
@@ -2415,7 +2426,9 @@
 .dm-map-vision-dot,
 .dm-map-aoe-rot-handle,
 .dm-map-viewport-rect,
-.dm-player-viewport-rect {
+.dm-player-viewport-rect,
+.dm-layer-rect,
+.dm-fog-draw-canvas-inline {
   touch-action: none;
 }
 
@@ -2430,8 +2443,27 @@
 
   .dm-explore-bar button,
   .dm-section-actions button,
-  .dm-explore-open-btn {
+  .dm-explore-open-btn,
+  .dm-fog-tabs button,
+  .dm-fog-toolbar button {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  /* The layer row's icon buttons grow in height only: they sit side by side in
+     a narrow column, and a 44px floor on both axes would push the row wider
+     than the panel. */
+  .dm-layer-btn {
+    min-height: 44px;
+  }
+
+  /* A slider thumb is the one control a finger cannot miss by being small. */
+  input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  input[type="range"] {
+    height: 28px;
   }
 }

@@ -33,6 +33,9 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
 .dm-floating-window { left: 12px; top: 12px; width: 220px; }
 .dm-floating-window-body { max-height: 120px; }
 .dm-floating-window-body p { margin: 0 0 240px; }
+.dm-control-panel { position: fixed; right: 0; bottom: 0; width: 320px; background: #262626; padding: 8px; }
+.dm-layer-preview { position: relative; height: 120px; }
+.dm-layer-rect { left: 20%; top: 20%; width: 80px; height: 60px; }
 </style>
 
 </head><body>
@@ -46,6 +49,16 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
     <div class="dm-floating-window-body"><p>scrollable</p><p>bottom</p></div>
   </div>
 </div></div></div>
+<div class="dm-control-panel">
+  <div class="dm-layer-preview"><div class="dm-layer-preview-inner">
+    <div class="dm-layer-rect"><div class="dm-layer-rect-frame"><canvas class="dm-fog-draw-canvas-inline" width="80" height="60"></canvas></div></div>
+  </div></div>
+  <div class="dm-layer-row">
+    <div class="dm-layer-left-col"><button class="dm-layer-btn dm-layer-vis-toggle">eye</button></div>
+    <input type="range" min="0" max="100" value="50">
+  </div>
+  <div class="dm-fog-toolbar"><button>Brush</button></div>
+</div>
 <script>${bundle.outputFiles[0].text}</script>
 </body></html>`;
   const out = path.join(harnessOutDir, "touch.html");

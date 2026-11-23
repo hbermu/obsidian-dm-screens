@@ -39,6 +39,60 @@ export function trackPointerDrag(start: PointerEvent, opts: DragOptions): () => 
   return cleanup;
 }
 
+// A finger that travels further than this was panning or pinching, not
+// pressing a point.
+export const TAP_SLOP = 12;
+
+export type GestureIntent = "tap" | "stroke";
+
+export interface GestureOptions {
+  // What the gesture does, run once, at the moment the gesture is committed
+  // to. A gesture whose work is all in `onMove` leaves it out and is still
+  // gated the same way.
+  act?: (e: PointerEvent) => void;
+  onMove?: (e: PointerEvent) => void;
+  onEnd?: (e: PointerEvent) => void;
+  // "tap": a finger that slides was panning and does nothing. "stroke": a
+  // finger that slides starts the gesture where it landed.
+  intent?: GestureIntent;
+  slop?: number;
+}
+
+// A cursor acts on the press, because nothing else can arrive. A finger cannot:
+// the first finger of a pinch looks exactly like a press, so the action waits
+// until the gesture is unambiguous — the finger lifted where it landed (a tap),
+// or it started travelling (a stroke). Until then nothing is painted, toggled
+// or revealed, and `onEnd` runs only for a gesture that acted, so cancelling
+// the returned disposer — which is what a pinch does — commits nothing.
+export function trackTapOrDrag(start: PointerEvent, opts: GestureOptions): () => void {
+  const defer = start.pointerType === "touch" || start.pointerType === "pen";
+  const slop = opts.slop ?? TAP_SLOP;
+  const stroke = opts.intent === "stroke";
+  let acted = false;
+  const act = (e: PointerEvent) => {
+    if (acted) return;
+    acted = true;
+    opts.act?.(e);
+  };
+  if (!defer) act(start);
+  let travelled = false;
+  return trackPointerDrag(start, {
+    onMove: (m) => {
+      if (!travelled && Math.hypot(m.clientX - start.clientX, m.clientY - start.clientY) > slop) {
+        travelled = true;
+        // The stroke belongs to the point the finger landed on, not to the
+        // point where it crossed the slop.
+        if (defer && stroke) act(start);
+      }
+      if (acted) opts.onMove?.(m);
+    },
+    onEnd: (e) => {
+      if (defer && !travelled) act(e);
+      if (acted) opts.onEnd?.(e);
+    },
+  });
+}
+
 export const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP = 10;
 
