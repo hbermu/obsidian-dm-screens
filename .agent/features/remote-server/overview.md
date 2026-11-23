@@ -12,8 +12,8 @@
 - `src/transport/assetUpload.ts` — `AssetPublisher`: fingerprint lookup, chunked upload, Hydrus by hash, the progress Notice, `rewrite` of outgoing messages
 - `src/transport/remoteMapData.ts` — `RemoteMapData`: the server-backed store for map configs, calibration profiles, fog, walls and asset sources
 - `src/protocol.ts` — `PROTOCOL_VERSION` and the control-channel message types shared with the conformance suite
-- `src/main.ts` — `effectiveServerMode`, `buildTransport`, `setServerMode`, `startSession`, `toggleServer`, the remote hooks (`onRemoteSession`, `onRemoteRole`, `onRemoteMirror`, `applyScreens`), `exploreModals`
-- `src/views/DmControlPanel.ts` — `renderRemoteServerSection` (Connect/Disconnect, status), `renderReadonlyBanner`, the inert `.dm-session` wrapper, `reloadFromSession`
+- `src/main.ts` — `sessionIsLocal`, `sourceLabels`, `reloadLocalSession`, `effectiveServerMode`, `buildTransport`, `setServerMode`, `startSession`, `toggleServer`, the remote hooks (`onRemoteSession`, `onRemoteRole`, `onRemoteMirror`, `applyScreens`), `exploreModals`
+- `src/views/DmControlPanel.ts` — `reloadFromLocal`, `renderRemoteServerSection` (Connect/Disconnect, status), `renderReadonlyBanner`, the inert `.dm-session` wrapper, `reloadFromSession`
 - `src/views/MapScreenPanel.ts` — `resetForSession`; media published through `transport.mediaUrl` in `setVaultMap`
 - `src/views/MapExploreModal.ts` — `applyEditable`
 - `src/views/DnDBeyondPanel.ts` — polls broadcast only while `canEditSession()`
@@ -39,6 +39,13 @@ The device identity is deliberately **not** a setting: `data.json` may be synced
 2. Every DM-side emitter and persister (`DmControlPanel`, `MapScreenPanel`, `MapFogModal`, `MapCalibrationModal`, `HydrusExplorerModal`, `DnDBeyondPanel`, the scene loader) shall send broadcasts, publish media and read or write map data only through the active `SceneTransport`, so the two modes differ in transport alone and not in how state is computed.
 3. While running on Obsidian mobile (`Platform.isDesktopApp` false), the plugin shall run in remote mode whatever `serverMode` holds (`effectiveServerMode`, computed and never written back, because `data.json` may sync to a desktop that keeps its own choice), shall hide the mode selector, and shall never start the embedded server. `src/server.ts` shall import Node's `http` as types only and `require` it, like `ws`, when the server starts, so loading the plugin on mobile never touches either module. No other module may touch Node while the bundle loads either: fflate is imported from its `fflate/browser` build (its Node build calls `module.createRequire` at load), and mediabunny is required on first use inside the embedded server's video encoder.
 4. `manifest.json` shall declare `isDesktopOnly: false`.
+
+### Session ownership
+
+4b. While the mode is remote, the server owns the session, so the plugin shall not write session state into `data.json`: `lastBroadcastCache`, `lastImageLayers` and `lastSourceLabels` shall keep whatever the last embedded session left there. The remote session's source labels live in memory for as long as the mode lasts.
+4c. While the mode is remote, the DM panel shall not restore from `data.json` on open; `control-hello` is what rebuilds it (requirement 13), and the stored session belongs to the other mode.
+4d. When the DM switches back to embedded, the plugin shall reload the local session — the `ReplayCache` from `lastBroadcastCache` and every open panel from `data.json` — so nothing of the server's scene lingers, whose `/assets/` URLs the embedded server cannot serve.
+4e. Switching modes shall delete nothing: the credentials, map configs, calibration profiles, fog and walls sidecars, the Hydrus cache and the local preferences all survive a round trip, so returning to embedded mode resumes where it left off.
 
 ### Connecting
 
@@ -90,6 +97,7 @@ The control-channel messages are specified in `control-channel.md`. Player- and 
 - `src/__tests__/remote-map-data.test.ts` — load once per hello, PUT/DELETE per change with encoded keys, fog as an asset, sources written on change, one warning on a refused write
 - `src/__tests__/ddb-panel-tracking-state.test.ts` — a read-only device does not broadcast polls (requirement 18)
 - `src/__tests__/bundle-smoke.integration.test.ts` — the built `main.js` loads in a sandbox whose `require` yields only `obsidian`, with no `process` or `Buffer`, as on Obsidian mobile (requirement 3; runs after `make build`)
+- `src/__tests__/session-ownership.test.ts` — a round trip between modes: the stored session untouched while remote, the two modes' labels kept apart, persistence resuming on return, and the server's scene dropped from memory (requirements 4b–4e)
 - `src/__tests__/mobile-load.test.ts` — with `http` and `ws` unloadable and `Platform.isDesktopApp` false, the modules load, the plugin runs remote without rewriting `serverMode`, never starts the embedded server, and names an iPad (requirements 3, 6)
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian against the server container (`make test-e2e-remote`): the map published and served by hash, a layer relayed as an asset without its source, read-only on another device's claim and Take control back, the panel rebuilt from the session after a reconnect
 
