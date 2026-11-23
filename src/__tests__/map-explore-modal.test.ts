@@ -897,3 +897,119 @@ describe("MapExploreModal — touch exploration", () => {
     expect(inner.style.transform).toContain("scale(1)");
   });
 });
+
+// happy-dom reports 0 for every clientWidth, which the modal reads as "not
+// measured yet". A phone-width stage has to be faked to exercise the compact
+// layout, and a desktop-width one to prove the choice is the width's.
+function withStageWidth<T>(width: number, run: () => T): T {
+  const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+  const original = Object.getOwnPropertyDescriptor(proto, "clientWidth");
+  Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => width });
+  try {
+    return run();
+  } finally {
+    if (original) Object.defineProperty(proto, "clientWidth", original);
+    else delete proto.clientWidth;
+  }
+}
+
+describe("MapExploreModal — narrow stages", () => {
+  const sheetTabs = (contentEl: HTMLElement) =>
+    Array.from(contentEl.querySelectorAll(".dm-explore-tabs button")).map((b) => b.textContent);
+
+  it("gives a phone-width stage the tabbed sheet instead of three floating windows", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = withStageWidth(390, () => openModal(panel));
+
+    expect(contentEl.querySelectorAll(".dm-floating-window")).toHaveLength(0);
+    expect(sheetTabs(contentEl)).toEqual(["AoEs", "Vision", "Combat"]);
+    // Closed, so the map keeps the whole stage.
+    expect(contentEl.querySelector(".dm-explore-sheet-host")!.classList.contains("dm-explore-sheet-open")).toBe(false);
+
+    modal.onClose();
+  });
+
+  it("opens one panel at a time and closes it again", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = withStageWidth(390, () => openModal(panel));
+    const host = contentEl.querySelector(".dm-explore-sheet-host") as HTMLElement;
+    const [aoesTab, visionTab] = Array.from(contentEl.querySelectorAll(".dm-explore-tabs button")) as HTMLButtonElement[];
+    const click = (el: HTMLElement) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const openTitle = () => contentEl.querySelector(".dm-explore-sheet-title")!.textContent;
+
+    click(aoesTab);
+    expect(host.classList.contains("dm-explore-sheet-open")).toBe(true);
+    expect(openTitle()).toBe("AoEs");
+
+    click(visionTab);
+    expect(openTitle()).toBe("Vision");
+    const open = contentEl.querySelectorAll(".dm-explore-sheet-body-open");
+    expect(open).toHaveLength(1);
+
+    // The open tab is also the close button.
+    click(visionTab);
+    expect(host.classList.contains("dm-explore-sheet-open")).toBe(false);
+
+    modal.onClose();
+  });
+
+  it("mirrors COMBAT into the sheet's own Combat body", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = withStageWidth(390, () => openModal(panel));
+    const mirror = panel.registerCombatMirror.mock.calls.at(-1)![0];
+    const bodies = Array.from(contentEl.querySelectorAll(".dm-explore-sheet-body"));
+
+    expect(bodies).toContain(mirror.body);
+    // The panel writes the round into the header; it has somewhere to go.
+    const extra = document.createElement("span");
+    extra.textContent = "Round 3";
+    mirror.setTitleExtra(extra);
+    expect(contentEl.querySelector(".dm-explore-sheet-extra")!.textContent).toBe("");
+
+    const combatTab = Array.from(contentEl.querySelectorAll(".dm-explore-tabs button")).at(-1) as HTMLButtonElement;
+    combatTab.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(contentEl.querySelector(".dm-explore-sheet-extra")!.textContent).toBe("Round 3");
+
+    modal.onClose();
+  });
+
+  // A window saved on a desktop stage, or a default measured against one, can
+  // land outside a narrower stage — and a window off the stage cannot be
+  // dragged back, which is how two of them ended up stacked on a phone.
+  it("pulls a floating window saved off-stage back inside", () => {
+    const panel = makePanelStub();
+    const modal = new MapExploreModal(
+      appStub as never,
+      {
+        app: appStub,
+        transport: transportStub,
+        canEditSession: () => true,
+        exploreModals: new Set(),
+        sessionIsLocal: () => true,
+        sourceLabels: () => ({}),
+        settings: { mapFogTvOpacity: 0.9, exploreWindows: { aoes: { x: -0.5, y: 0.9, minimized: false } } },
+        saveSettings: vi.fn(),
+      } as never,
+      panel as never,
+      mapStub
+    );
+    const stage = () => modal.contentEl.querySelector(".dm-explore-stage") as HTMLElement;
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 260 });
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 32 });
+    const rect = { left: 0, top: 0, width: 900, height: 600, right: 900, bottom: 600, x: 0, y: 0, toJSON: () => ({}) };
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = () => rect as DOMRect;
+    try {
+      modal.onOpen();
+      const aoes = Array.from(stage().querySelectorAll(".dm-floating-window")).find(
+        (w) => w.querySelector(".dm-floating-window-title")?.textContent === "AoEs"
+      ) as HTMLElement;
+      expect(parseFloat(aoes.style.left)).toBeGreaterThanOrEqual(0);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetWidth;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetHeight;
+      modal.onClose();
+    }
+  });
+});

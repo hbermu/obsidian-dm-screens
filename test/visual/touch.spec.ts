@@ -106,6 +106,35 @@ test("the panel's own drag surfaces hold the gesture, and its targets fit a fing
   expect(sizes.slider.h).toBeGreaterThanOrEqual(28);
 });
 
+test("the compact layout's tabs are a finger's size and the closed sheet keeps off the map", async ({ page }) => {
+  const sizes = await page.evaluate(() => {
+    const host = document.querySelector(".dm-explore-sheet-host") as HTMLElement;
+    const tabs = Array.from(host.querySelectorAll(".dm-explore-tabs button")) as HTMLElement[];
+    const sheet = host.querySelector(".dm-explore-sheet") as HTMLElement;
+    const closedHeight = sheet.getBoundingClientRect().height;
+    host.classList.add("dm-explore-sheet-open");
+    const openHeight = sheet.getBoundingClientRect().height;
+    host.classList.remove("dm-explore-sheet-open");
+    return {
+      tabs: tabs.map((t) => ({ h: t.getBoundingClientRect().height, w: t.getBoundingClientRect().width })),
+      closedHeight,
+      openHeight,
+      stage: (document.querySelector(".dm-explore-stage") as HTMLElement).getBoundingClientRect().height,
+    };
+  });
+
+  expect(sizes.tabs).toHaveLength(3);
+  for (const tab of sizes.tabs) {
+    expect(tab.h).toBeGreaterThanOrEqual(44);
+    // Three tabs share the width, so each one is still comfortably wide.
+    expect(tab.w).toBeGreaterThanOrEqual(44);
+  }
+  // Closed, the sheet takes no height at all: only the tab row is on screen.
+  expect(sizes.closedHeight).toBe(0);
+  expect(sizes.openHeight).toBeGreaterThan(0);
+  expect(sizes.openHeight).toBeLessThan(sizes.stage);
+});
+
 test("a tap explores on the lift, as touch", async ({ page }) => {
   const overlay = await centre(page, ".dm-explore-overlay");
   await page.touchscreen.tap(overlay.x, overlay.y);

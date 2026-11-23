@@ -12,6 +12,7 @@ import { debug } from "../debug";
 import { fitScale } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
 import { FloatingWindow, type WindowState } from "./FloatingWindow";
+import { ExploreSheet, type SheetPanel } from "./ExploreSheet";
 import { blockWebkitGestures, onLongPress, trackPointerDrag, trackTapOrDrag } from "./pointerDrag";
 import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pinchZoom";
 
@@ -22,6 +23,19 @@ import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pin
 // the panel. Doors are ALWAYS room boundaries here (regardless of open/closed),
 // so a room stays discrete even with an open door; open/closed only affects LoS
 // on the player screen via the map-walls broadcast.
+// Two 260 px windows, a 320 px one and margins need about this much stage to
+// be placed without overlapping.
+const COMPACT_STAGE_WIDTH = 700;
+
+// What the modal needs of its three panels, whichever layout provides them.
+interface ExplorePanels {
+  aoes: SheetPanel;
+  vision: SheetPanel;
+  combat: SheetPanel;
+  clamp(): void;
+  destroy(): void;
+}
+
 export class MapExploreModal extends Modal {
   private fogCanvas: HTMLCanvasElement;
   private redrawOverlay: (() => void) | null = null;
@@ -41,9 +55,8 @@ export class MapExploreModal extends Modal {
   private hoverCell: { x: number; y: number } | null = null;
   private blockedCache: { walls: MapWall[]; fogScale: number; mask: Uint8Array } | null = null;
   private hoverRegion: { cellX: number; cellY: number; region: Uint8Array | null } | null = null;
-  private aoesWindow: FloatingWindow | null = null;
-  private visionWindow: FloatingWindow | null = null;
-  private combatWindow: FloatingWindow | null = null;
+  private panels: ExplorePanels | null = null;
+  private floating = true;
   private disposeCombatMirror: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -361,67 +374,106 @@ export class MapExploreModal extends Modal {
       redraw();
     };
 
-    const defaultAoesState: WindowState = this.plugin.settings.exploreWindows?.["aoes"] || {
-      x: 1 - (260 + 260 + 12 + 12) / stage.clientWidth,
-      y: 12 / stage.clientHeight,
-      minimized: false,
+    // Floating windows need a stage wide enough to put two of them side by
+    // side; below that they stack on top of each other and bury the map, so
+    // the three panels become a tabbed sheet along the bottom instead. The
+    // choice follows the stage's width rather than the device, so a tablet
+    // turned to landscape gets the windows and a narrow desktop pane does not.
+    // A stage that has not been measured yet reports 0; the windows are the
+    // historical layout, so it starts there and the observer below switches
+    // once a real width arrives, rather than flashing the compact layout.
+    const floatingFits = () => stage.clientWidth === 0 || stage.clientWidth >= COMPACT_STAGE_WIDTH;
+
+    const windowState = (id: string, fallback: WindowState): WindowState => {
+      const saved = this.plugin.settings.exploreWindows?.[id];
+      return saved ?? fallback;
     };
-    const defaultVisionState: WindowState = this.plugin.settings.exploreWindows?.["vision"] || {
-      x: 1 - (260 + 12) / stage.clientWidth,
-      y: 12 / stage.clientHeight,
-      minimized: false,
+    const persist = (id: string) => (state: WindowState) => {
+      (this.plugin.settings.exploreWindows ??= {})[id] = state;
+      void this.plugin.saveSettings();
     };
 
-    this.aoesWindow = new FloatingWindow(stage, {
-      id: "aoes",
-      title: "AoEs",
-      initial: defaultAoesState,
-      onChange: (state) => {
-        this.plugin.settings.exploreWindows["aoes"] = state;
-        void this.plugin.saveSettings();
-      },
-    });
+    const buildFloating = (): ExplorePanels => {
+      const margin = 12 / stage.clientWidth;
+      const aoes = new FloatingWindow(stage, {
+        id: "aoes",
+        title: "AoEs",
+        initial: windowState("aoes", { x: 1 - (260 + 260 + 12 + 12) / stage.clientWidth, y: 12 / stage.clientHeight, minimized: false }),
+        onChange: persist("aoes"),
+      });
+      const vision = new FloatingWindow(stage, {
+        id: "vision",
+        title: "Vision",
+        initial: windowState("vision", { x: 1 - (260 + 12) / stage.clientWidth, y: 12 / stage.clientHeight, minimized: false }),
+        onChange: persist("vision"),
+      });
+      const combat = new FloatingWindow(stage, {
+        id: "combat",
+        title: "Combat",
+        width: 320,
+        initial: windowState("combat", { x: margin, y: 12 / stage.clientHeight, minimized: false }),
+        onChange: persist("combat"),
+      });
+      // A window saved on a wider stage, or a default measured against one,
+      // can start outside this one; nothing would bring it back until it was
+      // dragged, and it cannot be dragged while it is off the stage.
+      for (const w of [aoes, vision, combat]) w.clamp();
+      return {
+        aoes,
+        vision,
+        combat,
+        clamp: () => {
+          for (const w of [aoes, vision, combat]) w.clamp();
+        },
+        destroy: () => {
+          for (const w of [aoes, vision, combat]) w.destroy();
+        },
+      };
+    };
 
-    this.visionWindow = new FloatingWindow(stage, {
-      id: "vision",
-      title: "Vision",
-      initial: defaultVisionState,
-      onChange: (state) => {
-        this.plugin.settings.exploreWindows["vision"] = state;
-        void this.plugin.saveSettings();
-      },
-    });
+    const buildSheet = (): ExplorePanels => {
+      const sheet = new ExploreSheet(stage, [
+        { id: "aoes", title: "AoEs" },
+        { id: "vision", title: "Vision" },
+        { id: "combat", title: "Combat" },
+      ]);
+      return {
+        aoes: sheet.panel("aoes"),
+        vision: sheet.panel("vision"),
+        combat: sheet.panel("combat"),
+        clamp: () => sheet.clamp(),
+        destroy: () => sheet.destroy(),
+      };
+    };
 
-    this.combatWindow = new FloatingWindow(stage, {
-      id: "combat",
-      title: "Combat",
-      width: 320,
-      initial: this.plugin.settings.exploreWindows?.["combat"] || {
-        x: 12 / stage.clientWidth,
-        y: 12 / stage.clientHeight,
-        minimized: false,
-      },
-      onChange: (state) => {
-        this.plugin.settings.exploreWindows["combat"] = state;
-        void this.plugin.saveSettings();
-      },
-    });
-    this.disposeCombatMirror = this.panel.registerCombatMirror(this.combatWindow);
+    const buildPanels = () => {
+      this.disposeCombatMirror?.();
+      this.panels?.destroy();
+      this.floating = floatingFits();
+      this.panels = this.floating ? buildFloating() : buildSheet();
+      this.disposeCombatMirror = this.panel.registerCombatMirror(this.panels.combat);
+      renderWindows();
+    };
 
     const renderWindows = () => {
-      this.aoesWindow!.body.empty();
-      this.visionWindow!.body.empty();
-      this.panel.renderAoeSection(this.aoesWindow!.body, this.map, refresh);
-      this.panel.renderVisionSection(this.visionWindow!.body, this.map, refresh);
+      const panels = this.panels!;
+      panels.aoes.body.empty();
+      panels.vision.body.empty();
+      this.panel.renderAoeSection(panels.aoes.body, this.map, refresh);
+      this.panel.renderVisionSection(panels.vision.body, this.map, refresh);
     };
 
-    renderWindows();
+    buildPanels();
     renderMarkers();
 
     this.resizeObserver = new ResizeObserver(() => {
-      this.aoesWindow?.clamp();
-      this.visionWindow?.clamp();
-      this.combatWindow?.clamp();
+      // A rotation or a split-view resize can cross the threshold, and the
+      // panels have to follow it mid-session.
+      if (this.panels && this.floating !== floatingFits()) {
+        buildPanels();
+        return;
+      }
+      this.panels?.clamp();
     });
     this.resizeObserver.observe(stage);
 
@@ -841,14 +893,10 @@ export class MapExploreModal extends Modal {
     this.disposeOverlayRepaint = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.aoesWindow?.destroy();
-    this.aoesWindow = null;
-    this.visionWindow?.destroy();
-    this.visionWindow = null;
     this.disposeCombatMirror?.();
     this.disposeCombatMirror = null;
-    this.combatWindow?.destroy();
-    this.combatWindow = null;
+    this.panels?.destroy();
+    this.panels = null;
     this.panel.refreshPanel();
     this.contentEl.empty();
   }

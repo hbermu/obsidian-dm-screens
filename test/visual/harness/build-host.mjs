@@ -48,6 +48,17 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
     <div class="dm-floating-window-header"><div class="dm-floating-window-title">AoEs</div></div>
     <div class="dm-floating-window-body"><p>scrollable</p><p>bottom</p></div>
   </div>
+  <div class="dm-explore-sheet-host">
+    <div class="dm-explore-sheet">
+      <div class="dm-explore-sheet-header">
+        <div class="dm-explore-sheet-title">Vision</div>
+        <div class="dm-explore-sheet-extra"></div>
+        <button class="dm-explore-sheet-close">\u2715</button>
+      </div>
+      <div class="dm-explore-sheet-bodies"><div class="dm-explore-sheet-body dm-explore-sheet-body-open">lights</div></div>
+    </div>
+    <div class="dm-explore-tabs"><button>AoEs</button><button>Vision</button><button>Combat</button></div>
+  </div>
 </div></div></div>
 <div class="dm-control-panel">
   <div class="dm-layer-preview"><div class="dm-layer-preview-inner">
