@@ -1,5 +1,6 @@
 import {
   Plugin,
+  Platform,
   TFile,
   Notice,
 } from "obsidian";
@@ -164,8 +165,14 @@ export default class DmScreenPlugin extends Plugin {
     return this.transport instanceof RemoteTransport ? this.transport : null;
   }
 
+  // Mobile cannot host a server, so it always runs remote. Computed rather
+  // than stored: data.json may sync, and a desktop must keep its own choice.
+  effectiveServerMode(): "embedded" | "remote" {
+    return Platform.isDesktopApp ? this.settings.serverMode : "remote";
+  }
+
   private buildTransport() {
-    if (this.settings.serverMode !== "remote") return new EmbeddedTransport(this);
+    if (this.effectiveServerMode() !== "remote") return new EmbeddedTransport(this);
     return new RemoteTransport(this, {
       onSession: (cache, active) => void this.onRemoteSession(cache, active),
       onRole: (active) => this.onRemoteRole(active),
@@ -319,7 +326,7 @@ export default class DmScreenPlugin extends Plugin {
   }
 
   startServer() {
-    if (this.server) return;
+    if (this.server || !Platform.isDesktopApp) return;
     debug("startServer: port=", this.settings.serverPort, "maxClients=", this.settings.maxClients);
     this.server = new PlayerScreenServer(this, this.replayCache);
     this.server.maxClients = this.settings.maxClients;

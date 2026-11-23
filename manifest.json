@@ -6,5 +6,5 @@
   "description": "Turn your notes into a live player screen and a true-scale battle map for in-person D&D 5e.",
   "author": "Héctor Bermúdez",
   "authorUrl": "https://github.com/hbermu",
-  "isDesktopOnly": true
+  "isDesktopOnly": false
 }

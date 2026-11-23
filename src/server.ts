@@ -1,4 +1,6 @@
-import { createServer, IncomingMessage, ServerResponse, Server } from "http";
+// Types only: Obsidian mobile has no `http`, so the module is required in
+// start(), which never runs there, and loading the plugin never touches it.
+import type { IncomingMessage, ServerResponse, Server } from "http";
 import { TFile } from "obsidian";
 import type DmScreenPlugin from "./main";
 import { debug, debugWarn, debugError } from "./debug";
@@ -260,6 +262,7 @@ export class PlayerScreenServer {
   }
 
   start(port: number) {
+    const { createServer } = require("http") as typeof import("http");
     this.httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       this.handleHttpRequest(req, res);
     });

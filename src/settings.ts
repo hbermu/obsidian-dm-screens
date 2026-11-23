@@ -181,7 +181,7 @@ export class DmScreenSettingTab extends PluginSettingTab {
         );
     }
 
-    if (this.plugin.settings.serverMode === "remote") {
+    if (this.plugin.effectiveServerMode() === "remote") {
       new Setting(containerEl)
         .setName("Remote server URL")
         .setDesc("Base URL of the DM Screen server, e.g. the https address of its reverse proxy. Plain http is accepted only for a local network host.")
@@ -206,7 +206,7 @@ export class DmScreenSettingTab extends PluginSettingTab {
         });
     }
 
-    if (this.plugin.settings.serverMode === "embedded") new Setting(containerEl)
+    if (this.plugin.effectiveServerMode() === "embedded") new Setting(containerEl)
       .setName("Server Port")
       .setDesc("Port for the Player Screen web server")
       .addText((text) =>

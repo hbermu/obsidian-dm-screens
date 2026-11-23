@@ -12,7 +12,7 @@
 - `src/transport/assetUpload.ts` — `AssetPublisher`: fingerprint lookup, chunked upload, Hydrus by hash, the progress Notice, `rewrite` of outgoing messages
 - `src/transport/remoteMapData.ts` — `RemoteMapData`: the server-backed store for map configs, calibration profiles, fog, walls and asset sources
 - `src/protocol.ts` — `PROTOCOL_VERSION` and the control-channel message types shared with the conformance suite
-- `src/main.ts` — `buildTransport` from `serverMode`, `setServerMode`, `startSession`, `toggleServer`, the remote hooks (`onRemoteSession`, `onRemoteRole`, `onRemoteMirror`, `applyScreens`), `exploreModals`
+- `src/main.ts` — `effectiveServerMode`, `buildTransport`, `setServerMode`, `startSession`, `toggleServer`, the remote hooks (`onRemoteSession`, `onRemoteRole`, `onRemoteMirror`, `applyScreens`), `exploreModals`
 - `src/views/DmControlPanel.ts` — `renderRemoteServerSection` (Connect/Disconnect, status), `renderReadonlyBanner`, the inert `.dm-session` wrapper, `reloadFromSession`
 - `src/views/MapScreenPanel.ts` — `resetForSession`; media published through `transport.mediaUrl` in `setVaultMap`
 - `src/views/MapExploreModal.ts` — `applyEditable`
@@ -37,7 +37,7 @@ The device identity is deliberately **not** a setting: `data.json` may be synced
 
 1. The plugin shall support two server modes selected by `serverMode`: `embedded`, which shall behave exactly as specified by `../player-server/overview.md` and every other feature spec, and `remote`.
 2. Every DM-side emitter and persister (`DmControlPanel`, `MapScreenPanel`, `MapFogModal`, `MapCalibrationModal`, `HydrusExplorerModal`, `DnDBeyondPanel`, the scene loader) shall send broadcasts, publish media and read or write map data only through the active `SceneTransport`, so the two modes differ in transport alone and not in how state is computed.
-3. While running on Obsidian mobile, the plugin shall not load the embedded server or `ws`, shall force `serverMode` to `remote`, and shall hide the mode selector. The embedded server shall be obtained through a runtime `require` guarded by `Platform.isDesktopApp`, never a static import, because the Node `http` module does not exist on mobile.
+3. While running on Obsidian mobile (`Platform.isDesktopApp` false), the plugin shall run in remote mode whatever `serverMode` holds (`effectiveServerMode`, computed and never written back, because `data.json` may sync to a desktop that keeps its own choice), shall hide the mode selector, and shall never start the embedded server. `src/server.ts` shall import Node's `http` as types only and `require` it, like `ws`, when the server starts, so loading the plugin on mobile never touches either module.
 4. `manifest.json` shall declare `isDesktopOnly: false`.
 
 ### Connecting
@@ -89,6 +89,7 @@ The control-channel messages are specified in `control-channel.md`. Player- and 
 - `src/__tests__/asset-upload.test.ts` — fingerprint reuse, chunked upload with fingerprint and memo, 409 resume, Hydrus by hash and server fetch, a missing file named, the progress Notice, data URL dedupe by hash, unsupported types, message rewriting and source recording
 - `src/__tests__/remote-map-data.test.ts` — load once per hello, PUT/DELETE per change with encoded keys, fog as an asset, sources written on change, one warning on a refused write
 - `src/__tests__/ddb-panel-tracking-state.test.ts` — a read-only device does not broadcast polls (requirement 18)
+- `src/__tests__/mobile-load.test.ts` — with `http` and `ws` unloadable and `Platform.isDesktopApp` false, the modules load, the plugin runs remote without rewriting `serverMode`, never starts the embedded server, and names an iPad (requirements 3, 6)
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian against the server container (`make test-e2e-remote`): the map published and served by hash, a layer relayed as an asset without its source, read-only on another device's claim and Take control back, the panel rebuilt from the session after a reconnect
 
 ## Non-goals
