@@ -1,9 +1,35 @@
+use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct HydrusConfig {
     pub url: String,
     pub key: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DdbConfig {
+    pub cobalt: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookField {
+    pub key: String,
+    pub value: String,
+}
+
+// The same shape as the plugin's WebhookConfig without its id: the name is
+// what a controller sees and sends by, the url is never returned.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookTarget {
+    pub name: String,
+    pub url: String,
+    pub image_field: String,
+    pub caption_field: String,
+    #[serde(default)]
+    pub extra_fields: Vec<WebhookField>,
 }
 
 #[derive(Clone, Debug)]
@@ -17,6 +43,10 @@ pub struct Config {
     pub asset_retention_days: u64,
     pub derivative_cache_bytes: u64,
     pub hydrus: Option<HydrusConfig>,
+    pub ddb: Option<DdbConfig>,
+    // Points the D&D Beyond endpoints at a stub; unset in production.
+    pub ddb_base: Option<String>,
+    pub webhooks: Vec<WebhookTarget>,
     pub ffmpeg: String,
     pub ffprobe: String,
 }
@@ -26,6 +56,34 @@ const MIN_TOKEN_LEN: usize = 32;
 impl Config {
     // Errors name the offending variable and never echo a value.
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Config, String> {
+        Config::from_lookup_with(get, |path| {
+            std::fs::read_to_string(path).map_err(|e| e.to_string())
+        })
+    }
+
+    pub fn from_lookup_with(
+        get: impl Fn(&str) -> Option<String>,
+        read_file: impl Fn(&str) -> Result<String, String>,
+    ) -> Result<Config, String> {
+        // A secret comes from NAME or from the file NAME_FILE names, so a
+        // mounted secret rotates without editing the deployment. Both at once
+        // is a mistake worth refusing rather than silently preferring one.
+        let secret = |name: &str| -> Result<Option<String>, String> {
+            let file_name = format!("{name}_FILE");
+            let direct = get(name).filter(|v| !v.is_empty());
+            let path = get(&file_name).filter(|v| !v.is_empty());
+            match (direct, path) {
+                (Some(_), Some(_)) => Err(format!("set {name} or {file_name}, not both")),
+                (Some(v), None) => Ok(Some(v)),
+                (None, Some(p)) => Ok(Some(
+                    read_file(&p)
+                        .map_err(|e| format!("{file_name}: {e}"))?
+                        .trim()
+                        .to_string(),
+                )),
+                (None, None) => Ok(None),
+            }
+        };
         let token = |name: &str| -> Result<String, String> {
             let v = get(name).unwrap_or_default();
             if v.len() < MIN_TOKEN_LEN {
@@ -53,7 +111,7 @@ impl Config {
         if port > u16::MAX as u64 {
             return Err("DM_SCREEN_PORT is out of range".into());
         }
-        let hydrus = match (get("DM_SCREEN_HYDRUS_URL"), get("DM_SCREEN_HYDRUS_KEY")) {
+        let hydrus = match (get("DM_SCREEN_HYDRUS_URL"), secret("DM_SCREEN_HYDRUS_KEY")?) {
             (None, None) => None,
             (Some(url), Some(key)) if !url.is_empty() && !key.is_empty() => {
                 check_outbound_url(&url).map_err(|e| format!("DM_SCREEN_HYDRUS_URL: {e}"))?;
@@ -68,6 +126,12 @@ impl Config {
                 );
             }
         };
+        let ddb = secret("DM_SCREEN_DDB_COBALT")?.map(|cobalt| DdbConfig { cobalt });
+        let ddb_base = get("DM_SCREEN_DDB_BASE").filter(|b| !b.is_empty());
+        let webhooks = match secret("DM_SCREEN_WEBHOOKS")? {
+            None => Vec::new(),
+            Some(raw) => parse_webhooks(&raw)?,
+        };
         Ok(Config {
             view_token,
             control_token,
@@ -78,10 +142,34 @@ impl Config {
             asset_retention_days: num("DM_SCREEN_ASSET_RETENTION_DAYS", 90)?,
             derivative_cache_bytes: num("DM_SCREEN_DERIVATIVE_CACHE_MB", 2048)? * 1024 * 1024,
             hydrus,
+            ddb,
+            ddb_base,
+            webhooks,
             ffmpeg: get("DM_SCREEN_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
             ffprobe: get("DM_SCREEN_FFPROBE").unwrap_or_else(|| "ffprobe".into()),
         })
     }
+}
+
+fn parse_webhooks(raw: &str) -> Result<Vec<WebhookTarget>, String> {
+    let targets: Vec<WebhookTarget> = serde_json::from_str(raw)
+        .map_err(|e| format!("DM_SCREEN_WEBHOOKS is not a valid target list: {e}"))?;
+    let mut seen = std::collections::HashSet::new();
+    for t in &targets {
+        if t.name.trim().is_empty() {
+            return Err("DM_SCREEN_WEBHOOKS has a target with an empty name".into());
+        }
+        if !seen.insert(t.name.clone()) {
+            return Err(format!(
+                "DM_SCREEN_WEBHOOKS repeats the target name {}",
+                t.name
+            ));
+        }
+        // The URL carries the credential, so the error names the target only.
+        check_outbound_url(&t.url)
+            .map_err(|e| format!("DM_SCREEN_WEBHOOKS target {}: {e}", t.name))?;
+    }
+    Ok(targets)
 }
 
 // The plugin's src/net/urlPolicy.ts rule: http(s) only, no embedded

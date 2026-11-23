@@ -59,7 +59,8 @@ describe.runIf(onlyOn("remote"))("control channel", () => {
         viewToken: VIEW_TOKEN,
         role: "active",
         holder: { deviceId: DEVICE_A, name: "Device a" },
-        hydrus: false,
+        integrations: { hydrus: false, ddb: false, webhooks: [] },
+        prefs: {},
         cache: {},
         clients: [],
       });

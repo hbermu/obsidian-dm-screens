@@ -538,6 +538,42 @@ pub async fn serve(
     serve_file(&original, content_type(&meta.ext), range).await
 }
 
+// Fetches a public https URL and stores it as an asset. Used for D&D Beyond
+// monster avatars, which the device then never fetches itself.
+pub async fn store_remote(state: &AppState, url: &str) -> Result<String, String> {
+    if !url.starts_with("https://") {
+        return Err("only https is allowed".into());
+    }
+    let res = crate::integrations::http()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.without_url().to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("status {}", res.status().as_u16()));
+    }
+    let mime = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let ext = ext_for_content_type(mime).ok_or("unsupported content type")?;
+    let body = res.bytes().await.map_err(|e| e.without_url().to_string())?;
+    if body.len() as u64 > state.config.max_asset_bytes {
+        return Err("too large".into());
+    }
+    let tmp = state.assets.temp_path(&format!("remote-{}", random_id()));
+    tokio::fs::write(&tmp, &body)
+        .await
+        .map_err(|e| e.to_string())?;
+    let sha = state
+        .assets
+        .ingest(tmp, ext, None)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!("/assets/{sha}.{ext}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

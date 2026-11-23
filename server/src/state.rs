@@ -2,8 +2,12 @@ use crate::allowlist::Allowlist;
 use crate::assets::AssetStore;
 use crate::config::Config;
 use crate::derivatives::DerivativeCache;
+use crate::integrations::ddb::{DdbSession, Endpoints, Tracking};
+use crate::integrations::hydrus::ThumbnailCache;
+use crate::integrations::webhooks::SendLimiter;
 use crate::mapdata::MapData;
 use crate::persist;
+use crate::prefs::Prefs;
 use crate::protocol::{Channel, message_channel};
 use crate::replay::ReplayCache;
 use serde_json::{Value, json};
@@ -45,6 +49,7 @@ pub struct Session {
     pub controls: HashMap<u64, ControlConn>,
     pub holder: Option<Holder>,
     pub mapdata: MapData,
+    pub prefs: Prefs,
 }
 
 impl Session {
@@ -84,18 +89,29 @@ pub struct AppState {
     next_id: AtomicU64,
     pub assets: AssetStore,
     pub derivatives: DerivativeCache,
+    pub thumbnails: ThumbnailCache,
+    pub ddb_endpoints: Endpoints,
+    pub ddb_session: DdbSession,
+    pub ddb_tracking: Tracking,
+    pub limiter: SendLimiter,
     pub dirty: Notify,
 }
 
 impl AppState {
     pub fn new(config: Config, session: Session, assets: AssetStore) -> AppState {
         let derivatives = DerivativeCache::new(&config);
+        let ddb_endpoints = Endpoints::with_base(config.ddb_base.as_deref());
         AppState {
             config,
             session: Mutex::new(session),
             next_id: AtomicU64::new(1),
             assets,
             derivatives,
+            thumbnails: ThumbnailCache::default(),
+            ddb_endpoints,
+            ddb_session: DdbSession::default(),
+            ddb_tracking: Tracking::default(),
+            limiter: SendLimiter::default(),
             dirty: Notify::new(),
         }
     }
@@ -148,6 +164,7 @@ impl AppState {
         persist::Snapshot {
             replay: s.replay.entries().clone(),
             mapdata: s.mapdata.clone(),
+            prefs: s.prefs.clone(),
             assets: self.assets.index_snapshot(),
         }
     }

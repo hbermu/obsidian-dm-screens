@@ -4,9 +4,10 @@ pub mod auth;
 pub mod config;
 pub mod control;
 pub mod derivatives;
-pub mod hydrus;
+pub mod integrations;
 pub mod mapdata;
 pub mod persist;
+pub mod prefs;
 pub mod protocol;
 pub mod replay;
 pub mod state;
@@ -61,6 +62,7 @@ pub fn open(config: Config) -> std::io::Result<Arc<AppState>> {
     let mut session = Session {
         replay: ReplayCache::from_entries(persist::load(&dir.join("replay.json"))),
         mapdata: persist::load(&dir.join("mapdata.json")),
+        prefs: prefs::sanitize(persist::load(&dir.join("prefs.json"))),
         ..Default::default()
     };
     // State restored from disk never passed through relay(), so its assets are
@@ -85,6 +87,11 @@ pub fn open(config: Config) -> std::io::Result<Arc<AppState>> {
 
 pub fn router(state: Arc<AppState>) -> Router {
     let api = Router::new()
+        .route("/api/prefs", get(prefs::get_all))
+        .route(
+            "/api/prefs/{key}",
+            put(prefs::put).layer(DefaultBodyLimit::max(prefs::MAX_PREFS_BODY)),
+        )
         .route("/api/mapdata", get(mapdata::get_all))
         .route(
             "/api/mapdata/{collection}/{key}",
@@ -93,7 +100,33 @@ pub fn router(state: Arc<AppState>) -> Router {
                 .layer(DefaultBodyLimit::max(mapdata::MAX_MAPDATA_BODY)),
         )
         .route("/api/assets/lookup", post(assets::lookup))
-        .route("/api/assets/hydrus", post(hydrus::fetch))
+        .route("/api/assets/hydrus", post(integrations::hydrus::fetch))
+        .route("/api/hydrus/verify", get(integrations::hydrus::verify))
+        .route("/api/hydrus/services", get(integrations::hydrus::services))
+        .route("/api/hydrus/search", post(integrations::hydrus::search))
+        .route("/api/hydrus/metadata", post(integrations::hydrus::metadata))
+        .route("/api/hydrus/tags", get(integrations::hydrus::tags))
+        .route(
+            "/api/hydrus/thumbnail/{hash}",
+            get(integrations::hydrus::thumbnail),
+        )
+        .route("/api/hydrus/file/{hash}", get(integrations::hydrus::file))
+        .route("/api/ddb/validate", get(integrations::ddb::validate))
+        .route("/api/ddb/encounters", get(integrations::ddb::encounters))
+        .route(
+            "/api/ddb/encounters/{id}",
+            get(integrations::ddb::encounter),
+        )
+        .route("/api/ddb/characters", post(integrations::ddb::characters))
+        .route(
+            "/api/ddb/monster-images",
+            post(integrations::ddb::monster_images),
+        )
+        .route("/api/ddb/track", post(integrations::ddb::track))
+        .route(
+            "/api/webhooks/{name}/send",
+            post(integrations::webhooks::send),
+        )
         .route("/api/assets/{sha}", get(assets::get_meta))
         .route("/api/uploads", post(assets::create_upload))
         .route(

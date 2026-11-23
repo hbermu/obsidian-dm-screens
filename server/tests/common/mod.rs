@@ -10,19 +10,24 @@ pub const CONTROL: &str = "ctrl0123456789abcdef0123456789abcdef";
 pub struct Server {
     pub base: String,
     pub state: Arc<dm_screen_server::state::AppState>,
-    pub dir: tempfile::TempDir,
+    pub dir: Option<tempfile::TempDir>,
     pub http: reqwest::Client,
 }
 
 pub async fn start(extra: &[(&str, &str)]) -> Server {
     let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let mut server = start_in(&path, extra).await;
+    server.dir = Some(dir);
+    server
+}
+
+// Same, on a directory the caller keeps, so a test can restart the server.
+pub async fn start_in(data_dir: &std::path::Path, extra: &[(&str, &str)]) -> Server {
     let mut env: HashMap<String, String> = HashMap::from([
         ("DM_SCREEN_VIEW_TOKEN".into(), VIEW.into()),
         ("DM_SCREEN_CONTROL_TOKEN".into(), CONTROL.into()),
-        (
-            "DM_SCREEN_DATA_DIR".into(),
-            dir.path().display().to_string(),
-        ),
+        ("DM_SCREEN_DATA_DIR".into(), data_dir.display().to_string()),
     ]);
     for (k, v) in extra {
         env.insert(k.to_string(), v.to_string());
@@ -36,7 +41,7 @@ pub async fn start(extra: &[(&str, &str)]) -> Server {
     Server {
         base,
         state,
-        dir,
+        dir: None,
         http: reqwest::Client::new(),
     }
 }

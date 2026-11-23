@@ -1,5 +1,6 @@
 use crate::assets::AssetIndex;
 use crate::mapdata::MapData;
+use crate::prefs::Prefs;
 use crate::state::AppState;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -11,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub struct Snapshot {
     pub replay: IndexMap<String, String>,
     pub mapdata: MapData,
+    pub prefs: Prefs,
     pub assets: AssetIndex,
 }
 
@@ -59,6 +61,10 @@ pub fn flush(state: &AppState) {
         (
             "mapdata.json",
             write_atomic(&dir.join("mapdata.json"), &snap.mapdata),
+        ),
+        (
+            "prefs.json",
+            write_atomic(&dir.join("prefs.json"), &snap.prefs),
         ),
         (
             "assets.json",

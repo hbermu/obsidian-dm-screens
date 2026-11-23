@@ -101,7 +101,12 @@ fn hello(state: &AppState, s: &Session, conn: &ControlConn) -> String {
             "viewToken": state.config.view_token,
             "role": role_of(s, conn),
             "holder": s.holder,
-            "hydrus": state.config.hydrus.is_some(),
+            "integrations": {
+                "hydrus": state.config.hydrus.is_some(),
+                "ddb": state.config.ddb.is_some(),
+                "webhooks": state.config.webhooks.iter().map(|w| w.name.clone()).collect::<Vec<_>>(),
+            },
+            "prefs": s.prefs,
             "cache": cache,
             "clients": s.clients(),
         }
@@ -143,6 +148,11 @@ async fn run_control(state: Arc<AppState>, socket: WebSocket, h: Handshake) {
                 tx: tx.clone(),
             };
             let _ = tx.send(Outbound::Text(hello(&state, &s, &conn)));
+            // A controller joining mid-combat sees the tracked encounter at
+            // once instead of waiting out a poll cycle.
+            if let Some(last) = state.ddb_tracking.last_state() {
+                let _ = tx.send(Outbound::Text(last));
+            }
             s.controls.insert(id, conn);
             tracing::info!(
                 id,
@@ -215,7 +225,15 @@ async fn run_control(state: Arc<AppState>, socket: WebSocket, h: Handshake) {
         }
     }
 
-    state.session().controls.remove(&id);
+    let controllers_left = {
+        let mut s = state.session();
+        s.controls.remove(&id);
+        s.controls.len()
+    };
+    // Nobody is listening, so nothing should keep polling D&D Beyond.
+    if controllers_left == 0 {
+        state.ddb_tracking.stop();
+    }
     drop(tx);
     let _ = writer.await;
     if closing {
