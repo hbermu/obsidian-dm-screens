@@ -144,13 +144,11 @@ export class DmControlPanel extends ItemView {
   }
 
   setBackgroundLabel(label: SourceLabel | null) {
-    if (!this.plugin.settings.lastSourceLabels) {
-      this.plugin.settings.lastSourceLabels = {};
-    }
+    const labels = this.plugin.sourceLabels();
     if (label) {
-      this.plugin.settings.lastSourceLabels.background = label;
+      labels.background = label;
     } else {
-      delete this.plugin.settings.lastSourceLabels.background;
+      delete labels.background;
     }
     void this.plugin.saveSettings();
   }
@@ -223,6 +221,12 @@ export class DmControlPanel extends ItemView {
       this.connectedClients = [{ width: s.lastPlayerScreenWidth, height: s.lastPlayerScreenHeight, devicePixelRatio: 1 }];
       this.playerConnected = true;
     }
+    if (!this.plugin.sessionIsLocal()) {
+      // The server's hello rebuilds this panel; data.json holds the last
+      // embedded session and must not be shown over the remote one.
+      debug("DmControlPanel: restoreState skipped — the server owns the session");
+      return;
+    }
     try {
       const layers = JSON.parse(s.lastImageLayers);
       if (Array.isArray(layers) && layers.length > 0) {
@@ -265,7 +269,7 @@ export class DmControlPanel extends ItemView {
       return;
     }
 
-    const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+    const savedLabel = this.plugin.sourceLabels().background;
     const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin }).label;
     new Notice(`Background "${label}" is no longer available`);
     this.activeBackgroundUrl = null;
@@ -308,7 +312,7 @@ export class DmControlPanel extends ItemView {
     }
     const map = this.mapPanel.mapClients[0];
     if (map) s.lastMapScreenClient = { width: map.width, height: map.height, devicePixelRatio: map.devicePixelRatio };
-    s.lastImageLayers = JSON.stringify(this.imageLayers);
+    if (this.plugin.sessionIsLocal()) s.lastImageLayers = JSON.stringify(this.imageLayers);
     this.plugin.saveSettings();
   }
 
@@ -545,6 +549,18 @@ export class DmControlPanel extends ItemView {
   // Remote mode: rebuild every section from the session cache the server
   // handed over. Layer images and fog come back as data URLs, as in embedded
   // mode, so the editing tools and webhooks keep working on them.
+  // The mirror of reloadFromSession for the local session: used when the DM
+  // leaves remote mode, so nothing of the server's scene lingers.
+  async reloadFromLocal(): Promise<void> {
+    this.imageLayers = [];
+    this.activeBackgroundUrl = null;
+    this.activeVideoPath = null;
+    this.mapPanel.resetForSession();
+    this.restored = this.restoreState();
+    await this.restored;
+    this.render();
+  }
+
   async reloadFromSession(): Promise<void> {
     const remote = this.plugin.remote;
     if (!remote) return;
@@ -782,7 +798,7 @@ export class DmControlPanel extends ItemView {
           });
         }
 
-        const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+        const savedLabel = this.plugin.sourceLabels().background;
         const sourceLabel = savedLabel || resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin });
         const labelChip = bgWrap.createDiv("dm-source-label");
         labelChip.textContent = sourceLabel.label;

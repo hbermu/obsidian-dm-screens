@@ -44,6 +44,8 @@ function makeServer() {
   } as any;
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
   (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
   (plugin as any).hydrusApi = () => null;
   return new PlayerScreenServer(plugin);
 }
@@ -52,6 +54,10 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
   const adapter = makeAdapter(files);
   const broadcasts: Array<{ type: string; payload: Record<string, unknown> }> = [];
   const plugin = {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return (this as any).labels ??= {};
+    },
     settings: {
       mapConfigs: {} as Record<string, unknown>,
       mapDefaultPxPerSquare: 140,

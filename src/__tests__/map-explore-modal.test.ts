@@ -147,7 +147,7 @@ function openModal(
 } {
   const modal = new MapExploreModal(
     appStub as never,
-    { app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
+    { app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true, sourceLabels: () => ({}), settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
     panelStub as never,
     mapStub
   );
@@ -218,10 +218,9 @@ describe("MapExploreModal — visible source label", () => {
   it("renders a visible label in the bar with the map label text", () => {
     const panel = makePanelStub();
     const pluginStub = {
-      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(),
-      settings: {
-        lastSourceLabels: { map: { label: "Test Map", title: "Full Title" } },
-      },
+      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true,
+      sourceLabels: () => ({ map: { label: "Test Map", title: "Full Title" } }),
+      settings: {},
     };
     const map: ActiveMap = {
       url: "/vault/maps/test.png",
@@ -244,7 +243,7 @@ describe("MapExploreModal — visible source label", () => {
   it("resolves label from URL when no saved label", () => {
     const panel = makePanelStub();
     const pluginStub = {
-      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(),
+      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true, sourceLabels: () => ({}),
       settings: { lastSourceLabels: {} },
       hydrusCache: null,
     };
@@ -778,7 +777,7 @@ describe("MapExploreModal — Combat window", () => {
     const modal = new MapExploreModal(
       appStub as never,
       {
-        app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(),
+        app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true, sourceLabels: () => ({}),
         settings: { exploreWindows: { combat: { x: 0.25, y: 0.5, minimized: true } } },
         saveSettings: vi.fn(),
       } as never,

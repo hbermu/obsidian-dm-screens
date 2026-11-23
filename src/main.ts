@@ -29,6 +29,7 @@ import { SaveSceneModal } from "./views/SaveSceneModal";
 import { SceneSuggestModal } from "./views/SceneSuggestModal";
 import { generateAccessToken } from "./auth";
 import { redactUrl } from "./redact";
+import type { SourceLabel } from "./sourceLabel";
 
 export default class DmScreenPlugin extends Plugin {
   settings: DmScreenSettings = DEFAULT_SETTINGS;
@@ -37,6 +38,10 @@ export default class DmScreenPlugin extends Plugin {
   transport: SceneTransport = new EmbeddedTransport(this);
   gateway: IntegrationGateway = new LocalGateway(this);
   settingTab: DmScreenSettingTab | null = null;
+  // The remote session's labels: in remote mode the server owns the session,
+  // so data.json keeps the last embedded one untouched and switching back
+  // resumes exactly where it left off.
+  private remoteSourceLabels: { background?: SourceLabel; map?: SourceLabel } = {};
   prefs: SessionPreferences = new SessionPreferences(this);
   // Open Exploration modals, told when this device gains or loses control.
   exploreModals = new Set<{ applyEditable(): void }>();
@@ -228,12 +233,22 @@ export default class DmScreenPlugin extends Plugin {
     if (mode === this.settings.serverMode) return;
     this.stopServer();
     this.remote?.disconnect();
+    this.remoteSourceLabels = {};
     this.settings.serverMode = mode;
     await this.saveSettings();
     (this.gateway as { dispose?: () => void }).dispose?.();
     this.transport = this.buildTransport();
     this.gateway = this.buildGateway();
+    // Back in embedded mode the device's own session counts again: the
+    // in-memory one still holds the server's, whose /assets/ URLs this
+    // server cannot serve.
+    if (mode === "embedded") await this.reloadLocalSession();
     this.refreshOpenDmPanels();
+  }
+
+  async reloadLocalSession(): Promise<void> {
+    this.replayCache.replace(this.settings.lastBroadcastCache);
+    for (const panel of this.panels()) await panel.reloadFromLocal?.();
   }
 
   startSession(): void {
@@ -294,6 +309,7 @@ export default class DmScreenPlugin extends Plugin {
     this.replayCache = new ReplayCache(this.settings.lastBroadcastCache);
     debug("initReplayCache: entries=", this.replayCache.entries.size);
     this.replayCache.onChange(() => {
+      if (!this.sessionIsLocal()) return;
       this.settings.lastBroadcastCache = this.replayCache.toRecord();
       if (this.replayCacheSaveTimer !== null) return;
       this.replayCacheSaveTimer = window.setTimeout(() => {
@@ -470,6 +486,16 @@ export default class DmScreenPlugin extends Plugin {
     }
   }
 
+  // True while this device's own data.json is the session's home.
+  sessionIsLocal(): boolean {
+    return this.transport.mode === "embedded";
+  }
+
+  sourceLabels(): { background?: SourceLabel; map?: SourceLabel } {
+    if (!this.sessionIsLocal()) return this.remoteSourceLabels;
+    return (this.settings.lastSourceLabels ??= {});
+  }
+
   canEditSession(): boolean {
     return this.transport.canEdit();
   }
@@ -491,7 +517,7 @@ export default class DmScreenPlugin extends Plugin {
       new Notice(kind === "player" ? "Nothing on the player screen to save." : "Add a map before saving a map scene.");
       return;
     }
-    const initial = kind === "player" ? "Player screen" : this.settings.lastSourceLabels?.map?.label ?? "Map";
+    const initial = kind === "player" ? "Player screen" : this.sourceLabels().map?.label ?? "Map";
     new SaveSceneModal(
       this.app,
       kind === "player" ? "player screen" : "map",

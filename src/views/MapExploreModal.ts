@@ -97,7 +97,7 @@ export class MapExploreModal extends Modal {
     const doorRadius = Math.max(10, this.panel.state.pxPerSquare * fogScale * 0.35);
 
     const bar = contentEl.createDiv("dm-explore-bar");
-    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const savedLabel = this.plugin.sourceLabels().map;
     const sourceLabel = savedLabel || resolveSourceLabel({ url: this.map.url, plugin: this.plugin });
     const labelEl = bar.createEl("span", { cls: "dm-source-label dm-explore-title" });
     labelEl.textContent = sourceLabel.label;

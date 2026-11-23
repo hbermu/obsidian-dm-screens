@@ -57,6 +57,8 @@ function makePanel(fogOpacity = 1) {
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
   (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
   (plugin as any).hydrusApi = () => null;
   const host = { render: () => {} };
   const panel = new MapScreenPanel(plugin as any, host as any);

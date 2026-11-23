@@ -52,6 +52,8 @@ function makePanel(settings: Record<string, unknown> = {}) {
     saveSettings: vi.fn(async () => {}),
     app: { workspace: { getLeavesOfType: () => [] }, plugins: { getPlugin: () => null } },
   } as any;
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
   (plugin as any).gateway = {
     // Mirrors LocalGateway: the capability follows the settings.
     capabilities: () => ({

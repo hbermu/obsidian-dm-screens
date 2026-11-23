@@ -19,6 +19,10 @@ const PNG_URL = "data:image/png;base64,iVBORw==";
 
 function makePlugin(files: Record<string, Uint8Array>) {
   return {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return (this.settings.lastSourceLabels ??= {});
+    },
     hydrusCache: null,
     buildHydrusClient: () => null,
     imageToDataUrl: vi.fn(async (p: string) => (p in files ? `data:image/png;base64,${p}` : "")),

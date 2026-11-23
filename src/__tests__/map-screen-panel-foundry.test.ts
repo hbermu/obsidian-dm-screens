@@ -33,6 +33,8 @@ function makePanel(client: object | null = {}) {
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
   (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panel = new MapScreenPanel(plugin as any, { render: vi.fn(), beginDrag: vi.fn() } as any);
   panel.activeMap = { url: "/vault/abbey.jpg", mediaType: "image", naturalWidth: 2000, naturalHeight: 1600 };

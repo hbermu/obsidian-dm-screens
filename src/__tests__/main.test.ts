@@ -62,6 +62,8 @@ function makeFakeServer() {
 function makePlugin(settingsOverrides: Record<string, unknown> = {}): DmScreenPlugin {
   const plugin = Object.create(DmScreenPlugin.prototype) as DmScreenPlugin;
   plugin.transport = new EmbeddedTransport(plugin);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
   plugin.settings = { ...DEFAULT_SETTINGS, ...settingsOverrides } as any;
   plugin.server = null;
   plugin.replayCache = new ReplayCache();

@@ -174,7 +174,7 @@ export class MapScreenPanel {
       return;
     }
 
-    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const savedLabel = this.plugin.sourceLabels().map;
     const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url, plugin: this.plugin }).label;
     new Notice(`Map "${label}" is no longer available`);
     this.activeMap = null;
@@ -183,9 +183,7 @@ export class MapScreenPanel {
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
-    if (this.plugin.settings.lastSourceLabels) {
-      delete this.plugin.settings.lastSourceLabels.map;
-    }
+    delete this.plugin.sourceLabels().map;
 
     const mapTypes = ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"];
     this.plugin.replayCache.forget(mapTypes);
@@ -415,10 +413,7 @@ export class MapScreenPanel {
       noteBasename: opts?.noteBasename,
       plugin: this.plugin,
     });
-    if (!this.plugin.settings.lastSourceLabels) {
-      this.plugin.settings.lastSourceLabels = {};
-    }
-    this.plugin.settings.lastSourceLabels.map = sourceLabel;
+    this.plugin.sourceLabels().map = sourceLabel;
     void this.plugin.saveSettings();
 
     this.releasePreviewThumb();
@@ -560,9 +555,7 @@ export class MapScreenPanel {
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
-    if (this.plugin.settings.lastSourceLabels) {
-      delete this.plugin.settings.lastSourceLabels.map;
-    }
+    delete this.plugin.sourceLabels().map;
     void this.plugin.saveSettings();
     this.plugin.broadcast({ type: "map-clear", payload: {} });
     this.host.render();
@@ -1139,7 +1132,7 @@ export class MapScreenPanel {
         });
       }
 
-      const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+      const savedLabel = this.plugin.sourceLabels().map;
       const sourceLabel = savedLabel || resolveSourceLabel({ url: map.url, plugin: this.plugin });
       const labelChip = stage.createDiv("dm-source-label");
       labelChip.textContent = sourceLabel.label;
