@@ -166,7 +166,11 @@ export class DnDBeyondPanel {
 
   private selectEncounter(id: string): void {
     debug("DDB Panel: selectEncounter", id);
-    if (this.tracking) void this.client?.track(null, () => {});
+    // No stop first: `track(id)` replaces whatever is running, on both the
+    // local poller and the server's loop. Asking for a stop and a start in the
+    // same breath used to race over the network — the server logged a tracking
+    // started and a tracking stopped for the same encounter microseconds
+    // apart, and the encounter came back with no combatants.
     this.tracking = false;
     this.selectedEncounterId = id;
     this.polledState = null;

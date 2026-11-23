@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { http } from "./remote-fakes";
+import { flush, http } from "./remote-fakes";
 import { makeRemotePlugin } from "./remote-plugin";
 
 vi.mock("obsidian", async (importOriginal) => {
@@ -121,6 +121,38 @@ describe("RemoteGateway — D&D Beyond", () => {
     http.routes.push(() => ({ status: 200, json: { "7": `/assets/${HASH}.png` } }));
     const api = makeGateway().gateway.ddb()!;
     expect(await api.getMonsterImages([7])).toEqual(new Map([[7, `/assets/${HASH}.png`]]));
+  });
+});
+
+describe("RemoteGateway — D&D Beyond tracking order", () => {
+  // Tracking is one slot on the server: a stop that overtook the start made
+  // after it left the server tracking nothing, which is how an encounter
+  // picked on a phone came back with no combatants.
+  it("holds a track request until the one before it has answered", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    http.routes.push((c) => {
+      if (c.path !== "/api/ddb/track") return undefined;
+      if (!first) return { status: 204 };
+      first = false;
+      return { status: 204, wait: held };
+    });
+    const api = makeGateway().gateway.ddb()!;
+
+    const stopping = api.track(null, () => {});
+    const starting = api.track("enc-2", () => {});
+    await flush();
+
+    const sent = () => http.calls.filter((c) => c.path === "/api/ddb/track").map((c) => (c.body as any).encounterId);
+    // The second request has not been issued while the first is in flight.
+    expect(sent()).toEqual([null]);
+
+    release();
+    await Promise.all([stopping, starting]);
+    expect(sent()).toEqual([null, "enc-2"]);
   });
 });
 

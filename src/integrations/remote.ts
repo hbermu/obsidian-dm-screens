@@ -30,6 +30,7 @@ function fail(op: string, status: number): never {
 // The same surfaces as the local gateway, served by the remote server, which
 // holds the credentials. Nothing here ever sees one.
 export class RemoteGateway implements IntegrationGateway {
+  private ddbTrack: Promise<unknown> = Promise.resolve();
   readonly kind = "remote";
 
   constructor(
@@ -161,7 +162,13 @@ export class RemoteGateway implements IntegrationGateway {
       // control channel and maps them as it maps a local poll.
       track: async (encounterId, onState) => {
         plugin.remote?.onDdbState(encounterId ? (state) => onState(state as DdbState) : null);
-        await call("D&D Beyond tracking", "POST", "/api/ddb/track", { encounterId });
+        // Tracking is one server-side slot, so the requests have to reach it
+        // in the order they were made: a stop overtaking the start that
+        // followed it would leave the server tracking nothing.
+        this.ddbTrack = this.ddbTrack
+          .catch(() => {})
+          .then(() => call("D&D Beyond tracking", "POST", "/api/ddb/track", { encounterId }));
+        await this.ddbTrack;
       },
     };
   }

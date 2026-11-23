@@ -428,3 +428,40 @@ describe("DnDBeyondPanel on a read-only remote device", () => {
     expect(plugin.sendInitiativeUpdate).not.toHaveBeenCalled();
   });
 });
+
+describe("DnDBeyondPanel — switching encounters", () => {
+  function panelWithClient() {
+    const container = document.createElement("div");
+    const plugin = makePlugin();
+    const panel = new DnDBeyondPanel(plugin, container);
+    const track = vi.fn(async (_encounterId: string | null, _onState: (state: unknown) => void) => {});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (panel as any).client = { track, getEncounter: vi.fn(async () => ({ id: "e", players: [], monsters: [] })) };
+    return { panel, track };
+  }
+
+  // A stop and a start issued together raced over the network: the server
+  // logged a tracking started and a tracking stopped for the same encounter
+  // microseconds apart, and the encounter arrived with no combatants.
+  it("asks only for the new encounter, never a stop in the same breath", () => {
+    const { panel, track } = panelWithClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = panel as any;
+
+    p.selectEncounter("enc-1");
+    expect(track.mock.calls.map((c) => c[0])).toEqual(["enc-1"]);
+
+    p.selectEncounter("enc-2");
+    expect(track.mock.calls.map((c) => c[0])).toEqual(["enc-1", "enc-2"]);
+    expect(panel.isTracking()).toBe(true);
+  });
+
+  it("still stops tracking when the panel is told to", () => {
+    const { panel, track } = panelWithClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (panel as any).selectEncounter("enc-1");
+    panel.stopTracking();
+    expect(track.mock.calls.map((c) => c[0])).toEqual(["enc-1", null]);
+    expect(panel.isTracking()).toBe(false);
+  });
+});

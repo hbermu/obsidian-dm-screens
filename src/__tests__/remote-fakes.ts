@@ -8,7 +8,9 @@ export interface Call {
   auth: string | undefined;
 }
 
-export type Route = (call: Call) => { status: number; json?: unknown; arrayBuffer?: ArrayBuffer } | undefined;
+// `wait` holds the response open, so a test can prove what the code under
+// test does — or does not do — while a request is still in flight.
+export type Route = (call: Call) => { status: number; json?: unknown; arrayBuffer?: ArrayBuffer; wait?: Promise<void> } | undefined;
 
 export const http = {
   calls: [] as Call[],
@@ -27,7 +29,10 @@ export async function fakeRequestUrl(req: { url: string; method?: string; body?:
   http.calls.push(call);
   for (const route of http.routes) {
     const res = route(call);
-    if (res) return { status: res.status, json: res.json ?? null, text: "", arrayBuffer: res.arrayBuffer ?? new ArrayBuffer(0) };
+    if (res) {
+      if (res.wait) await res.wait;
+      return { status: res.status, json: res.json ?? null, text: "", arrayBuffer: res.arrayBuffer ?? new ArrayBuffer(0) };
+    }
   }
   return { status: 404, json: null, text: "", arrayBuffer: new ArrayBuffer(0) };
 }
