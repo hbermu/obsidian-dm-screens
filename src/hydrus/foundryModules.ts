@@ -1,4 +1,4 @@
-import { inflateSync, unzipSync } from "fflate";
+import { inflateSync, unzipSync } from "fflate/browser";
 import { debug, debugWarn } from "../debug";
 import { collectFoundryScenes, type FoundryScene } from "../map/foundry";
 import type { HydrusClient, HydrusFile } from "./client";

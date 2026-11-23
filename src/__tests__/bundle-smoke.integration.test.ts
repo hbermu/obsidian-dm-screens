@@ -70,4 +70,48 @@ describeIfBundleExists("main.js bundle smoke test", () => {
     expect(typeof proto.onload).toBe("function");
     expect(typeof proto.onunload).toBe("function");
   });
+
+  // Obsidian mobile's require answers "obsidian" and nothing else — any other
+  // id comes back undefined — and there is no process or Buffer. A module that
+  // touches Node while the bundle loads (mediabunny's Node build reaching for
+  // module.createRequire did) fails the plugin on iOS and Android.
+  it("loads like Obsidian mobile, where require yields nothing but obsidian", () => {
+    const code = readFileSync(bundlePath, "utf8");
+    const obsidianStub = {
+      Plugin: class {},
+      ItemView: class {},
+      WorkspaceLeaf: class {},
+      Modal: class {},
+      FuzzySuggestModal: class {},
+      Menu: class {},
+      setIcon: () => undefined,
+      Notice: class {},
+      PluginSettingTab: class {},
+      Setting: class {},
+      TFile: class {},
+      TFolder: class {},
+      App: class {},
+      Platform: { isDesktop: false, isMobile: true, isDesktopApp: false, isIosApp: true, isAndroidApp: false, isTablet: false },
+      requestUrl: async () => ({}),
+      parseYaml: () => ({}),
+      stringifyYaml: () => "",
+    };
+    const moduleObj: { exports: Record<string, unknown> } = { exports: {} };
+    const sandbox = {
+      module: moduleObj,
+      exports: moduleObj.exports,
+      require: (id: string) => (id === "obsidian" ? obsidianStub : undefined),
+      console,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      URL,
+      TextEncoder,
+      TextDecoder,
+    };
+    vm.runInNewContext(code, sandbox, { filename: bundlePath });
+    const exported = moduleObj.exports as { default?: unknown };
+    expect(typeof (exported.default ?? moduleObj.exports)).toBe("function");
+  });
 });

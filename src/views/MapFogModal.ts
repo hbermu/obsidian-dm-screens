@@ -1,5 +1,5 @@
 import { App, Modal, Notice } from "obsidian";
-import { unzipSync } from "fflate";
+import { unzipSync } from "fflate/browser";
 import type DmScreenPlugin from "../main";
 import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize, gridCellRectAt } from "../map/fog";

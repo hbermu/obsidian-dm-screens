@@ -1,13 +1,4 @@
-import {
-  ALL_FORMATS,
-  BufferSource,
-  BufferTarget,
-  Conversion,
-  Input,
-  Mp4OutputFormat,
-  Output,
-  QUALITY_HIGH,
-} from "mediabunny";
+import type * as Mediabunny from "mediabunny";
 import { debug, debugWarn } from "./debug";
 import { MEDIA_WIDTH_STEP, videoTargetSize } from "./map/transform";
 
@@ -79,6 +70,11 @@ async function hardwareVideoCodec(size: { width: number; height: number }): Prom
 }
 
 async function encodeVideo(data: ArrayBuffer, width: number): Promise<Derivative | null> {
+  // Required on first use, not imported: the bundle carries mediabunny's Node
+  // build, which calls `module.createRequire` as it loads, and Obsidian mobile
+  // has no `module` — loading it there kills the whole plugin.
+  const { ALL_FORMATS, BufferSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output, QUALITY_HIGH } =
+    require("mediabunny") as typeof Mediabunny;
   const input = new Input({ source: new BufferSource(data), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   if (!track) return null;
