@@ -135,6 +135,41 @@ test("the compact layout's tabs are a finger's size and the closed sheet keeps o
   expect(sizes.openHeight).toBeLessThan(sizes.stage);
 });
 
+test("a narrow panel lays its sections out down the column, never sideways", async ({ page }) => {
+  const layout = await page.evaluate(() => {
+    const panel = document.querySelector(".dm-control-panel") as HTMLElement;
+    const r = (sel: string) => (panel.querySelector(sel) as HTMLElement).getBoundingClientRect();
+    const buttons = Array.from(panel.querySelectorAll(".dm-section-actions button")) as HTMLElement[];
+    return {
+      overflow: panel.scrollWidth - panel.clientWidth,
+      panelRight: panel.getBoundingClientRect().right,
+      titleBottom: r("h3").bottom,
+      actionsTop: r(".dm-section-actions").top,
+      buttons: buttons.map((b) => {
+        const box = b.getBoundingClientRect();
+        return { h: box.height, right: box.right };
+      }),
+      urlRight: r(".dm-server-url-link").right,
+      addWidth: r(".dm-layer-btn-row > button.mod-cta").width,
+      rowWidth: r(".dm-layer-btn-row").width,
+    };
+  });
+
+  // Nothing is reached by scrolling the panel sideways.
+  expect(layout.overflow).toBeLessThanOrEqual(0);
+  // The three section buttons sit on their own row under the title…
+  expect(layout.actionsTop).toBeGreaterThanOrEqual(layout.titleBottom);
+  expect(layout.buttons).toHaveLength(3);
+  for (const button of layout.buttons) {
+    // …each one whole and a finger tall.
+    expect(button.right).toBeLessThanOrEqual(layout.panelRight + 0.5);
+    expect(button.h).toBeGreaterThanOrEqual(44);
+  }
+  // The join URL stays inside the panel, and the primary action is full width.
+  expect(layout.urlRight).toBeLessThanOrEqual(layout.panelRight + 0.5);
+  expect(layout.addWidth).toBeCloseTo(layout.rowWidth, 0);
+});
+
 test("a tap explores on the lift, as touch", async ({ page }) => {
   const overlay = await centre(page, ".dm-explore-overlay");
   await page.touchscreen.tap(overlay.x, overlay.y);

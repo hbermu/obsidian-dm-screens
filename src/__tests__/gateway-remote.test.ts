@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flush, http } from "./remote-fakes";
 import { makeRemotePlugin } from "./remote-plugin";
@@ -121,6 +123,57 @@ describe("RemoteGateway — D&D Beyond", () => {
     http.routes.push(() => ({ status: 200, json: { "7": `/assets/${HASH}.png` } }));
     const api = makeGateway().gateway.ddb()!;
     expect(await api.getMonsterImages([7])).toEqual(new Map([[7, `/assets/${HASH}.png`]]));
+  });
+});
+
+describe("RemoteGateway — D&D Beyond state", () => {
+  const fixture = JSON.parse(
+    readFileSync(resolve(__dirname, "../../test/fixtures/ddb/encounter-kokoro.json"), "utf8")
+  );
+
+  // The server relays D&D Beyond's bodies as they came. Handing one to the
+  // panel unparsed showed "undefined — Round undefined" and an encounter with
+  // no combatants, which is what a DM saw after picking one on a phone.
+  it("parses a pushed state into the shapes a local poll produces", async () => {
+    http.routes.push(() => ({ status: 204 }));
+    const { plugin, gateway } = makeGateway();
+    let listener: ((state: unknown) => void) | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any).remote = { onDdbState: (fn: any) => (listener = fn) };
+
+    const seen: any[] = [];
+    await gateway.ddb()!.track("enc-1", (state) => seen.push(state));
+    listener!({
+      encounter: fixture,
+      characters: { "1234": { data: { name: "Morrigan", baseHitPoints: 20, removedHitPoints: 5 } } },
+    });
+
+    const state = seen.at(-1);
+    expect(state.encounter.name).toBe("VEOR. CH12. Part1 - El Regreso");
+    expect(state.encounter.roundNum).toBe(1);
+    expect(state.encounter.monsters.length).toBeGreaterThan(0);
+    expect(state.encounter.monsters[0]).toMatchObject({ name: "Adult Red Dragon" });
+    expect(state.characters["1234"]).toMatchObject({ id: 1234, name: "Morrigan", currentHitPoints: 15 });
+  });
+
+  it("passes a poll error through untouched", async () => {
+    http.routes.push(() => ({ status: 204 }));
+    const { plugin, gateway } = makeGateway();
+    let listener: ((state: unknown) => void) | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any).remote = { onDdbState: (fn: any) => (listener = fn) };
+
+    const seen: any[] = [];
+    await gateway.ddb()!.track("enc-1", (state) => seen.push(state));
+    listener!({ error: "ddb refused (401)" });
+
+    expect(seen.at(-1)).toEqual({ encounter: null, characters: {}, error: "ddb refused (401)" });
+  });
+
+  it("parses the encounter it fetches, not just the ones it is pushed", async () => {
+    http.routes.push((c) => (c.path.startsWith("/api/ddb/encounters/") ? { status: 200, json: fixture } : undefined));
+    const enc = await makeGateway().gateway.ddb()!.getEncounter("enc-1");
+    expect(enc).toMatchObject({ name: "VEOR. CH12. Part1 - El Regreso", roundNum: 1 });
   });
 });
 

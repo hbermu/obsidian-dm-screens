@@ -10,7 +10,7 @@
 - `src/views/MapScreenPanel.ts` — `trackDrag(start: PointerEvent, onMove, onEnd?)`: the panel-side drags (pan preview, viewport rectangle, AoE and vision dots) over the same helper
 - `src/views/MapFogModal.ts` — the fog and walls editor: the deferred press behind every walls tool (`natAt`, `placeWall`), the brush and marquee strokes, the long press that ends a wall chain, and the zoomable `dm-fog-inner` stage
 - `src/views/DmControlPanel.ts` — the Player Screen section: the preview's look-around pan (middle button for a mouse, a plain drag for a finger), `makeDraggable` for the layer rectangles, `setupInlineFogDrawing` for the per-layer fog, and the long press that opens a layer row's context menu
-- `styles.css` — the `Touch` block: `touch-action: none` on every drag surface, and the `@media (pointer: coarse)` rules that grow the hit targets
+- `styles.css` — the `Touch` block: `touch-action: none` on every drag surface, the `@media (pointer: coarse)` rules that grow the hit targets, and the `@container dm-panel` rules that lay a narrow panel out down its column
 - `test/visual/harness/touch-entry.ts` — the harness page that runs the two gesture modules and the real stylesheet under a browser's own fingers
 
 ## Settings used
@@ -55,6 +55,12 @@
 23. The Exploration Mode bar shall wrap (`flex-wrap`), because its seven controls at 44 px do not fit one row on a phone and would otherwise overflow the modal.
 24. On a stage too narrow for the floating windows, the AoE, Vision and Combat panels shall become a tabbed sheet along the bottom of the stage (`fog-of-war.md` requirements 43c–43d), so the map keeps the whole screen until a panel is asked for. Its tab buttons are at least 44 px tall and the closed sheet takes no height.
 
+### A panel narrow enough to be a phone
+
+25. Nothing in the DM panel shall be reachable only by scrolling it sideways. A section header (`.dm-section-header`) wraps at any width, so its actions drop to their own row rather than being clipped — a panel can be narrower than its title plus three buttons at any window size.
+26. While the panel's own width is at most 460 px (`@container dm-panel`, measured on the panel and not the window, because a side panel is narrow on a wide screen too), the section's actions shall take a full row under the title and share it evenly, a join URL shall take its own row above its Copy button, and a section's primary action (`button.mod-cta`, the Choose Encounter button) shall be full width — the easiest target on a phone and the clearest hierarchy.
+27. The existing `@container dm-panel (max-width: 380px)` rules continue to stack the combat tabs, drop the layer row's button column below its name, and tighten the D&D Beyond preview rows.
+
 ## Tests covering this
 
 - `src/__tests__/pointer-drag.test.ts` — `trackPointerDrag` follows its own pointer and ignores a second finger, ends on release, ends on `pointercancel`, and can be torn down mid-drag without firing `onEnd`; `onLongPress` fires for a held finger, never for a mouse, and not when the finger moves away or lifts first; `blockWebkitGestures` cancels Safari's pinch events until disposed (reqs 2, 3, 6, 8)
@@ -63,7 +69,7 @@
 - `src/__tests__/map-screen-panel-aoe.test.ts` — the panel's drags start from a `PointerEvent`, hold and release the panel drag lock, and a newer drag tears the previous one down without running its `onEnd` (reqs 1, 2)
 - `src/__tests__/map-fog-modal.test.ts` — the editor under a finger: a tap stamps the brush once and commits on the lift, a slide paints from where it landed, a second finger zooms the stage and paints nothing, a tap places a wall segment on the lift while a long press ends the chain, and a tap with the Rect tool commits nothing (reqs 8a, 8b, 20)
 - `src/__tests__/dm-control-touch.test.ts` — the Player Screen section: the preview's look-around pans on a middle-button drag and ignores a finger, and a layer rectangle's drag moves the layer, broadcasts geometry during and the layers once on release, keeps the press away from the preview, and is a no-op on a detached preview (req 21)
-- `test/visual/touch.spec.ts` — real fingers in Chromium and WebKit against the harness page carrying the shipped stylesheet: the compact layout's tabs are at least 44 px and the closed sheet takes no height while the open one stays shorter than the stage, the tablet profiles report a coarse pointer while the drawn dot stays small, the drag surfaces are `touch-action: none` and the floating windows are not, a tap explores on the lift as `touch`, a tap 15 px off a marker still hits it, holding a marker fires the long press; and under Chromium's touch injection: a marker drag keeps the whole pointer stream with no cancel, a finger dragged across the map explores nothing, a pinch out zooms to 2× while exploring nothing, and a pinch back in returns the stage to fit (reqs 4, 5, 7, 12, 14, 15)
+- `test/visual/touch.spec.ts` — real fingers in Chromium and WebKit against the harness page carrying the shipped stylesheet: a narrow panel overflows by nothing, its section buttons sit whole on a row under the title at 44 px tall, the join URL stays inside and the primary action is full width (requirements 25–26); the compact layout's tabs are at least 44 px and the closed sheet takes no height while the open one stays shorter than the stage, the tablet profiles report a coarse pointer while the drawn dot stays small, the drag surfaces are `touch-action: none` and the floating windows are not, a tap explores on the lift as `touch`, a tap 15 px off a marker still hits it, holding a marker fires the long press; and under Chromium's touch injection: a marker drag keeps the whole pointer stream with no cancel, a finger dragged across the map explores nothing, a pinch out zooms to 2× while exploring nothing, and a pinch back in returns the stage to fit (reqs 4, 5, 7, 12, 14, 15)
 
 ## Non-goals
 

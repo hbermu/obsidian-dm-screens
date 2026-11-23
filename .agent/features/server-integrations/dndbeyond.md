@@ -34,6 +34,7 @@
 11. The plugin shall turn `ddb-state` into initiative broadcasts exactly as it turns a local poll result into them today — round-1 reveal, renames, conditions and exhaustion all stay on the DM side — and only while it holds the lease.
 12. The panel shall start and stop tracking with one call, `track(encounterId, onState)` and `track(null, …)`, which the embedded gateway serves with its own poller and the remote one by asking the server to poll and forwarding what it pushes. `track(encounterId)` replaces whatever was being tracked, so switching encounters is one call and never a stop followed by a start.
 12a. The remote gateway shall issue its track requests one at a time, each waiting for the previous one to answer. Tracking is a single slot on the server, so a stop that overtook the start made after it would leave the server tracking nothing and the encounter would arrive with no combatants.
+12b. The server relays D&D Beyond's bodies as they came — the encounter wrapped in `data`, one character body per player id — so the remote gateway shall map a pushed state through the same parsing a local poll uses (`src/dndbeyond/parse.ts`: `unwrapData`, `parseEncounter`, `parseCharacter`), and shall map the encounter it fetches the same way. A raw body reaching the panel shows an encounter with no name, no round and no combatants. A state carrying an `error` is passed through as `{ encounter: null, characters: {}, error }`.
 13. In remote mode a monster avatar shall arrive as the asset URL the server stored (`requirement 4`), and the panel shall turn it into a layer the same way it turns a locally cached avatar into one.
 
 ## Broadcast / IPC
@@ -45,7 +46,7 @@
 ## Tests covering this
 
 - `server/tests/ddb.rs` — against a stub D&D Beyond: the token refresh and its retry on `401`, id validation, avatars stored as assets, `501` unconfigured, `502` upstream, the loop's start, replace and stop, `ddb-state` after a poll and after a failure, the last state replayed to a new socket, the loop stopping with the last socket
-- `src/__tests__/gateway-remote.test.ts` — `RemoteDdb` routes and the `ddb-state` subscription; a track request is held until the one before it has answered (requirement 12a)
+- `src/__tests__/gateway-remote.test.ts` — `RemoteDdb` routes and the `ddb-state` subscription; a track request is held until the one before it has answered (requirement 12a); a pushed state replayed from the real `encounter-kokoro.json` fixture arrives with its name, round and monsters, a poll error passes through, and a fetched encounter is parsed too (requirement 12b)
 - `src/__tests__/ddb-panel-tracking-state.test.ts` — tracking state through `track`, the panel mapping a poll result, no broadcast without the lease, and switching encounters asking only for the new one (requirement 12)
 
 ## Non-goals

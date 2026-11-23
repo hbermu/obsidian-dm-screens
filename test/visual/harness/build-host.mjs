@@ -61,6 +61,19 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
   </div>
 </div></div></div>
 <div class="dm-control-panel">
+  <div class="dm-section">
+    <div class="dm-section-header">
+      <h3>Map Screen</h3>
+      <div class="dm-section-actions">
+        <button>Save scene</button><button>Load scene</button><button class="dm-explore-open-btn">Explore</button>
+      </div>
+    </div>
+    <div class="dm-server-url">
+      <a class="dm-server-url-link" href="#">Map: https://dm-screen.example.lan/map</a>
+      <button class="dm-copy-url-btn">Copy</button>
+    </div>
+    <div class="dm-layer-btn-row"><button class="mod-cta">Add Map</button></div>
+  </div>
   <div class="dm-layer-preview"><div class="dm-layer-preview-inner">
     <div class="dm-layer-rect"><div class="dm-layer-rect-frame"><canvas class="dm-fog-draw-canvas-inline" width="80" height="60"></canvas></div></div>
   </div></div>

@@ -5,6 +5,7 @@
 ## Source files
 
 - `src/dndbeyond/client.ts` — `getEncounters`, `getEncounter`, `parseEncounter` (parser strips hidden players and the abstract player type)
+- `src/dndbeyond/parse.ts` — `unwrapData`, `parseEncounter`, `parseCharacter`: D&D Beyond's bodies turned into the shapes the panel works with, shared by the client and by the remote gateway's pushed states
 - `src/views/DnDBeyondPanel.ts` — `initialize`, `selectEncounter`, `startTracking`, `stopTracking`, `onPollUpdate`, `broadcastToPlayerScreen`, `buildParticipants`, `renderPreview`, `openMonsterMenu`, `openRenameModal`, `openConditionsModal`, `applyMonsterName`, `resetMonsterName`, `applyMonsterStatuses`, `getActiveEncounterStatus`, `isTracking`, the Show PC HP / Show full turn order toggles
 - `src/views/DnDBeyondEncounterModal.ts` — modal launched by the `Choose Encounter` button; fetches the encounter list on each open and invokes a callback when a row is clicked
 - `src/views/RenameMonsterModal.ts` — text-input modal for an ephemeral monster display-name override, opened from the row's right-click `Rename…`

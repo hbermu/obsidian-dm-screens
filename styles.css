@@ -105,6 +105,10 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  /* The actions drop to their own row rather than being clipped: a panel can
+     be narrower than its title plus three buttons at any window size. */
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .dm-section-header h3 {
@@ -115,6 +119,7 @@
   display: flex;
   gap: 4px;
   margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .dm-section-actions button:disabled,
@@ -1730,6 +1735,38 @@
    When the DM Control Panel is parked on a narrow side dock, rows
    that normally fit horizontally collapse onto a second line so
    nothing gets clipped or hidden by overflow.                       */
+
+/* A panel this narrow is a phone-shaped column: every row is laid out to be
+   reachable with a thumb and nothing is reached by scrolling sideways. */
+@container dm-panel (max-width: 460px) {
+  /* The section's buttons take a full row under the title and share it
+     evenly, instead of trailing off the right edge. */
+  .dm-section-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .dm-section-actions button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* A join URL is longer than the panel; it gets its own row above the
+     Copy button rather than squeezing it off screen. */
+  .dm-server-url {
+    flex-wrap: wrap;
+  }
+  .dm-server-url-link {
+    flex-basis: 100%;
+  }
+
+  /* The primary action of a section goes full width: the easiest target on a
+     phone, and the clearest hierarchy. The `mod-cta` class is what marks it,
+     so a row's secondary buttons keep their size. */
+  .dm-layer-btn-row > button.mod-cta,
+  .dm-ddb-choose-btn {
+    flex: 1 1 100%;
+  }
+}
 
 @container dm-panel (max-width: 380px) {
   /* Combat tabs stack so the D&D Beyond tab is fully visible. */

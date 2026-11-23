@@ -12,6 +12,8 @@ import {
   type PublishedHydrusFile,
   type WebhooksApi,
 } from "./gateway";
+import { parseCharacter, parseEncounter, unwrapData } from "../dndbeyond/parse";
+import type { DdbCharacterSummary } from "../dndbeyond/types";
 
 interface HydrusMetadataRow {
   hash: string;
@@ -149,7 +151,10 @@ export class RemoteGateway implements IntegrationGateway {
           inProgress: e?.inProgress === true,
         }));
       },
-      getEncounter: (id) => call("D&D Beyond encounter", "GET", `/api/ddb/encounters/${encodeURIComponent(id)}`),
+      getEncounter: async (id) => {
+        const body = await call("D&D Beyond encounter", "GET", `/api/ddb/encounters/${encodeURIComponent(id)}`);
+        return parseEncounter(unwrapData(body));
+      },
       getMonsterImages: async (ids) => {
         const body = await call("D&D Beyond avatars", "POST", "/api/ddb/monster-images", { ids });
         const out = new Map<number, string>();
@@ -158,10 +163,12 @@ export class RemoteGateway implements IntegrationGateway {
         }
         return out;
       },
-      // The loop runs on the server; the panel receives its states over the
-      // control channel and maps them as it maps a local poll.
+      // The loop runs on the server, which relays D&D Beyond's bodies as they
+      // came; the states are parsed here into the same shapes a local poll
+      // produces, or the panel would show an encounter with no name, no round
+      // and no combatants.
       track: async (encounterId, onState) => {
-        plugin.remote?.onDdbState(encounterId ? (state) => onState(state as DdbState) : null);
+        plugin.remote?.onDdbState(encounterId ? (state) => onState(parseDdbState(state)) : null);
         // Tracking is one server-side slot, so the requests have to reach it
         // in the order they were made: a stop overtaking the start that
         // followed it would leave the server tracking nothing.
@@ -186,6 +193,18 @@ export class RemoteGateway implements IntegrationGateway {
       },
     };
   }
+}
+
+// A state as the server pushes it: D&D Beyond's encounter body, and one
+// character body per player id.
+function parseDdbState(state: unknown): DdbState {
+  const raw = (state ?? {}) as { encounter?: unknown; characters?: Record<string, unknown>; error?: unknown };
+  if (typeof raw.error === "string") return { encounter: null, characters: {}, error: raw.error };
+  const characters: Record<string, DdbCharacterSummary> = {};
+  for (const [id, body] of Object.entries(raw.characters ?? {})) {
+    characters[id] = parseCharacter(Number(id), body);
+  }
+  return { encounter: parseEncounter(unwrapData(raw.encounter)), characters };
 }
 
 function knownTagsOf(row: HydrusMetadataRow, tagService?: string): string[] {

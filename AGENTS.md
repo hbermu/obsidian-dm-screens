@@ -181,6 +181,7 @@ src/
     recoverImage.ts      # Re-download a missing cached image from Hydrus
   dndbeyond/
     client.ts            # CobaltSession auth + encounter/character/monster API
+    parse.ts             # Upstream bodies → DdbEncounter / DdbCharacterSummary (shared with the remote gateway)
     poller.ts            # Long-polling with min-gap and circuit breaker
     imageCache.ts        # Monster avatar cache
     types.ts             # D&D Beyond types
