@@ -98,5 +98,5 @@ The control-channel messages are specified in `control-channel.md`. Player- and 
 - More than one active controller. Exactly one device controls the session; others are read-only.
 - Running the session with the remote server down. There is no fallback; on a desktop the DM switches back to embedded mode.
 - Migrating map data between modes. Embedded and remote keep separate stores.
-- Syncing credentials (Hydrus key, D&D Beyond cookie, webhooks) between devices through the server. They stay per device.
+- Credentials in `data.json` in remote mode. The server's environment holds the Hydrus key, the D&D Beyond cookie and the webhook targets, and the plugin reaches those services through it (`../server-integrations/overview.md`); embedded mode keeps its per-device settings.
 - Exposing the remote server to the public internet. It is meant for an internal network behind a TLS reverse proxy (`docs/THREAT-MODEL.md`).

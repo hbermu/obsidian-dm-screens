@@ -17,6 +17,7 @@ Each row points to a directory under `features/` containing one or more spec fil
 | [`webhook-send/`](webhook-send/overview.md) | Send an image layer to a configured webhook (Telegram, Discord, generic multipart) | `send-modal.md`, `webhook-config.md` |
 | [`map-screen/`](map-screen/overview.md) | Dedicated `/map` endpoint rendering one battlemap at physical 1-inch-per-square scale with grid overlay | `calibration.md`, `scale-and-grid.md`, `aoe-overlays.md`, `fog-of-war.md`, `tv-kiosk.md` |
 | [`remote-server/`](remote-server/overview.md) | Optional mode where the plugin controls a standalone server (container) instead of hosting one, so a tablet or a desktop without an open port can run the session | `server.md`, `control-channel.md`, `assets.md` |
+| [`server-integrations/`](server-integrations/overview.md) | In remote mode, Hydrus, D&D Beyond and the webhook targets are reached through the server, whose environment holds their credentials | `hydrus.md`, `dndbeyond.md`, `webhooks.md` |
 | [`scenes/`](scenes/overview.md) | Named player-screen and map snapshots stored as vault notes, loaded in one action | — |
 
 ## Adding a new feature

@@ -1,6 +1,6 @@
 # D&D Beyond Integration
 
-> The DM can pair the plugin with a D&D Beyond account via the user's `CobaltSession` browser cookie. Once paired, the COMBAT section grows a `D&D Beyond` tab that lists encounters, lets the DM pick one, polls it for live initiative / HP / manual entries, and broadcasts the round-1-aware combatant list. Monster avatars are fetched and added as hidden image layers for quick visual reference.
+> The DM can pair the plugin with a D&D Beyond account via the user's `CobaltSession` browser cookie. Once paired, the COMBAT section grows a `D&D Beyond` tab that lists encounters, lets the DM pick one, polls it for live initiative / HP / manual entries, and broadcasts the round-1-aware combatant list. Monster avatars are fetched and added as hidden image layers for quick visual reference. This spec describes embedded mode; in remote mode the cookie and the poll loop live on the server and the panel maps the state it pushes (`../server-integrations/dndbeyond.md`).
 
 ## Source files
 

@@ -45,7 +45,7 @@
 
 14. To publish a `/vault/<path>` URL the plugin shall send its fingerprint (`path`, and `size` and `mtime` from `vault.adapter.stat`) to the lookup route, and only on `404` read the file and upload it in `chunkSize` pieces, resuming from `received` on a `409`.
 15. If the vault path is a Hydrus cache path (`hydrusHashFromVaultPath`), then the plugin shall first ask `GET /api/assets/<hash>`, then, when the server reports `hydrus: true` in `control-hello`, `POST /api/assets/hydrus`, and fall back to requirement 14 only when both miss and the file exists locally.
-16. The plugin shall keep downloading Hydrus files into its own cache as in embedded mode (it measures and previews them locally); publishing such a file goes through requirement 15, so with `hydrus: true` its bytes are fetched by the server and never uploaded from the device.
+16. In remote mode the plugin shall not download Hydrus files at all: it publishes them by hash through requirement 15 and works from the asset the server returns (`../server-integrations/hydrus.md` requirements 10–14).
 17. To publish a `data:` URL the plugin shall decode it and upload the bytes with the extension from its MIME type, without a fingerprint.
 18. The plugin shall remember, per session, which source URLs it has published and their asset URLs, so an unchanged source is not looked up twice.
 

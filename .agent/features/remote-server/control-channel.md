@@ -30,7 +30,7 @@
 
 7. The server shall hold at most one lease holder, identified by device id and name. The lease shall survive the holder's disconnection and shall not be persisted across a server restart.
 8. When a handshake succeeds and there is no holder, or the holder's device id equals `device`, the server shall make that device the holder and give the socket the role `active`; otherwise the socket shall get the role `readonly`.
-9. Immediately after a successful handshake, the server shall send `control-hello` (see the table) carrying the protocol, the server version, the view token, the role, the holder, whether Hydrus fetch is configured, the full replay cache of both channels, and the current screen list.
+9. Immediately after a successful handshake, the server shall send `control-hello` (see the table) carrying the protocol, the server version, the view token, the role, the holder, which integrations are configured and the session preferences (`../server-integrations/overview.md` requirements 4 and 10), the full replay cache of both channels, and the current screen list.
 10. When a socket sends `control-claim`, the server shall make its device the holder, send `control-role {role: "active"}` to every socket of that device, and send `control-role {role: "readonly"}` with the new holder to every other control socket.
 11. If more than one socket of the holder's device is open, then every one of them shall be `active`.
 
@@ -50,7 +50,7 @@
 
 | Message type | Direction | Payload | When |
 |--------------|-----------|---------|------|
-| `control-hello` | server → controller | `{ protocol: number, version: string, viewToken: string, role: "active" \| "readonly", holder: { deviceId, name } \| null, hydrus: boolean, cache: Record<string, string>, clients: ClientInfo[] }` — `cache` maps message type to the serialised cached message | Right after a successful handshake |
+| `control-hello` | server → controller | `{ protocol: number, version: string, viewToken: string, role: "active" \| "readonly", holder: { deviceId, name } \| null, integrations: { hydrus: boolean, ddb: boolean, webhooks: string[] }, prefs: Record<string, unknown>, cache: Record<string, string>, clients: ClientInfo[] }` — `cache` maps message type to the serialised cached message | Right after a successful handshake |
 | `control-role` | server → controller | `{ role: "active" \| "readonly", holder: { deviceId, name } }` | The lease changes hands |
 | `control-claim` | controller → server | `{}` | The DM confirms Take control |
 | `relay` | controller → server | `{ message: { type, payload } }` — a player- or map-channel message with media URLs already rewritten to `/assets/` | Every DM-side broadcast while active |
