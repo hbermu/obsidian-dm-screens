@@ -144,3 +144,69 @@ describe("layer rows open one at a time", () => {
     expect(chevron().getAttribute("aria-expanded")).toBe("true");
   });
 });
+
+// A phone shows one section at a time, so the panel is a long column and
+// needs a fixed way to move between its sections.
+describe("section jump bar", () => {
+  function panelWithSections() {
+    const { panel, p, contentEl } = makePanel();
+    p.render = () => {
+      contentEl.empty();
+      p.renderPlayerScreenSection(contentEl);
+      p.renderInitiativeSection(contentEl);
+      p.renderSectionNav(contentEl);
+    };
+    p.render();
+    return { panel, p, contentEl };
+  }
+
+  const chips = (el: HTMLElement) => Array.from(el.querySelectorAll(".dm-section-chip")) as HTMLElement[];
+
+  it("puts one chip per section, first in the panel, labelled in one word", () => {
+    const { contentEl } = panelWithSections();
+    expect(chips(contentEl).map((c) => c.textContent)).toEqual(["Player", "Combat"]);
+    expect(contentEl.firstElementChild!.classList.contains("dm-section-nav")).toBe(true);
+    // The full title is still what a screen reader announces.
+    expect(chips(contentEl)[0].getAttribute("aria-label")).toBe("Player Screen");
+  });
+
+  it("marks the section being read", () => {
+    const { contentEl } = panelWithSections();
+    expect(chips(contentEl)[0].classList.contains("dm-section-chip-active")).toBe(true);
+  });
+
+  it("unfolds a folded section when its chip is pressed", () => {
+    const { p, contentEl } = panelWithSections();
+    const section = contentEl.querySelectorAll(".dm-section")[1] as HTMLElement;
+    const scrolled: unknown[] = [];
+    section.scrollIntoView = (...args: unknown[]) => void scrolled.push(args);
+    p.collapsedSections.add("combat");
+    section.classList.add("dm-section-collapsed");
+
+    chips(contentEl)[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(section.classList.contains("dm-section-collapsed")).toBe(false);
+    expect(p.collapsedSections.has("combat")).toBe(false);
+    expect(scrolled).toHaveLength(1);
+    expect(chips(contentEl)[1].classList.contains("dm-section-chip-active")).toBe(true);
+  });
+
+  it("drops its scroll listener when the panel re-renders", () => {
+    const { p, contentEl } = panelWithSections();
+    const first = p.navAbort;
+    p.render();
+    expect(first.signal.aborted).toBe(true);
+    expect(contentEl.querySelectorAll(".dm-section-nav")).toHaveLength(1);
+  });
+
+  it("renders no bar when there is only one section", () => {
+    const { p, contentEl } = makePanel();
+    p.render = () => {
+      contentEl.empty();
+      p.renderPlayerScreenSection(contentEl);
+      p.renderSectionNav(contentEl);
+    };
+    p.render();
+    expect(contentEl.querySelector(".dm-section-nav")).toBeNull();
+  });
+});

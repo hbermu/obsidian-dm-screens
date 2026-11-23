@@ -469,6 +469,8 @@ export class DmControlPanel extends ItemView {
     this.renderInitiativeSection(session);
     for (const mirror of this.combatMirrors) this.renderCombatMirror(mirror);
 
+    this.renderSectionNav(container);
+
     this.broadcastInitialScale();
     container.scrollTop = scrollTop;
     // The map pan preview sizes itself on the next frame, which can shift
@@ -476,6 +478,80 @@ export class DmControlPanel extends ItemView {
     requestAnimationFrame(() => {
       container.scrollTop = scrollTop;
     });
+  }
+
+  // How far down the panel a section has to reach before it counts as the one
+  // being read: just under the nav bar itself.
+  private static readonly NAV_ACTIVE_OFFSET = 72;
+  private navAbort: AbortController | null = null;
+  // One word per chip: "Player Screen Server" and "Player Screen" are the same
+  // word until the third, and a bar of truncated titles navigates nothing.
+  private static readonly NAV_LABELS: Record<string, string> = {
+    server: "Server",
+    "player-screen": "Player",
+    "map-screen": "Map",
+    combat: "Combat",
+  };
+
+  // A phone shows one section at a time and the panel is a long column, so it
+  // gets what a long column needs: a fixed way to jump. The bar is outside the
+  // session wrapper, so it still works while the session is read-only — it
+  // navigates, it does not edit.
+  private renderSectionNav(container: HTMLElement) {
+    this.navAbort?.abort();
+    const sections = Array.from(container.querySelectorAll<HTMLElement>(".dm-section"));
+    if (sections.length < 2) return;
+
+    this.navAbort = new AbortController();
+    const { signal } = this.navAbort;
+    const nav = container.createDiv("dm-section-nav");
+    const chips = sections.map((section) => {
+      const title = section.querySelector("h3")?.textContent ?? "Section";
+      const key = section.dataset.sectionKey ?? "";
+      const chip = nav.createEl("button", {
+        text: DmControlPanel.NAV_LABELS[key] ?? title,
+        cls: "dm-section-chip",
+      });
+      chip.setAttribute("aria-label", title);
+      chip.addEventListener("click", () => {
+        // A folded section cannot be read, so jumping to it unfolds it.
+        if (this.collapsedSections.delete(key)) section.classList.remove("dm-section-collapsed");
+        section.scrollIntoView({ block: "start" });
+        markActive(section);
+      });
+      return { section, chip };
+    });
+    container.insertBefore(nav, container.firstChild);
+
+    const markActive = (active: HTMLElement) => {
+      for (const { section, chip } of chips) chip.toggleClass("dm-section-chip-active", section === active);
+    };
+
+    let queued = false;
+    const sync = () => {
+      queued = false;
+      // Nothing to track while the bar is hidden (a panel wide enough to show
+      // every section at once).
+      if (nav.offsetParent === null) return;
+      const top = container.scrollTop + DmControlPanel.NAV_ACTIVE_OFFSET;
+      let active = chips[0].section;
+      for (const { section } of chips) {
+        if (section.offsetTop <= top) active = section;
+      }
+      markActive(active);
+    };
+    container.addEventListener(
+      "scroll",
+      () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(sync);
+      },
+      { signal, passive: true }
+    );
+    // The panel opens at the top, so the first section is the one being read
+    // until a scroll says otherwise.
+    markActive(chips[0].section);
   }
 
   private hasBroadcastInitialScale = false;
@@ -507,6 +583,7 @@ export class DmControlPanel extends ItemView {
 
   makeCollapsible(section: HTMLElement, title: HTMLElement, key: string) {
     title.classList.add("dm-section-toggle");
+    section.dataset.sectionKey = key;
     if (this.collapsedSections.has(key)) section.classList.add("dm-section-collapsed");
     title.addEventListener("click", () => {
       const collapsed = !this.collapsedSections.delete(key);

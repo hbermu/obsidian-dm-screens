@@ -170,6 +170,40 @@ test("a narrow panel lays its sections out down the column, never sideways", asy
   expect(layout.addWidth).toBeCloseTo(layout.rowWidth, 0);
 });
 
+test("the section bar stays put while the panel scrolls, with finger-sized chips", async ({ page }) => {
+  const nav = await page.evaluate(() => {
+    const panel = document.querySelector(".dm-control-panel") as HTMLElement;
+    const bar = panel.querySelector(".dm-section-nav") as HTMLElement;
+    const chips = Array.from(bar.querySelectorAll(".dm-section-chip")) as HTMLElement[];
+    const before = bar.getBoundingClientRect().top;
+    panel.scrollTop = 300;
+    const after = bar.getBoundingClientRect().top;
+    const panelBox = panel.getBoundingClientRect();
+    panel.scrollTop = 0;
+    return {
+      display: getComputedStyle(bar).display,
+      position: getComputedStyle(bar).position,
+      before,
+      after,
+      scrolled: panel.scrollTop,
+      chips: chips.map((c) => ({ h: c.getBoundingClientRect().height, right: c.getBoundingClientRect().right })),
+      panelRight: panelBox.right,
+      sections: panel.querySelectorAll(".dm-section").length,
+    };
+  });
+
+  expect(nav.display).toBe("flex");
+  expect(nav.position).toBe("sticky");
+  // It does not travel with the content it is there to navigate.
+  expect(nav.after).toBeCloseTo(nav.before, 0);
+  expect(nav.chips.length).toBeGreaterThanOrEqual(3);
+  for (const chip of nav.chips) {
+    expect(chip.h).toBeGreaterThanOrEqual(44);
+    // All of them fit the width: a nav bar you scroll sideways navigates badly.
+    expect(chip.right).toBeLessThanOrEqual(nav.panelRight + 0.5);
+  }
+});
+
 test("a closed layer is one line, an open one shows its controls", async ({ page }) => {
   const rows = await page.evaluate(() => {
     const box = (sel: string) => (document.querySelector(sel) as HTMLElement).getBoundingClientRect();

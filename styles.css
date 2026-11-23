@@ -12,6 +12,40 @@
   container-name: dm-panel;
 }
 
+/* The jump bar for a long column. Hidden until the panel is narrow enough to
+   show one section at a time (see the container query below). */
+.dm-section-nav {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  gap: 6px;
+  padding: 6px 0 8px;
+  margin-bottom: 4px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.dm-section-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.8em;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  box-shadow: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-section-chip-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
 .dm-section {
   margin-bottom: 20px;
   padding-bottom: 16px;
@@ -1780,6 +1814,30 @@
     flex: 1 1 100%;
   }
 
+  /* One section at a time means a long column, so it gets what a long column
+     needs: a bar that stays put and says where you are. */
+  .dm-section-nav {
+    display: flex;
+  }
+
+  /* Each section is a card: on a phone a hairline is not enough to tell two
+     stacked sections apart, and the padding gives the controls room. */
+  .dm-section {
+    margin-bottom: 12px;
+    padding: 12px;
+    border-bottom: none;
+    border-radius: var(--dm-radius-lg);
+    background: var(--background-secondary);
+  }
+  .dm-section-collapsed {
+    padding-bottom: 12px;
+  }
+
+  /* The last control has to clear the home indicator. */
+  .dm-control-panel {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
   /* A layer is one line plus its opacity until it is opened: ten buttons and
      two toggles per layer filled the screen with two layers on it. The eye
      stays out, because hiding a layer is the one thing done without looking
@@ -2591,6 +2649,17 @@
      than the panel. */
   .dm-layer-btn {
     min-height: 44px;
+  }
+
+  /* Nothing hovers under a finger, so a press has to answer for itself. */
+  .dm-control-panel button:active,
+  .dm-explore-modal button:active,
+  .dm-fog-modal button:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+  }
+  .dm-layer-name-row:active {
+    opacity: 0.7;
   }
 
   /* A slider thumb is the one control a finger cannot miss by being small. */

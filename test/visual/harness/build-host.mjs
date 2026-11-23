@@ -33,7 +33,8 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
 .dm-floating-window { left: 12px; top: 12px; width: 220px; }
 .dm-floating-window-body { max-height: 120px; }
 .dm-floating-window-body p { margin: 0 0 240px; }
-.dm-control-panel { position: fixed; right: 0; bottom: 0; width: 320px; background: #262626; padding: 8px; }
+.dm-control-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: #262626; padding: 8px; overflow-y: auto; }
+.dm-control-panel .dm-section:last-of-type { margin-bottom: 600px; }
 .dm-layer-preview { position: relative; height: 120px; }
 .dm-layer-rect { left: 20%; top: 20%; width: 80px; height: 60px; }
 </style>
@@ -61,6 +62,12 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
   </div>
 </div></div></div>
 <div class="dm-control-panel">
+  <div class="dm-section-nav">
+    <button class="dm-section-chip dm-section-chip-active">Server</button>
+    <button class="dm-section-chip">Player</button>
+    <button class="dm-section-chip">Map</button>
+    <button class="dm-section-chip">Combat</button>
+  </div>
   <div class="dm-section">
     <div class="dm-section-header">
       <h3>Map Screen</h3>
