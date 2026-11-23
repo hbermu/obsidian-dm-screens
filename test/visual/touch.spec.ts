@@ -170,6 +170,32 @@ test("a narrow panel lays its sections out down the column, never sideways", asy
   expect(layout.addWidth).toBeCloseTo(layout.rowWidth, 0);
 });
 
+test("a closed layer is one line, an open one shows its controls", async ({ page }) => {
+  const rows = await page.evaluate(() => {
+    const box = (sel: string) => (document.querySelector(sel) as HTMLElement).getBoundingClientRect();
+    const shown = (sel: string) => getComputedStyle(document.querySelector(sel) as Element).display !== "none";
+    return {
+      closedHeight: box("#collapsed-layer").height,
+      openHeight: box("#expanded-layer").height,
+      closedControls: shown("#collapsed-layer .dm-layer-right-col"),
+      closedToggles: shown("#collapsed-layer .dm-layer-left-bottom"),
+      closedEye: shown("#collapsed-layer .dm-layer-vis-toggle"),
+      openControls: shown("#expanded-layer .dm-layer-right-col"),
+      chevron: box("#collapsed-layer .dm-layer-expand"),
+    };
+  });
+
+  // Ten buttons and two toggles per layer filled the screen; closed, a layer
+  // is its name, its eye and its opacity.
+  expect(rows.closedControls).toBe(false);
+  expect(rows.closedToggles).toBe(false);
+  expect(rows.closedEye).toBe(true);
+  expect(rows.openControls).toBe(true);
+  expect(rows.closedHeight).toBeLessThan(rows.openHeight / 2);
+  // The disclosure exists and is reachable.
+  expect(rows.chevron.width).toBeGreaterThan(0);
+});
+
 test("a tap explores on the lift, as touch", async ({ page }) => {
   const overlay = await centre(page, ".dm-explore-overlay");
   await page.touchscreen.tap(overlay.x, overlay.y);

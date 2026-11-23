@@ -51,12 +51,19 @@
 20. The `Clear All Layers` button shall reset `imageLayers` to empty, reset `nextZIndex` to 1, broadcast `image-layers-sync` with an empty array, and re-render.
 21. The `Clear Player Screen` button shall additionally broadcast `clear`, set `activeBackgroundUrl` and `activeVideoPath` to null, and show a `Player screen cleared` Notice.
 
+### Narrow panels
+
+21a. Each layer row shall carry a disclosure (`.dm-layer-expand`, a chevron at the end of `.dm-layer-name-row`, with `aria-expanded` kept in step) and the row shall carry `dm-layer-expanded` while it is the open one. Pressing anywhere on the name row — the whole row, because a chevron alone is a small target for a finger and the row carries nothing else to press — shall open that layer and close the one that was open; pressing the open one closes it. Only one layer is open at a time (`expandedLayerId`), so the list cannot grow unbounded.
+21b. While the panel is at most 460 px wide (`@container dm-panel`), a closed row shall hide its button column (`.dm-layer-right-col`) and its fog and border toggles (`.dm-layer-left-bottom`), leaving the swatch, the label, the visibility eye and the opacity slider — a layer was 430 px tall on a phone, so two of them filled the screen. The eye stays out because hiding a layer is the one action taken without looking at anything else. A wider panel shows every control as before and the chevron is not displayed.
+
 ### Right-click context menu
 
 22. When the user right-clicks a `.dm-layer-row`, the DM panel shall prevent the default browser context menu and open an Obsidian `Menu` whose contents are built by `buildLayerContextMenu` from `src/views/layerContextMenu.ts`. A long press on the row opens the same menu at the press, which is the gesture a finger has instead of a second button (`../map-screen/touch-input.md` requirements 6 and 21). The send-to behaviour is specified in `../webhook-send/overview.md`.
 
 ## Tests covering this
 
+- `src/__tests__/dm-control-layer-accordion.test.ts` — rows start closed, pressing a name row opens that layer and closes the previous, pressing the open one closes it, and the chevron's `aria-expanded` follows (requirement 21a)
+- `test/visual/touch.spec.ts` — in Chromium and WebKit against the shipped stylesheet, in a narrow panel: a closed row hides its controls and its fog/border toggles while keeping the eye, an open row shows them, and the closed row is under half the open one's height (requirement 21b)
 - `src/__tests__/dm-control-combat.test.ts` — visibility / z-order / remove flows
 - `src/__tests__/viewport-calc.test.ts` — viewport rect math feeds the `W`/`H` / align buttons (the fit / align buttons themselves stay unit-covered here — their positive path needs a connected player reporting a viewport)
 - `test/e2e/specs/layer-controls.e2e.ts` — real Obsidian: the row buttons drive live broadcasts — visibility toggles `visible` (row gains `dm-layer-hidden`), border toggles `bordered`, rotate-right advances `rotation` by 15°, the down button swaps `zIndex` with the layer below, remove drops the layer, and the scale slider streams `image-layers-geometry` then commits an aspect-preserving, centre-preserving resize via `image-layers-sync`. The multi-image Add Image picker opens an Obsidian `Menu` and `Add all` commits every source (frontmatter `image:` + body embed)

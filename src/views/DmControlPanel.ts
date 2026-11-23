@@ -70,6 +70,9 @@ export class DmControlPanel extends ItemView {
 
   // Per-layer fog drawing state
   private fogEditLayerId: string | null = null;
+  // The layer whose controls are open while the panel is narrow enough to
+  // show them one at a time.
+  private expandedLayerId: string | null = null;
   private fogTool: "reveal-circle" | "reveal-rect" | "reveal-eraser" | "fog-circle" | "fog-rect" | "fog-pen" = "reveal-rect";
   private fogCanvases = new Map<string, HTMLCanvasElement>(); // layer id → offscreen fog canvas
   private static FOG_RESOLUTION = 1024; // fog canvas width (height scales with aspect)
@@ -930,6 +933,10 @@ export class DmControlPanel extends ItemView {
         const color = DmControlPanel.LAYER_COLORS[colorIdx];
         const row = list.createDiv("dm-layer-row");
         if (!layer.visible) row.addClass("dm-layer-hidden");
+        // A narrow panel shows one line per layer and reveals its controls on
+        // demand (the stylesheet decides; a wide panel shows everything, as
+        // before). One layer is open at a time, so the list stays scannable.
+        if (this.expandedLayerId === layer.id) row.addClass("dm-layer-expanded");
 
         row.addEventListener("contextmenu", (evt: MouseEvent) => {
           evt.preventDefault();
@@ -991,6 +998,19 @@ export class DmControlPanel extends ItemView {
         const swatch = nameRow.createDiv("dm-layer-swatch");
         swatch.style.backgroundColor = color;
         nameRow.createSpan({ text: layer.label, cls: "dm-layer-label" });
+        const expanded = this.expandedLayerId === layer.id;
+        const expandBtn = nameRow.createEl("button", {
+          text: expanded ? "\u2304" : "\u203A",
+          cls: "dm-layer-expand",
+        });
+        expandBtn.setAttribute("aria-expanded", String(expanded));
+        expandBtn.title = expanded ? "Hide this layer's controls" : "Show this layer's controls";
+        // The whole name row is the target: a chevron alone is a small one for
+        // a finger, and the row carries nothing else to press.
+        nameRow.addEventListener("click", () => {
+          this.expandedLayerId = expanded ? null : layer.id;
+          this.render();
+        });
 
         const sliderRow = midCol.createDiv("dm-layer-slider-row");
         const scaleLabel = sliderRow.createSpan({ text: `${Math.round(layer.width)}%`, cls: "dm-layer-scale-label" });

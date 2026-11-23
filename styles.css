@@ -808,6 +808,19 @@
   justify-content: center;
 }
 
+/* The disclosure control for a layer's own buttons. A wide panel shows them
+   all, so it has nothing to disclose. */
+.dm-layer-expand {
+  display: none;
+  margin-left: auto;
+  padding: 0 8px;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 1.1em;
+  line-height: 1;
+}
+
 .dm-layer-name-row {
   display: flex;
   align-items: center;
@@ -1765,6 +1778,21 @@
   .dm-layer-btn-row > button.mod-cta,
   .dm-ddb-choose-btn {
     flex: 1 1 100%;
+  }
+
+  /* A layer is one line plus its opacity until it is opened: ten buttons and
+     two toggles per layer filled the screen with two layers on it. The eye
+     stays out, because hiding a layer is the one thing done without looking
+     at anything else. */
+  .dm-layer-expand {
+    display: block;
+  }
+  .dm-layer-name-row {
+    cursor: pointer;
+  }
+  .dm-layer-row:not(.dm-layer-expanded) .dm-layer-right-col,
+  .dm-layer-row:not(.dm-layer-expanded) .dm-layer-left-bottom {
+    display: none;
   }
 }
 
