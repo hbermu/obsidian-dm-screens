@@ -191,6 +191,44 @@ describe("section jump bar", () => {
     expect(chips(contentEl)[1].classList.contains("dm-section-chip-active")).toBe(true);
   });
 
+  // The first try computed this from `container.scrollTop` and the sections'
+  // `offsetTop`. On a phone neither belongs to the panel — Obsidian scrolls an
+  // ancestor — so every chip stayed unmarked. It is measured now.
+  it("follows the scroll by measuring, whatever element is scrolling", async () => {
+    const { contentEl } = panelWithSections();
+    const nav = contentEl.querySelector(".dm-section-nav") as HTMLElement;
+    const sections = Array.from(contentEl.querySelectorAll(".dm-section")) as HTMLElement[];
+    const at = (el: HTMLElement, top: number) => {
+      el.getBoundingClientRect = () => ({ top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    };
+    // The bar sits at the top; Player is above it, Combat still below.
+    at(nav, 0);
+    at(sections[0], -200);
+    at(sections[1], 300);
+    Object.defineProperty(nav, "offsetParent", { configurable: true, get: () => contentEl });
+
+    document.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => requestAnimationFrame(r));
+    expect(chips(contentEl).map((c) => c.classList.contains("dm-section-chip-active"))).toEqual([true, false]);
+
+    // Scrolled far enough for Combat to reach the bar.
+    at(sections[1], 4);
+    document.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => requestAnimationFrame(r));
+    expect(chips(contentEl).map((c) => c.classList.contains("dm-section-chip-active"))).toEqual([false, true]);
+  });
+
+  it("stays out of it while the bar is hidden on a wide panel", async () => {
+    const { contentEl } = panelWithSections();
+    const nav = contentEl.querySelector(".dm-section-nav") as HTMLElement;
+    Object.defineProperty(nav, "offsetParent", { configurable: true, get: () => null });
+
+    document.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => requestAnimationFrame(r));
+    // Untouched: the first chip from the initial mark, nothing re-computed.
+    expect(chips(contentEl)[0].classList.contains("dm-section-chip-active")).toBe(true);
+  });
+
   it("drops its scroll listener when the panel re-renders", () => {
     const { p, contentEl } = panelWithSections();
     const first = p.navAbort;

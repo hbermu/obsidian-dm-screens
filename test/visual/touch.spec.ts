@@ -180,9 +180,12 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
     const after = bar.getBoundingClientRect().top;
     const panelBox = panel.getBoundingClientRect();
     panel.scrollTop = 0;
+    const style = getComputedStyle(bar);
     return {
-      display: getComputedStyle(bar).display,
-      position: getComputedStyle(bar).position,
+      display: style.display,
+      position: style.position,
+      background: style.backgroundColor,
+      blur: `${style.backdropFilter} ${(style as unknown as { webkitBackdropFilter?: string }).webkitBackdropFilter ?? ""}`,
       before,
       after,
       scrolled: panel.scrollTop,
@@ -194,6 +197,11 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
 
   expect(nav.display).toBe("flex");
   expect(nav.position).toBe("sticky");
+  // It paints no colour of its own: the panel's surface is primary in the main
+  // area and secondary in a sidebar, so a painted band is the wrong shade half
+  // the time. It blurs what passes under it instead.
+  expect(nav.background).toBe("rgba(0, 0, 0, 0)");
+  expect(nav.blur).toContain("blur");
   // It does not travel with the content it is there to navigate.
   expect(nav.after).toBeCloseTo(nav.before, 0);
   expect(nav.chips.length).toBeGreaterThanOrEqual(3);

@@ -480,9 +480,6 @@ export class DmControlPanel extends ItemView {
     });
   }
 
-  // How far down the panel a section has to reach before it counts as the one
-  // being read: just under the nav bar itself.
-  private static readonly NAV_ACTIVE_OFFSET = 72;
   private navAbort: AbortController | null = null;
   // One word per chip: "Player Screen Server" and "Player Screen" are the same
   // word until the third, and a bar of truncated titles navigates nothing.
@@ -533,21 +530,26 @@ export class DmControlPanel extends ItemView {
       // Nothing to track while the bar is hidden (a panel wide enough to show
       // every section at once).
       if (nav.offsetParent === null) return;
-      const top = container.scrollTop + DmControlPanel.NAV_ACTIVE_OFFSET;
+      // Measured, not computed from scrollTop and offsetTop: on mobile the
+      // element that scrolls is not always the panel, and neither is the
+      // sections' offset parent, which left every chip unmarked.
+      const line = nav.getBoundingClientRect().bottom;
       let active = chips[0].section;
       for (const { section } of chips) {
-        if (section.offsetTop <= top) active = section;
+        if (section.getBoundingClientRect().top <= line + 8) active = section;
       }
       markActive(active);
     };
-    container.addEventListener(
+    // Captured on the document: a scroll event does not bubble, and the
+    // scrolling element here is whichever ancestor Obsidian gave the view.
+    document.addEventListener(
       "scroll",
       () => {
         if (queued) return;
         queued = true;
         requestAnimationFrame(sync);
       },
-      { signal, passive: true }
+      { signal, passive: true, capture: true }
     );
     // The panel opens at the top, so the first section is the one being read
     // until a scroll says otherwise.
