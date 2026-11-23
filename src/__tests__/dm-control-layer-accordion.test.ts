@@ -218,6 +218,31 @@ describe("section jump bar", () => {
     expect(chips(contentEl).map((c) => c.classList.contains("dm-section-chip-active"))).toEqual([false, true]);
   });
 
+  // The last sections may never reach the top of a panel that runs out of
+  // scroll before them: pressing Combat and watching Server stay lit reads as
+  // a broken bar.
+  it("marks the last section once the scroll has run out", async () => {
+    const { contentEl } = panelWithSections();
+    const nav = contentEl.querySelector(".dm-section-nav") as HTMLElement;
+    const sections = Array.from(contentEl.querySelectorAll(".dm-section")) as HTMLElement[];
+    const at = (el: HTMLElement, top: number) => {
+      el.getBoundingClientRect = () => ({ top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    };
+    at(nav, 0);
+    at(sections[0], -100);
+    // Combat is on screen but below the bar, and cannot be scrolled higher.
+    at(sections[1], 600);
+    Object.defineProperty(nav, "offsetParent", { configurable: true, get: () => contentEl });
+    Object.defineProperty(contentEl, "scrollHeight", { configurable: true, get: () => 1000 });
+    Object.defineProperty(contentEl, "clientHeight", { configurable: true, get: () => 800 });
+    contentEl.scrollTop = 200;
+
+    document.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => requestAnimationFrame(r));
+
+    expect(chips(contentEl).map((c) => c.classList.contains("dm-section-chip-active"))).toEqual([false, true]);
+  });
+
   it("stays out of it while the bar is hidden on a wide panel", async () => {
     const { contentEl } = panelWithSections();
     const nav = contentEl.querySelector(".dm-section-nav") as HTMLElement;

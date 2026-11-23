@@ -529,10 +529,30 @@ export class DmControlPanel extends ItemView {
     // window that is not on screen, and a queued one that never arrived left
     // the bar stuck on whatever it last marked. Four rect reads per scroll
     // cost nothing.
+    // Whichever ancestor actually scrolls — the panel on a desktop, something
+    // Obsidian owns on mobile.
+    const scroller = () => {
+      let el: HTMLElement | null = container;
+      while (el) {
+        if (el.scrollHeight - el.clientHeight > 2) return el;
+        el = el.parentElement;
+      }
+      return null;
+    };
+
     const sync = () => {
       // Nothing to track while the bar is hidden (a panel wide enough to show
       // every section at once).
       if (nav.offsetParent === null) return;
+      // The last sections may never reach the top of a panel that runs out of
+      // scroll before them, and pressing Combat only to watch Server stay lit
+      // says the bar is broken. At the end of the scroll, the end is where
+      // you are.
+      const sc = scroller();
+      if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight <= 2) {
+        markActive(chips[chips.length - 1].section);
+        return;
+      }
       // Measured, not computed from scrollTop and offsetTop: on mobile the
       // element that scrolls is not always the panel, and neither is the
       // sections' offset parent, which left every chip unmarked.
