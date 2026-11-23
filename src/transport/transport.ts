@@ -40,6 +40,10 @@ export interface SceneTransport {
   // The URL a broadcast uses for a vault file: `/vault/<path>` in embedded
   // mode, the published `/assets/<sha256>.<ext>` in remote mode.
   mediaUrl(vaultPath: string): Promise<string>;
+  // Makes a URL the DM side holds (a data URL, a vault URL) reachable by the
+  // server; in embedded mode there is nowhere else to put it, so it is
+  // returned unchanged.
+  publishMedia(url: string): Promise<string>;
   // Something an <img>/<video> inside Obsidian can load for a media URL, or
   // null when this device cannot show it.
   displayUrl(url: string): string | null;

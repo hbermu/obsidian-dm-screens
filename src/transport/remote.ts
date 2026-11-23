@@ -275,6 +275,10 @@ export class RemoteTransport implements SceneTransport {
     return bytesDataUrl(new Uint8Array(res.arrayBuffer), mime);
   }
 
+  publishMedia(url: string): Promise<string> {
+    return this.publisher.publishUrl(url);
+  }
+
   mediaUrl(vaultPath: string): Promise<string> {
     return this.publisher.publishVaultPath(vaultPath);
   }

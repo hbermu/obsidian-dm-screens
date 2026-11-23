@@ -5,6 +5,7 @@ import { fogSidecarPath, loadFogSidecar } from "../map/fog";
 import { loadWallsSidecar } from "../map/walls";
 import type { MapVision, MapWall } from "../map/types";
 import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 const PNG_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -42,6 +43,8 @@ function makeServer() {
     settings: { serverPort: 3000 },
   } as any;
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).hydrusApi = () => null;
   return new PlayerScreenServer(plugin);
 }
 
@@ -70,6 +73,8 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
     app: { vault: { adapter } },
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).hydrusApi = () => null;
   const host = { render: () => {} };
   const panel = new MapScreenPanel(plugin as any, host as any);
   return { panel, broadcasts, files, adapter };

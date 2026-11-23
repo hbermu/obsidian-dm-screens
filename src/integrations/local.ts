@@ -45,6 +45,7 @@ export class LocalGateway implements IntegrationGateway {
       searchFiles: (tags, limit) => client.searchFiles(tags, limit),
       searchTags: (prefix, opts) => client.searchTags(prefix, opts),
       getFileMetadata: (hashes, tagService) => client.getFileMetadata(hashes, tagService),
+      getFileBytes: (hash) => client.getFileBytes(hash),
       getThumbnailBytes: (hash) => client.getThumbnailBytes(hash),
       getFileRange: (hash, start, end) => client.getFileRange(hash, start, end),
       // The vault cache is the local store, and the transport turns the
@@ -87,7 +88,8 @@ export class LocalGateway implements IntegrationGateway {
     };
     return {
       validateSession: () => client.validateSession(),
-      getEncounters: async () => (await client.getEncounters()).map((e) => ({ id: e.id, name: e.name })),
+      getEncounters: async () =>
+        (await client.getEncounters()).map((e) => ({ id: e.id, name: e.name, inProgress: e.inProgress })),
       getEncounter: (id) => client.getEncounter(id),
       getMonsterImages: async (ids) => {
         const remote = await client.getMonsterImages(ids);

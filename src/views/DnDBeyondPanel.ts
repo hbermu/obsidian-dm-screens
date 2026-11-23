@@ -1,9 +1,9 @@
 import { Menu, Notice } from "obsidian";
 import type DmScreenPlugin from "../main";
-import { DdbClient } from "../dndbeyond/client";
-import { DdbEncounterPoller, type DdbPolledState } from "../dndbeyond/poller";
+import type { DdbApi } from "../integrations/gateway";
+import type { DdbPolledState } from "../dndbeyond/poller";
 import { debug, debugWarn } from "../debug";
-import type { DdbEncounter } from "../dndbeyond/types";
+import type { DdbCharacterSummary, DdbEncounter } from "../dndbeyond/types";
 import { DnDBeyondEncounterModal } from "./DnDBeyondEncounterModal";
 import { RenameMonsterModal } from "./RenameMonsterModal";
 import { MonsterConditionsModal } from "./MonsterConditionsModal";
@@ -35,9 +35,9 @@ type PreviewCombatant = {
 };
 
 export class DnDBeyondPanel {
-  private client: DdbClient | null = null;
-  private poller: DdbEncounterPoller | null = null;
+  private client: DdbApi | null = null;
   private selectedEncounterId: string | null = null;
+  private tracking = false;
   private showPcHp = true;
   private showFullTurnOrder = false;
   private showFullTurnOrderUserSet = false;
@@ -64,7 +64,7 @@ export class DnDBeyondPanel {
   }
 
   getActiveEncounterStatus(): { id: string; name: string; roundNum: number } | null {
-    if (!this.poller || !this.polledState || !this.selectedEncounterId) return null;
+    if (!this.tracking || !this.polledState || !this.selectedEncounterId) return null;
     return {
       id: this.selectedEncounterId,
       name: this.polledState.encounter.name,
@@ -78,17 +78,16 @@ export class DnDBeyondPanel {
   }
 
   async initialize(): Promise<void> {
-    const session = this.plugin.settings.ddbCobaltSession;
-    if (!session) {
+    this.client = this.plugin.gateway.ddb();
+    if (!this.client) {
       this.render();
       return;
     }
     try {
-      this.client = new DdbClient(session);
-      const valid = await this.client.validateSession();
-      if (!valid) {
+      if (!(await this.client.validateSession())) {
+        const where = this.plugin.transport.mode === "remote" ? "on the server" : "in settings";
         this.client = null;
-        new Notice("D&D Beyond session expired. Update cookie in settings.", 6000);
+        new Notice(`D&D Beyond session expired. Update the cookie ${where}.`, 6000);
       }
     } catch {
       this.client = null;
@@ -101,7 +100,7 @@ export class DnDBeyondPanel {
   }
 
   isTracking(): boolean {
-    return this.poller !== null && this.selectedEncounterId !== null;
+    return this.tracking && this.selectedEncounterId !== null;
   }
 
   render(): void {
@@ -167,10 +166,8 @@ export class DnDBeyondPanel {
 
   private selectEncounter(id: string): void {
     debug("DDB Panel: selectEncounter", id);
-    if (this.poller) {
-      this.poller.stop();
-      this.poller = null;
-    }
+    if (this.tracking) void this.client?.track(null, () => {});
+    this.tracking = false;
     this.selectedEncounterId = id;
     this.polledState = null;
     this.showFullTurnOrderUserSet = false;
@@ -182,27 +179,32 @@ export class DnDBeyondPanel {
     this.onTrackingChange?.();
 
     if (this.client) {
-      this.client.getEncounter(id).then((enc) => this.loadMonsterImages(enc)).catch(() => {});
+      this.client
+        .getEncounter(id)
+        .then((enc) => this.loadMonsterImages(enc as DdbEncounter))
+        .catch(() => {});
     }
   }
 
   private startTracking(encounterId: string): void {
     if (!this.client) return;
-    this.poller = new DdbEncounterPoller(
-      this.client,
-      encounterId,
-      (state) => this.onPollUpdate(state),
-      (err) => this.onPollError(err)
-    );
-    this.poller.start();
+    this.tracking = true;
+    void this.client.track(encounterId, (state) => {
+      if (state.error) {
+        this.onPollError(new Error(state.error));
+        return;
+      }
+      this.onPollUpdate({
+        encounter: state.encounter as DdbEncounter,
+        characters: new Map(Object.entries(state.characters).map(([id, c]) => [Number(id), c as DdbCharacterSummary])),
+      });
+    });
   }
 
   stopTracking(): void {
     debug("DDB Panel: stopTracking");
-    if (this.poller) {
-      this.poller.stop();
-      this.poller = null;
-    }
+    void this.client?.track(null, () => {});
+    this.tracking = false;
     this.selectedEncounterId = null;
     this.polledState = null;
     this.monsterStatuses.clear();
@@ -476,12 +478,6 @@ export class DnDBeyondPanel {
     const uniqueIds = [...new Set(encounter.monsters.map((m) => m.id))];
     if (uniqueIds.length === 0) return;
 
-    const cache = this.plugin.ddbImageCache;
-    if (!cache) {
-      debugWarn("loadMonsterImages: DDB image cache not initialised");
-      return;
-    }
-
     debug("loadMonsterImages: encounter", encounter.name, "uniqueIds", uniqueIds);
 
     try {
@@ -499,10 +495,9 @@ export class DnDBeyondPanel {
           const monster = encounter.monsters.find((m) => m.id === monsterId);
           const name = monster?.name ?? `Monster ${monsterId}`;
           debug("loadMonsterImages: downloading", name, "id", monsterId, "url", redactUrl(imageUrl));
-          const vaultPath = await cache.getOrDownload(monsterId, imageUrl, name);
-          const dataUrl = await this.plugin.imageToDataUrl(vaultPath);
+          const dataUrl = await this.plugin.dataUrlFor(imageUrl);
           if (dataUrl) {
-            dmPanel.addImageLayer(name, dataUrl, "monster", false, `vault:${vaultPath}`);
+            dmPanel.addImageLayer(name, dataUrl, "monster", false, this.plugin.transport.sourceOf(imageUrl) ?? undefined);
             debug("loadMonsterImages: added layer", name);
           }
         })

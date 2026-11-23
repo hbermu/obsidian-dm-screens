@@ -1,6 +1,7 @@
 import { App, Menu, Modal, Notice } from "obsidian";
 import type DmScreenPlugin from "../main";
-import { HydrusClient, type HydrusFile, extFromMime, mediaTypeOf } from "../hydrus/client";
+import type { HydrusApi, PublishedHydrusFile } from "../integrations/gateway";
+import { HydrusClient, type HydrusFile, type HydrusTagSuggestion, extFromMime, mediaTypeOf } from "../hydrus/client";
 import type { CachedEntry, HydrusCache } from "../hydrus/cache";
 import { paginate } from "../hydrus/pagination";
 import { filterTags } from "../hydrus/tagFilter";
@@ -41,8 +42,10 @@ const PAGE_SIZE = 100;
 
 export class HydrusExplorerModal extends Modal {
   private plugin: DmScreenPlugin;
-  private cache: HydrusCache;
-  private client: HydrusClient | null;
+  // Null in remote mode: the server holds the files, so there is no local
+  // source to list and nothing to evict.
+  private cache: HydrusCache | null;
+  private client: HydrusApi | null;
   private mode: "online" | "offline" = "offline";
   private tiles: Tile[] = [];
   private query = "";
@@ -63,11 +66,8 @@ export class HydrusExplorerModal extends Modal {
   constructor(app: App, plugin: DmScreenPlugin) {
     super(app);
     this.plugin = plugin;
-    if (!plugin.hydrusCache) {
-      throw new Error("Hydrus cache not initialised; check settings");
-    }
-    this.cache = plugin.hydrusCache;
-    this.client = plugin.buildHydrusClient();
+    this.cache = plugin.transport.mode === "embedded" ? plugin.hydrusCache : null;
+    this.client = plugin.hydrusApi();
   }
 
   async onOpen() {
@@ -159,12 +159,12 @@ export class HydrusExplorerModal extends Modal {
           );
           const merged: string[] = [];
           for (const r of settled) {
-            if (r.status === "fulfilled") merged.push(...r.value.map((s) => s.value));
+            if (r.status === "fulfilled") merged.push(...r.value.map((t: HydrusTagSuggestion) => t.value));
           }
           results = [...new Set(merged)];
         } else {
           const remote = await this.client.searchTags(prefix, {});
-          results = remote.map((s) => s.value);
+          results = remote.map((t: HydrusTagSuggestion) => t.value);
         }
       } catch {
         results = await this.suggestFromCache(prefix);
@@ -176,7 +176,7 @@ export class HydrusExplorerModal extends Modal {
   }
 
   private async suggestFromCache(prefix: string): Promise<string[]> {
-    const entries = await this.cache.listCached();
+    const entries = (await this.cache?.listCached()) ?? [];
     const counts = new Map<string, number>();
     for (const e of entries) {
       for (const tag of e.knownTags) {
@@ -327,7 +327,7 @@ export class HydrusExplorerModal extends Modal {
   }
 
   private async searchLocal(tags: string[], kinds: Array<"image" | "video">): Promise<Tile[]> {
-    const cached = await this.cache.listCached();
+    const cached = (await this.cache?.listCached()) ?? [];
     const filtered = cached.filter(
       (entry) =>
         kinds.some((kind) => entry.mime.toLowerCase().startsWith(`${kind}/`)) &&
@@ -348,11 +348,11 @@ export class HydrusExplorerModal extends Modal {
       }));
   }
 
-  private async searchMerged(client: HydrusClient, tags: string[]): Promise<Tile[]> {
+  private async searchMerged(client: HydrusApi, tags: string[]): Promise<Tile[]> {
     const search = await client.searchFiles(tags, HARD_CAP);
     if (search.hashes.length === 0) return [];
     const meta = await client.getFileMetadata(search.hashes);
-    const cached = new Map((await this.cache.listCached()).map((e) => [e.hash, e]));
+    const cached = new Map(((await this.cache?.listCached()) ?? []).map((e) => [e.hash, e]));
     return meta.map<Tile>((file) => {
       const local = cached.get(file.hash);
       if (local) {
@@ -443,32 +443,30 @@ export class HydrusExplorerModal extends Modal {
 
   private async handleSetBackground(tile: Tile) {
     try {
-      const entry = await this.ensureCached(tile);
-      // Relative URL — the player browser resolves it against the server's
-      // own origin. Hardcoding localhost breaks any client that isn't on the
-      // DM machine.
-      const url = await this.plugin.transport.mediaUrl(entry.vaultPath);
-      const mediaType = mediaTypeOf(entry.mime);
-      debug("HydrusExplorer: handleSetBackground", entry.hash.slice(0, 12), mediaType, entry.vaultPath);
+      // A relative URL: the screens resolve it against the server they are
+      // connected to, whichever that is.
+      const file = await this.publish(tile);
+      const url = file.url;
+      const mediaType = file.mediaType;
+      debug("HydrusExplorer: handleSetBackground", tile.hash.slice(0, 12), mediaType, url);
       this.plugin.broadcast({
         type: "show-background-media",
         payload: {
           url,
           mediaType,
-          loop: this.plugin.settings.hydrusDefaultLoop,
-          muted: this.plugin.settings.hydrusDefaultMuted,
+          loop: this.plugin.prefs.get("hydrusDefaultLoop"),
+          muted: this.plugin.prefs.get("hydrusDefaultMuted"),
         },
       });
       const panel = await this.plugin.findOpenDmControlPanel();
       if (panel) {
         panel.activeBackgroundUrl = url;
         panel.setBackgroundLabel({
-          label: layerLabelFromTags(entry.knownTags, entry.hash),
-          title: entry.hash,
+          label: layerLabelFromTags(file.knownTags, tile.hash),
+          title: tile.hash,
         });
         panel.render();
       }
-      await this.cache.markUsed(entry.hash);
       this.close();
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
@@ -477,18 +475,17 @@ export class HydrusExplorerModal extends Modal {
 
   private async handleSetMap(tile: Tile) {
     try {
-      const entry = await this.ensureCached(tile);
       const panel = await this.plugin.findOpenDmControlPanel();
       if (!panel) {
         new Notice("Open the DM Control Panel before setting a map.", 5000);
         return;
       }
-      debug("HydrusExplorer: handleSetMap", entry.hash.slice(0, 12), entry.vaultPath);
-      await panel.mapPanel.setVaultMap(entry.vaultPath, mediaTypeOf(entry.mime), {
-        hydrusHash: entry.hash,
-        knownTags: entry.knownTags,
+      const file = await this.publish(tile);
+      debug("HydrusExplorer: handleSetMap", tile.hash.slice(0, 12), file.url);
+      await panel.mapPanel.applyMapUrl(file.url, file.mediaType, {
+        hydrusHash: tile.hash,
+        knownTags: file.knownTags,
       });
-      await this.cache.markUsed(entry.hash);
       this.close();
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
@@ -501,25 +498,36 @@ export class HydrusExplorerModal extends Modal {
         new Notice("Videos can only be set as background. Shift-click the tile or use the ⋮ menu.", 5000);
         return;
       }
-      const entry = await this.ensureCached(tile);
-      const dataUrl = await this.plugin.imageToDataUrl(entry.vaultPath);
+      const file = await this.publish(tile);
+      const dataUrl = await this.plugin.dataUrlFor(file.url);
       const panel = await this.plugin.findOpenDmControlPanel();
       if (!panel) {
         new Notice("Open the DM Control Panel before adding layers.", 5000);
         return;
       }
-      const base = layerLabelFromTags(tile.knownTags, entry.hash);
+      const base = layerLabelFromTags(tile.knownTags, tile.hash);
       const label = uniqueLayerLabel(panel.imageLayers, base);
-      debug("HydrusExplorer: handleAddAsLayer", entry.hash.slice(0, 12), "as", label);
-      panel.addImageLayer(label, dataUrl, "hydrus", false, `hydrus:${entry.hash}`);
-      await this.cache.markUsed(entry.hash);
+      debug("HydrusExplorer: handleAddAsLayer", tile.hash.slice(0, 12), "as", label);
+      panel.addImageLayer(label, dataUrl, "hydrus", false, `hydrus:${tile.hash}`);
       new Notice("Added as image layer.");
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
     }
   }
 
+  // Makes the file reachable by the screens and reports its URL: the vault
+  // cache in embedded mode, the server's asset store in remote mode.
+  private async publish(tile: Tile): Promise<PublishedHydrusFile> {
+    if (!this.client) {
+      throw new Error("Hydrus is offline; cannot fetch new files.");
+    }
+    const file = await this.client.publish(tile.hash);
+    await this.client.markUsed(tile.hash);
+    return file;
+  }
+
   private async ensureCached(tile: Tile): Promise<CachedEntry> {
+    if (!this.cache) throw new Error("there is no local cache in remote mode");
     if (tile.kind === "local") {
       const entry = await this.cache.get(tile.hash);
       if (entry) return entry;
@@ -536,7 +544,7 @@ export class HydrusExplorerModal extends Modal {
       width: tile.kind === "remote" ? tile.width : undefined,
       height: tile.kind === "remote" ? tile.height : undefined,
     };
-    const { entry } = await this.cache.fetchAndCache(this.client, file);
+    const { entry } = await this.cache.fetchAndCache(this.client as unknown as HydrusClient, file);
     return entry;
   }
 
@@ -640,6 +648,7 @@ export class HydrusExplorerModal extends Modal {
               new Notice("Hydrus is offline; cannot re-download.", 6000);
               return;
             }
+            if (!this.cache) return;
             try {
               await this.cache.evict(tile.hash);
               const file: HydrusFile = {
@@ -649,7 +658,7 @@ export class HydrusExplorerModal extends Modal {
                 size: tile.size,
                 knownTags: tile.knownTags,
               };
-              await this.cache.fetchAndCache(this.client, file);
+              await this.cache.fetchAndCache(this.client as unknown as HydrusClient, file);
               new Notice("Re-downloaded.");
               await this.runSearch(this.query);
             } catch (err) {
@@ -662,6 +671,7 @@ export class HydrusExplorerModal extends Modal {
           .setTitle("Delete local copy")
           .setIcon("trash")
           .onClick(async () => {
+            if (!this.cache) return;
             await this.cache.evict(tile.hash);
             new Notice("Local copy deleted.");
             await this.runSearch(this.query);

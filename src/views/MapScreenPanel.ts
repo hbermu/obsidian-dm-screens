@@ -214,8 +214,8 @@ export class MapScreenPanel {
       type: "map-show",
       payload: {
         ...this.activeMap,
-        loop: this.plugin.settings.hydrusDefaultLoop,
-        muted: this.plugin.settings.hydrusDefaultMuted,
+        loop: this.plugin.prefs.get("hydrusDefaultLoop"),
+        muted: this.plugin.prefs.get("hydrusDefaultMuted"),
       },
     });
   }
@@ -343,7 +343,7 @@ export class MapScreenPanel {
   broadcastFog() {
     this.plugin.broadcast({
       type: "map-fog",
-      payload: { dataUrl: this.fogDataUrl, opacity: this.plugin.settings.mapFogTvOpacity },
+      payload: { dataUrl: this.fogDataUrl, opacity: this.plugin.prefs.get("mapFogTvOpacity") },
     });
   }
 
@@ -377,13 +377,6 @@ export class MapScreenPanel {
     mediaType: "image" | "video",
     opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string; offerFoundryWalls?: boolean }
   ): Promise<string | null> {
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = adapter.getResourcePath?.(vaultPath);
-    const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
-    if (!dims) {
-      new Notice("Could not read the map's dimensions.");
-      return null;
-    }
     let url: string;
     try {
       url = await this.plugin.transport.mediaUrl(vaultPath);
@@ -391,10 +384,27 @@ export class MapScreenPanel {
       new Notice(`Could not publish the map: ${(e as Error).message}`, 8000);
       return null;
     }
+    return this.applyMapUrl(url, mediaType, opts);
+  }
+
+  // Takes the URL the screens will use. The dimensions are measured from
+  // whatever this device can load for it, which in remote mode is the
+  // server's copy rather than a local file.
+  async applyMapUrl(
+    url: string,
+    mediaType: "image" | "video",
+    opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string; offerFoundryWalls?: boolean }
+  ): Promise<string | null> {
+    const resourceUrl = this.plugin.transport.displayUrl(url);
+    const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
+    if (!dims) {
+      new Notice("Could not read the map's dimensions.");
+      return null;
+    }
     const stored = this.plugin.transport.mapData.config(url);
     this.state = stored
       ? { ...stored }
-      : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
+      : defaultMapState(dims.w, dims.h, this.plugin.prefs.get("mapDefaultPxPerSquare"));
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
     this.activeMapTags = opts?.knownTags ?? [];
 
@@ -420,7 +430,7 @@ export class MapScreenPanel {
     this.previewPanX = 0;
     this.previewPanY = 0;
     this.clampStateToViewport();
-    debug("MapScreenPanel: setVaultMap", vaultPath, mediaType, `${dims.w}×${dims.h}`, stored ? "(remembered config)" : "(defaults)");
+    debug("MapScreenPanel: applyMapUrl", url, mediaType, `${dims.w}×${dims.h}`, stored ? "(remembered config)" : "(defaults)");
     this.broadcastShow();
     this.broadcastConfig();
     this.broadcastView(true);
@@ -511,7 +521,7 @@ export class MapScreenPanel {
   // import that module's walls. Every await re-checks the active map, so a map
   // switched mid-flight never receives another map's walls.
   async offerFoundryWalls(mapUrl: string) {
-    const client = this.plugin.buildHydrusClient();
+    const client = this.plugin.hydrusApi();
     if (!client) return;
     const isCurrent = () => this.activeMap?.url === mapUrl;
     let modules;
@@ -560,12 +570,14 @@ export class MapScreenPanel {
 
   private async applyHydrusRefAsMap(ref: ResolvedHydrusRef) {
     try {
-      const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
-      await this.setVaultMap(entry.vaultPath, ref.mediaType === "video" ? "video" : "image", {
+      const api = this.plugin.hydrusApi();
+      if (!api) throw new Error("Hydrus is not configured");
+      const file = await api.publish(ref.hash);
+      await this.applyMapUrl(file.url, file.mediaType, {
         hydrusHash: ref.hash,
-        knownTags: entry.knownTags,
+        knownTags: file.knownTags,
       });
-      await this.plugin.hydrusCache!.markUsed(ref.hash);
+      await api.markUsed(ref.hash);
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
     }

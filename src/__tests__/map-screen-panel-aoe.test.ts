@@ -3,6 +3,7 @@ import { MapScreenPanel } from "../views/MapScreenPanel";
 import type { MapAoe, MapVision } from "../map/types";
 import { anchorToView } from "../map/vision";
 import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 interface Broadcast {
   type: string;
@@ -30,6 +31,8 @@ function makePanel() {
     app: { vault: { adapter: { exists: () => Promise.resolve(false) } } },
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).hydrusApi = () => null;
   const releases: Array<ReturnType<typeof vi.fn>> = [];
   const host = {
     render: vi.fn(),

@@ -1,4 +1,5 @@
 import type { HydrusCache, CachedEntry } from "./cache";
+import type { HydrusApi } from "../integrations/gateway";
 import type { HydrusClient, HydrusFile } from "./client";
 import { mediaTypeOf } from "./client";
 import { debug, debugWarn } from "../debug";
@@ -28,12 +29,14 @@ export function parseHydrusRefs(noteBody: string): HydrusRef[] {
   return refs;
 }
 
+// `cache` is null in remote mode, where the server holds the files: then
+// every answer comes from the metadata call.
 export async function resolveHydrusRefs(
   refs: HydrusRef[],
-  cache: HydrusCache,
-  client: HydrusClient | null
+  cache: HydrusCache | null,
+  client: HydrusApi | null
 ): Promise<ResolvedHydrusRef[]> {
-  const entries = await Promise.all(refs.map((r) => cache.get(r.hash)));
+  const entries = await Promise.all(refs.map((r) => (cache ? cache.get(r.hash) : Promise.resolve(null))));
   const missing = refs.filter((_, i) => !entries[i]).map((r) => r.hash);
 
   const remote: Record<string, HydrusFile> = {};

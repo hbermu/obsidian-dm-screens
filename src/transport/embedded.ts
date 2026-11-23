@@ -103,6 +103,10 @@ export class EmbeddedTransport implements SceneTransport {
     this.plugin.server?.broadcast(toWire(message));
   }
 
+  async publishMedia(url: string): Promise<string> {
+    return url;
+  }
+
   async mediaUrl(vaultPath: string): Promise<string> {
     return `/vault/${encodeVaultPath(vaultPath)}`;
   }

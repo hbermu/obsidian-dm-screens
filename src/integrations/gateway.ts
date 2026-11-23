@@ -23,6 +23,7 @@ export interface HydrusApi {
   searchFiles(tags: string[], limit?: number): Promise<{ hashes: string[] }>;
   searchTags(prefix: string, opts?: { tagServiceKey?: string; limit?: number }): Promise<HydrusTagSuggestion[]>;
   getFileMetadata(hashes: string[], tagService?: string): Promise<HydrusFile[]>;
+  getFileBytes(hash: string): Promise<ArrayBuffer>;
   getThumbnailBytes(hash: string): Promise<ArrayBuffer>;
   getFileRange(hash: string, start: number, end: number): Promise<{ bytes: Uint8Array; partial: boolean }>;
   publish(hash: string): Promise<PublishedHydrusFile>;
@@ -32,6 +33,8 @@ export interface HydrusApi {
 export interface DdbEncounterSummary {
   id: string;
   name: string;
+  // Shown as a badge in the picker; absent when the list does not say.
+  inProgress?: boolean;
 }
 
 // The raw state a poll produced. The panel maps it; nothing here decides what

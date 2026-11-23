@@ -91,6 +91,11 @@ export class RemoteGateway implements IntegrationGateway {
           knownTags: knownTagsOf(row, tagService),
         }));
       },
+      getFileBytes: async (hash) => {
+        const res = await callApi(endpoint(), "GET", `/api/hydrus/file/${hash}`);
+        if (res.status !== 200) fail("Hydrus file", res.status);
+        return res.arrayBuffer;
+      },
       getThumbnailBytes: async (hash) => {
         const res = await callApi(endpoint(), "GET", `/api/hydrus/thumbnail/${hash}`);
         if (res.status !== 200) fail("Hydrus thumbnail", res.status);
@@ -132,7 +137,11 @@ export class RemoteGateway implements IntegrationGateway {
       getEncounters: async () => {
         const body = await call("D&D Beyond encounters", "GET", "/api/ddb/encounters");
         const list = Array.isArray(body?.data) ? body.data : [];
-        return list.map((e: any) => ({ id: String(e?.id ?? ""), name: String(e?.name ?? "") }));
+        return list.map((e: any) => ({
+          id: String(e?.id ?? ""),
+          name: String(e?.name ?? ""),
+          inProgress: e?.inProgress === true,
+        }));
       },
       getEncounter: (id) => call("D&D Beyond encounter", "GET", `/api/ddb/encounters/${encodeURIComponent(id)}`),
       getMonsterImages: async (ids) => {

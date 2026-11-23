@@ -5,6 +5,7 @@ import { FoundryImportConfirmModal, FoundrySceneModal } from "../views/FoundryIm
 import type { FoundryScene } from "../map/foundry";
 import type { HydrusFile } from "../hydrus/client";
 import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 const lookup = vi.hoisted(() => ({
   findFoundryModules: vi.fn(),
@@ -27,10 +28,11 @@ function makePanel(client: object | null = {}) {
     settings: { mapConfigs: {}, mapDefaultPxPerSquare: 140, mapScreenProfiles: {}, tvWidth: 1920, tvHeight: 1080, mapFogTvOpacity: 1 },
     broadcast: () => {},
     saveSettings: () => Promise.resolve(),
-    buildHydrusClient: () => client,
+    hydrusApi: () => client,
     app: { vault: { adapter: { exists: () => Promise.resolve(false) } } },
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panel = new MapScreenPanel(plugin as any, { render: vi.fn(), beginDrag: vi.fn() } as any);
   panel.activeMap = { url: "/vault/abbey.jpg", mediaType: "image", naturalWidth: 2000, naturalHeight: 1600 };

@@ -2120,27 +2120,28 @@ export class DmControlPanel extends ItemView {
   }
 
   async collectHydrusRefEntries(file: TFile): Promise<ResolvedHydrusRef[]> {
-    if (!this.plugin.hydrusCache) return [];
+    if (!this.plugin.hydrusApi()) return [];
     const body = await this.plugin.app.vault.cachedRead(file);
     const refs = parseHydrusRefs(body);
     if (refs.length === 0) return [];
-    const client = this.plugin.buildHydrusClient();
-    return resolveHydrusRefs(refs, this.plugin.hydrusCache, client);
+    return resolveHydrusRefs(refs, this.plugin.hydrusCache, this.plugin.hydrusApi());
   }
 
   private async applyHydrusRef(ref: ResolvedHydrusRef, asBackground: boolean): Promise<void> {
     try {
-      const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
+      const api = this.plugin.hydrusApi();
+      if (!api) throw new Error("Hydrus is not configured");
+      const file = await api.publish(ref.hash);
       if (asBackground) {
-        const url = await this.plugin.transport.mediaUrl(entry.vaultPath);
-        debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), ref.mediaType);
+        const url = file.url;
+        debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), file.mediaType);
         this.activeBackgroundUrl = url;
-        this.activeVideoPath = ref.mediaType === "video" ? entry.vaultPath : null;
+        this.activeVideoPath = null;
 
         const sourceLabel = resolveSourceLabel({
           url,
           hydrusHash: ref.hash,
-          knownTags: entry.knownTags,
+          knownTags: file.knownTags,
           plugin: this.plugin,
         });
         this.setBackgroundLabel(sourceLabel);
@@ -2149,19 +2150,19 @@ export class DmControlPanel extends ItemView {
           type: "show-background-media",
           payload: {
             url,
-            mediaType: ref.mediaType ?? "image",
-            loop: this.plugin.settings.hydrusDefaultLoop,
-            muted: this.plugin.settings.hydrusDefaultMuted,
+            mediaType: file.mediaType,
+            loop: this.plugin.prefs.get("hydrusDefaultLoop"),
+            muted: this.plugin.prefs.get("hydrusDefaultMuted"),
           },
         });
         this.render();
       } else {
-        const dataUrl = await this.plugin.imageToDataUrl(entry.vaultPath);
+        const dataUrl = await this.plugin.dataUrlFor(file.url);
         if (dataUrl) {
           this.addImageLayer(uniqueLayerLabel(this.imageLayers, ref.label), dataUrl, "hydrus", false, `hydrus:${ref.hash}`);
         }
       }
-      await this.plugin.hydrusCache!.markUsed(ref.hash);
+      await api.markUsed(ref.hash);
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
     }

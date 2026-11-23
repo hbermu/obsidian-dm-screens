@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy } from "../hydrus/noteRefs";
 import type { HydrusCache, CachedEntry } from "../hydrus/cache";
 import type { HydrusClient } from "../hydrus/client";
+import type { HydrusApi } from "../integrations/gateway";
 
 const H1 = "a".repeat(64);
 const H2 = "b".repeat(64);
@@ -94,7 +95,7 @@ describe("resolveHydrusRefs", () => {
           knownTags: [],
         }))
       ),
-    } as unknown as HydrusClient;
+    } as unknown as HydrusApi;
     const out = await resolveHydrusRefs(
       [
         { label: "A", hash: H1 },
@@ -120,7 +121,7 @@ describe("resolveHydrusRefs", () => {
       getFileMetadata: vi.fn(async () => {
         throw new Error("net");
       }),
-    } as unknown as HydrusClient;
+    } as unknown as HydrusApi;
     const out = await resolveHydrusRefs([{ label: "A", hash: H1 }], fakeCache({}), client);
     expect(out[0].available).toBe(false);
     expect(out[0].mediaType).toBeNull();

@@ -158,6 +158,33 @@ export class DmScreenSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // In remote mode the credentials live in the server's environment, so the
+  // panel states what it provides rather than offering fields to fill in.
+  private renderServerProvidedIntegrations(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Integrations" });
+    const caps = this.plugin.gateway.capabilities();
+    const connected = this.plugin.remote?.status === "active" || this.plugin.remote?.status === "readonly";
+    if (!connected) {
+      containerEl.createEl("p", {
+        cls: "setting-item-description",
+        text: "Connect to the server to see which integrations it provides.",
+      });
+      return;
+    }
+    const lines = [
+      `Hydrus: ${caps.hydrus ? "provided by the server" : "not configured on the server"}`,
+      `D&D Beyond: ${caps.ddb ? "provided by the server" : "not configured on the server"}`,
+      caps.webhooks.length > 0
+        ? `Webhook targets: ${caps.webhooks.join(", ")}`
+        : "Webhook targets: none configured on the server",
+    ];
+    for (const text of lines) containerEl.createEl("p", { cls: "setting-item-description", text });
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Their credentials stay in the server's environment; this device never holds them.",
+    });
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -336,305 +363,309 @@ export class DmScreenSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl("h3", { text: "Hydrus Library" });
+    if (this.plugin.effectiveServerMode() === "remote") {
+      this.renderServerProvidedIntegrations(containerEl);
+    } else {
+      containerEl.createEl("h3", { text: "Hydrus Library" });
 
-    new Setting(containerEl)
-      .setName("Enable Hydrus integration")
-      .setDesc('Surfaces a "Media from Hydrus" button in the DM panel to browse the tagged library')
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.hydrusEnabled).onChange(async (value) => {
-          this.plugin.settings.hydrusEnabled = value;
-          await this.plugin.saveSettings();
-          this.plugin.initHydrusCache();
+      new Setting(containerEl)
+        .setName("Enable Hydrus integration")
+        .setDesc('Surfaces a "Media from Hydrus" button in the DM panel to browse the tagged library')
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.hydrusEnabled).onChange(async (value) => {
+            this.plugin.settings.hydrusEnabled = value;
+            await this.plugin.saveSettings();
+            this.plugin.initHydrusCache();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("API URL")
+        .setDesc("Base URL of the Hydrus Client API (no trailing slash)")
+        .addText((text) =>
+          text
+            .setPlaceholder("https://your-hydrus-host.example/")
+            .setValue(this.plugin.settings.hydrusApiUrl)
+            .onChange(async (value) => {
+              this.plugin.settings.hydrusApiUrl = value.replace(/\/+$/, "");
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("API key")
+        .setDesc("64-hex Hydrus-Client-API-Access-Key — kept locally, never sent to the player browser")
+        .addText((text) =>
+          text
+            .setValue(this.plugin.settings.hydrusApiKey)
+            .onChange(async (value) => {
+              this.plugin.settings.hydrusApiKey = value.trim();
+              await this.plugin.saveSettings();
+            })
+        )
+        .addButton((btn) =>
+          btn
+            .setButtonText("Test connection")
+            .setCta()
+            .onClick(async () => {
+              try {
+                const { HydrusClient } = await import("./hydrus/client");
+                const client = new HydrusClient({
+                  baseUrl: this.plugin.settings.hydrusApiUrl,
+                  apiKey: this.plugin.settings.hydrusApiKey,
+                });
+                const info = await client.verifyAccess();
+                new Notice(`Hydrus OK: ${info.human_description ?? "access verified"}`, 5000);
+              } catch (err) {
+                new Notice(`Hydrus failed: ${(err as Error).message}`, 8000);
+              }
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Tag services")
+        .setDesc("Select which Hydrus tag services to search. Click Fetch to discover available services.")
+        .addButton((btn) =>
+          btn
+            .setButtonText("Fetch services")
+            .onClick(async () => {
+              try {
+                const { HydrusClient } = await import("./hydrus/client");
+                const client = new HydrusClient({
+                  baseUrl: this.plugin.settings.hydrusApiUrl,
+                  apiKey: this.plugin.settings.hydrusApiKey,
+                });
+                const services = await client.getServices();
+                const tagServices = services.filter((s) => s.type === 0 || s.type === 5);
+                this.plugin.settings.hydrusAvailableTagServices = tagServices.map((s) => ({
+                  name: s.name,
+                  key: s.service_key,
+                }));
+                // Migrate old setting if needed
+                if (this.plugin.settings.hydrusTagService && this.plugin.settings.hydrusTagServices.length === 0) {
+                  const match = tagServices.find((s) => s.name === this.plugin.settings.hydrusTagService);
+                  if (match) {
+                    this.plugin.settings.hydrusTagServices = [match.service_key];
+                  }
+                  this.plugin.settings.hydrusTagService = "";
+                }
+                await this.plugin.saveSettings();
+                new Notice(`Found ${tagServices.length} tag service(s)`);
+                this.display();
+              } catch (err) {
+                new Notice(`Failed to fetch services: ${(err as Error).message}`, 6000);
+              }
+            })
+        );
+
+      const validServices = this.plugin.settings.hydrusAvailableTagServices.filter(
+        (s) => s.key && s.name
+      );
+      if (validServices.length > 0) {
+        const checkContainer = containerEl.createDiv({ cls: "dm-hydrus-service-checks" });
+        for (const svc of validServices) {
+          const row = checkContainer.createDiv({ cls: "dm-hydrus-service-row" });
+          const checkbox = row.createEl("input", { type: "checkbox" }) as HTMLInputElement;
+          checkbox.checked = this.plugin.settings.hydrusTagServices.includes(svc.key);
+          checkbox.id = `hydrus-svc-${svc.key.slice(0, 8)}`;
+          row.createEl("label", { text: svc.name, attr: { for: checkbox.id } });
+          checkbox.addEventListener("change", async () => {
+            if (checkbox.checked) {
+              if (!this.plugin.settings.hydrusTagServices.includes(svc.key)) {
+                this.plugin.settings.hydrusTagServices.push(svc.key);
+              }
+            } else {
+              this.plugin.settings.hydrusTagServices = this.plugin.settings.hydrusTagServices.filter(
+                (k) => k !== svc.key
+              );
+            }
+            await this.plugin.saveSettings();
+          });
+        }
+      }
+
+      new Setting(containerEl)
+        .setName("Cache base folder")
+        .setDesc(
+          "Relative vault path under which the plugin keeps cached files. Hydrus downloads land in <folder>/hydrus/ and D&D Beyond avatars in <folder>/beyond/."
+        )
+        .addText((text) =>
+          text
+            .setValue(this.plugin.settings.cacheBaseFolder)
+            .onChange(async (value) => {
+              const normalized = value.trim().replace(/^\/+|\/+$/g, "");
+              if (normalized.includes("..")) {
+                new Notice('Cache folder must be relative to the vault, no ".." segments', 6000);
+                return;
+              }
+              this.plugin.settings.cacheBaseFolder = normalized || ".dm-screen";
+              await this.plugin.saveSettings();
+              this.plugin.initHydrusCache();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Cache TTL (days)")
+        .setDesc("Files unused for this many days are removed on plugin reload")
+        .addText((text) =>
+          text
+            .setValue(String(this.plugin.settings.hydrusCacheTtlDays))
+            .onChange(async (value) => {
+              const n = parseInt(value, 10);
+              this.plugin.settings.hydrusCacheTtlDays = Number.isFinite(n) && n > 0 ? n : 30;
+              await this.plugin.saveSettings();
+              this.plugin.initHydrusCache();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Loop background media")
+        .setDesc("Default loop flag when setting media as player background")
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.hydrusDefaultLoop).onChange(async (value) => {
+            this.plugin.settings.hydrusDefaultLoop = value;
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("Mute background media")
+        .setDesc("Default mute flag when setting media as player background (videos autoplay only when muted)")
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.hydrusDefaultMuted).onChange(async (value) => {
+            this.plugin.settings.hydrusDefaultMuted = value;
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("Default search tags")
+        .setDesc(
+          'Tags pre-filled in the search box when opening the Hydrus Explorer (comma-separated, e.g. "landscape, no humans"). Leave empty to start with a blank search.'
+        )
+        .addText((text) =>
+          text
+            .setPlaceholder("landscape, no humans")
+            .setValue(this.plugin.settings.hydrusDefaultSearchTags)
+            .onChange(async (value) => {
+              this.plugin.settings.hydrusDefaultSearchTags = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Ignored tag patterns")
+        .setDesc("Regex patterns (one per line, auto-anchored). Tags matching any pattern are hidden from the tile menu and excluded from Copy tags.")
+        .addTextArea((text) =>
+          text
+            .setValue(this.plugin.settings.hydrusIgnoredTagPatterns.join("\n"))
+            .setPlaceholder("rating:.*\nwd eva02-large v3 tagger ai generated tags")
+            .onChange(async (value) => {
+              this.plugin.settings.hydrusIgnoredTagPatterns = value
+                .split("\n")
+                .map((line) => line.trim())
+                .filter((line) => line.length > 0);
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Clear Hydrus cache")
+        .setDesc("Deletes everything under the cache folder. Cannot be undone.")
+        .addButton((btn) =>
+          btn
+            .setWarning()
+            .setButtonText("Clear cache")
+            .onClick(async () => {
+              const cache = this.plugin.hydrusCache;
+              if (!cache) {
+                new Notice("Hydrus cache not initialised");
+                return;
+              }
+              const removed = await cache.clear();
+              new Notice(`Removed ${removed} cached files`);
+            })
+        );
+
+      // ─── D&D Beyond ───
+      containerEl.createEl("h3", { text: "D&D Beyond" });
+
+      new Setting(containerEl)
+        .setName("Enable D&D Beyond integration")
+        .setDesc("Adds a D&D Beyond tab in combat mode to sync encounters and initiative")
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.ddbEnabled).onChange(async (value) => {
+            this.plugin.settings.ddbEnabled = value;
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("CobaltSession cookie")
+        .setDesc("Paste your CobaltSession cookie from dndbeyond.com (DevTools → Application → Cookies)")
+        .addText((text) => {
+          text.inputEl.type = "password";
+          text.inputEl.style.width = "100%";
+          text
+            .setPlaceholder("Paste CobaltSession value here")
+            .setValue(this.plugin.settings.ddbCobaltSession)
+            .onChange(async (value) => {
+              this.plugin.settings.ddbCobaltSession = value.trim();
+              await this.plugin.saveSettings();
+            });
+        });
+
+      const ddbBtnRow = new Setting(containerEl)
+        .setName("Connection")
+        .setDesc("Open D&D Beyond to log in, then test your session");
+
+      ddbBtnRow.addButton((btn) =>
+        btn.setButtonText("Open D&D Beyond").onClick(() => {
+          window.open("https://www.dndbeyond.com");
         })
       );
 
-    new Setting(containerEl)
-      .setName("API URL")
-      .setDesc("Base URL of the Hydrus Client API (no trailing slash)")
-      .addText((text) =>
-        text
-          .setPlaceholder("https://your-hydrus-host.example/")
-          .setValue(this.plugin.settings.hydrusApiUrl)
-          .onChange(async (value) => {
-            this.plugin.settings.hydrusApiUrl = value.replace(/\/+$/, "");
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("API key")
-      .setDesc("64-hex Hydrus-Client-API-Access-Key — kept locally, never sent to the player browser")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.hydrusApiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.hydrusApiKey = value.trim();
-            await this.plugin.saveSettings();
-          })
-      )
-      .addButton((btn) =>
+      ddbBtnRow.addButton((btn) =>
         btn
           .setButtonText("Test connection")
           .setCta()
           .onClick(async () => {
-            try {
-              const { HydrusClient } = await import("./hydrus/client");
-              const client = new HydrusClient({
-                baseUrl: this.plugin.settings.hydrusApiUrl,
-                apiKey: this.plugin.settings.hydrusApiKey,
-              });
-              const info = await client.verifyAccess();
-              new Notice(`Hydrus OK: ${info.human_description ?? "access verified"}`, 5000);
-            } catch (err) {
-              new Notice(`Hydrus failed: ${(err as Error).message}`, 8000);
+            const session = this.plugin.settings.ddbCobaltSession;
+            if (!session) {
+              new Notice("Paste a CobaltSession cookie first", 4000);
+              return;
             }
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Tag services")
-      .setDesc("Select which Hydrus tag services to search. Click Fetch to discover available services.")
-      .addButton((btn) =>
-        btn
-          .setButtonText("Fetch services")
-          .onClick(async () => {
             try {
-              const { HydrusClient } = await import("./hydrus/client");
-              const client = new HydrusClient({
-                baseUrl: this.plugin.settings.hydrusApiUrl,
-                apiKey: this.plugin.settings.hydrusApiKey,
-              });
-              const services = await client.getServices();
-              const tagServices = services.filter((s) => s.type === 0 || s.type === 5);
-              this.plugin.settings.hydrusAvailableTagServices = tagServices.map((s) => ({
-                name: s.name,
-                key: s.service_key,
-              }));
-              // Migrate old setting if needed
-              if (this.plugin.settings.hydrusTagService && this.plugin.settings.hydrusTagServices.length === 0) {
-                const match = tagServices.find((s) => s.name === this.plugin.settings.hydrusTagService);
-                if (match) {
-                  this.plugin.settings.hydrusTagServices = [match.service_key];
-                }
-                this.plugin.settings.hydrusTagService = "";
+              const { DdbClient } = await import("./dndbeyond/client");
+              const client = new DdbClient(session);
+              const valid = await client.validateSession();
+              if (valid) {
+                new Notice("D&D Beyond session is valid ✓", 5000);
+              } else {
+                new Notice("D&D Beyond session is invalid or expired", 6000);
               }
-              await this.plugin.saveSettings();
-              new Notice(`Found ${tagServices.length} tag service(s)`);
-              this.display();
             } catch (err) {
-              new Notice(`Failed to fetch services: ${(err as Error).message}`, 6000);
+              new Notice(`D&D Beyond test failed: ${(err as Error).message}`, 6000);
             }
           })
       );
 
-    const validServices = this.plugin.settings.hydrusAvailableTagServices.filter(
-      (s) => s.key && s.name
-    );
-    if (validServices.length > 0) {
-      const checkContainer = containerEl.createDiv({ cls: "dm-hydrus-service-checks" });
-      for (const svc of validServices) {
-        const row = checkContainer.createDiv({ cls: "dm-hydrus-service-row" });
-        const checkbox = row.createEl("input", { type: "checkbox" }) as HTMLInputElement;
-        checkbox.checked = this.plugin.settings.hydrusTagServices.includes(svc.key);
-        checkbox.id = `hydrus-svc-${svc.key.slice(0, 8)}`;
-        row.createEl("label", { text: svc.name, attr: { for: checkbox.id } });
-        checkbox.addEventListener("change", async () => {
-          if (checkbox.checked) {
-            if (!this.plugin.settings.hydrusTagServices.includes(svc.key)) {
-              this.plugin.settings.hydrusTagServices.push(svc.key);
-            }
-          } else {
-            this.plugin.settings.hydrusTagServices = this.plugin.settings.hydrusTagServices.filter(
-              (k) => k !== svc.key
-            );
-          }
-          await this.plugin.saveSettings();
-        });
-      }
+      new Setting(containerEl)
+        .setName("Pulse on inspired PC rows")
+        .setDesc("Animate the gold glow around D&D Beyond PCs that have Heroic Inspiration. Turn off for a static glow only.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.ddbInspirationPulse).onChange(async (value) => {
+            this.plugin.settings.ddbInspirationPulse = value;
+            await this.plugin.saveSettings();
+            this.plugin.broadcastInspirationStyle();
+            this.plugin.refreshOpenDmPanels();
+          })
+        );
+
+      // ─── Webhooks ───
+      containerEl.createEl("h3", { text: "Webhooks" });
+      this.renderWebhooksSection(containerEl);
     }
-
-    new Setting(containerEl)
-      .setName("Cache base folder")
-      .setDesc(
-        "Relative vault path under which the plugin keeps cached files. Hydrus downloads land in <folder>/hydrus/ and D&D Beyond avatars in <folder>/beyond/."
-      )
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.cacheBaseFolder)
-          .onChange(async (value) => {
-            const normalized = value.trim().replace(/^\/+|\/+$/g, "");
-            if (normalized.includes("..")) {
-              new Notice('Cache folder must be relative to the vault, no ".." segments', 6000);
-              return;
-            }
-            this.plugin.settings.cacheBaseFolder = normalized || ".dm-screen";
-            await this.plugin.saveSettings();
-            this.plugin.initHydrusCache();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Cache TTL (days)")
-      .setDesc("Files unused for this many days are removed on plugin reload")
-      .addText((text) =>
-        text
-          .setValue(String(this.plugin.settings.hydrusCacheTtlDays))
-          .onChange(async (value) => {
-            const n = parseInt(value, 10);
-            this.plugin.settings.hydrusCacheTtlDays = Number.isFinite(n) && n > 0 ? n : 30;
-            await this.plugin.saveSettings();
-            this.plugin.initHydrusCache();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Loop background media")
-      .setDesc("Default loop flag when setting media as player background")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.hydrusDefaultLoop).onChange(async (value) => {
-          this.plugin.settings.hydrusDefaultLoop = value;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Mute background media")
-      .setDesc("Default mute flag when setting media as player background (videos autoplay only when muted)")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.hydrusDefaultMuted).onChange(async (value) => {
-          this.plugin.settings.hydrusDefaultMuted = value;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Default search tags")
-      .setDesc(
-        'Tags pre-filled in the search box when opening the Hydrus Explorer (comma-separated, e.g. "landscape, no humans"). Leave empty to start with a blank search.'
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("landscape, no humans")
-          .setValue(this.plugin.settings.hydrusDefaultSearchTags)
-          .onChange(async (value) => {
-            this.plugin.settings.hydrusDefaultSearchTags = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Ignored tag patterns")
-      .setDesc("Regex patterns (one per line, auto-anchored). Tags matching any pattern are hidden from the tile menu and excluded from Copy tags.")
-      .addTextArea((text) =>
-        text
-          .setValue(this.plugin.settings.hydrusIgnoredTagPatterns.join("\n"))
-          .setPlaceholder("rating:.*\nwd eva02-large v3 tagger ai generated tags")
-          .onChange(async (value) => {
-            this.plugin.settings.hydrusIgnoredTagPatterns = value
-              .split("\n")
-              .map((line) => line.trim())
-              .filter((line) => line.length > 0);
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Clear Hydrus cache")
-      .setDesc("Deletes everything under the cache folder. Cannot be undone.")
-      .addButton((btn) =>
-        btn
-          .setWarning()
-          .setButtonText("Clear cache")
-          .onClick(async () => {
-            const cache = this.plugin.hydrusCache;
-            if (!cache) {
-              new Notice("Hydrus cache not initialised");
-              return;
-            }
-            const removed = await cache.clear();
-            new Notice(`Removed ${removed} cached files`);
-          })
-      );
-
-    // ─── D&D Beyond ───
-    containerEl.createEl("h3", { text: "D&D Beyond" });
-
-    new Setting(containerEl)
-      .setName("Enable D&D Beyond integration")
-      .setDesc("Adds a D&D Beyond tab in combat mode to sync encounters and initiative")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.ddbEnabled).onChange(async (value) => {
-          this.plugin.settings.ddbEnabled = value;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("CobaltSession cookie")
-      .setDesc("Paste your CobaltSession cookie from dndbeyond.com (DevTools → Application → Cookies)")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text.inputEl.style.width = "100%";
-        text
-          .setPlaceholder("Paste CobaltSession value here")
-          .setValue(this.plugin.settings.ddbCobaltSession)
-          .onChange(async (value) => {
-            this.plugin.settings.ddbCobaltSession = value.trim();
-            await this.plugin.saveSettings();
-          });
-      });
-
-    const ddbBtnRow = new Setting(containerEl)
-      .setName("Connection")
-      .setDesc("Open D&D Beyond to log in, then test your session");
-
-    ddbBtnRow.addButton((btn) =>
-      btn.setButtonText("Open D&D Beyond").onClick(() => {
-        window.open("https://www.dndbeyond.com");
-      })
-    );
-
-    ddbBtnRow.addButton((btn) =>
-      btn
-        .setButtonText("Test connection")
-        .setCta()
-        .onClick(async () => {
-          const session = this.plugin.settings.ddbCobaltSession;
-          if (!session) {
-            new Notice("Paste a CobaltSession cookie first", 4000);
-            return;
-          }
-          try {
-            const { DdbClient } = await import("./dndbeyond/client");
-            const client = new DdbClient(session);
-            const valid = await client.validateSession();
-            if (valid) {
-              new Notice("D&D Beyond session is valid ✓", 5000);
-            } else {
-              new Notice("D&D Beyond session is invalid or expired", 6000);
-            }
-          } catch (err) {
-            new Notice(`D&D Beyond test failed: ${(err as Error).message}`, 6000);
-          }
-        })
-    );
-
-    new Setting(containerEl)
-      .setName("Pulse on inspired PC rows")
-      .setDesc("Animate the gold glow around D&D Beyond PCs that have Heroic Inspiration. Turn off for a static glow only.")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.ddbInspirationPulse).onChange(async (value) => {
-          this.plugin.settings.ddbInspirationPulse = value;
-          await this.plugin.saveSettings();
-          this.plugin.broadcastInspirationStyle();
-          this.plugin.refreshOpenDmPanels();
-        })
-      );
-
-    // ─── Webhooks ───
-    containerEl.createEl("h3", { text: "Webhooks" });
-    this.renderWebhooksSection(containerEl);
 
     // ─── Advanced ───
     containerEl.createEl("h3", { text: "Advanced" });

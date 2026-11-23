@@ -5,7 +5,7 @@ import {
   Notice,
 } from "obsidian";
 import { DmControlPanel, DM_CONTROL_VIEW_TYPE } from "./views/DmControlPanel";
-import { PlayerScreenServer, ReplayCache } from "./server";
+import { PlayerScreenServer, ReplayCache, vaultPathFromUrl } from "./server";
 import type { PlayerMessage } from "./server";
 import { DmScreenSettingTab, DmScreenSettings, DEFAULT_SETTINGS } from "./settings";
 import type { InitiativeViewState, TrackerCombatant } from "./types";
@@ -50,6 +50,20 @@ export default class DmScreenPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
     if (leaves.length === 0) return null;
     return leaves[0].view as DmControlPanel;
+  }
+
+  // The Hydrus surface of the active gateway: the local client in embedded
+  // mode, the server's operations in remote mode.
+  hydrusApi() {
+    return this.gateway.hydrus();
+  }
+
+  // Layers and fog masks are data URLs on the DM side in both modes, so the
+  // editing tools work the same; this brings one back from either store.
+  async dataUrlFor(url: string): Promise<string> {
+    if (url.startsWith("/assets/")) return (await this.remote?.fetchDataUrl(url)) ?? "";
+    const vaultPath = vaultPathFromUrl(url);
+    return vaultPath ? this.imageToDataUrl(vaultPath) : "";
   }
 
   buildHydrusClient(): HydrusClient | null {

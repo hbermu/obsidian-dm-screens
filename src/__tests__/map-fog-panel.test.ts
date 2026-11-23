@@ -4,6 +4,7 @@ import { fogSidecarPath } from "../map/fog";
 import { wallsSidecarPath } from "../map/walls";
 import type { MapVision, MapWall } from "../map/types";
 import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 interface Broadcast {
   type: string;
@@ -49,6 +50,8 @@ function makePanel(files: Record<string, Uint8Array> = {}) {
     app: { vault: { adapter } },
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).hydrusApi = () => null;
   const host = { render: vi.fn() };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panel = new MapScreenPanel(plugin as any, host as any);

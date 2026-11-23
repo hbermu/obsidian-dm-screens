@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNapiCanvas, pixelAt } from "../../test/canvas/napi-canvas-shim";
 import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 let uninstall: () => void;
 
@@ -80,6 +81,8 @@ function makePanel() {
     app: { vault: { adapter } },
   };
   (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).hydrusApi = () => null;
   const host = { render: vi.fn() };
   return { plugin, host, broadcasts };
 }
