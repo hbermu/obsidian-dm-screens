@@ -15,6 +15,12 @@ function makePanel(): { panel: DmControlPanel; render: ReturnType<typeof vi.fn>;
     server: null,
     app: { workspace: { getLeavesOfType: () => [] } },
   } as any;
+  (plugin as any).gateway = {
+    capabilities: () => ({ hydrus: false, ddb: false, webhooks: [] }),
+    hydrus: () => null,
+    ddb: () => null,
+    webhooks: () => ({ targets: () => [], send: async () => {} }),
+  };
   const panel = new DmControlPanel({} as any, plugin);
 
   const contentEl = document.createElement("div");

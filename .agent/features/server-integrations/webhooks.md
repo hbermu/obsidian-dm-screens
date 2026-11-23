@@ -26,13 +26,13 @@
 7. The server shall allow at most one send per target per second and at most 20 per minute, answering `429` beyond that, because a webhook is the one integration that writes somewhere public.
 8. A send shall answer `204` on success and `502` on an upstream failure, with the target name and the upstream status logged and nothing of the body or the URL (`overview.md` requirement 16).
 9. While the controller is read-only it shall not offer the send action (`overview.md` requirement 18).
-10. In remote mode the send modal shall list the server's target names, preview the layer as it does today, and send the layer's already-published asset rather than its data URL.
+10. The send modal shall list the gateway's targets in both modes and preview the layer as it does today. It shall send what the transport makes reachable (`publishMedia`): the layer's data URL in embedded mode, its published asset in remote mode.
 
 ## Tests covering this
 
 - `server/tests/webhooks.rs` — target parsing and its startup errors, the names in the hello without URLs, a send's multipart shape against a stub target, unknown name, a non-asset body, the caption cap, the rate limit, `502` with nothing of the upstream body
 - `src/__tests__/gateway-remote.test.ts` — `RemoteWebhooks` lists names and sends by name with the asset
-- `src/__tests__/send-to-webhook-remote.test.ts` — the modal lists the server's targets and sends the published asset
+- `src/__tests__/send-to-webhook-modal.test.ts` — the modal lists the gateway's targets and sends through it
 
 ## Non-goals
 

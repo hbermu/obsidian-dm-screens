@@ -7,7 +7,8 @@
 - `src/integrations/gateway.ts` — `IntegrationGateway`: `hydrus()`, `ddb()`, `webhooks()`, `capabilities()`; the seam every caller uses
 - `src/integrations/local.ts` — `LocalGateway`: builds `HydrusClient` and `DdbClient` from settings and posts webhooks directly, as the plugin does today
 - `src/integrations/remote.ts` — `RemoteGateway`: the same surfaces over the server's `/api/` routes
-- `src/integrations/settings.ts` — `SessionPreferences`: the preference document, read from settings in embedded mode and from the server in remote mode
+- `src/integrations/prefs.ts` — `SessionPreferences`: the preference document, read from settings in embedded mode and from the server in remote mode
+- `src/transport/transport.ts` — `publishMedia(url)`: makes a DM-side URL reachable by the server (unchanged in embedded mode), which is how a layer reaches a webhook
 - `src/main.ts` — builds the gateway alongside the transport, exposes `plugin.gateway`
 - `src/settings.ts` — the settings tab renders credentials only in embedded mode and binds the preferences to the active gateway
 - `server/src/integrations/mod.rs` — shared outbound client, route allowlists, error mapping
@@ -29,7 +30,7 @@
 2. In embedded mode the gateway shall be a `LocalGateway` built from the settings above, behaving exactly as the plugin did before this feature.
 3. In remote mode (including always on mobile, `../remote-server/overview.md` requirement 3) the gateway shall be a `RemoteGateway` that carries the control token and reaches the server's `/api/` routes.
 4. `capabilities()` shall report what the active gateway can do: `hydrus` and `ddb` as booleans and `webhooks` as the list of target names. In embedded mode it shall be derived from the settings; in remote mode from the `integrations` block of `control-hello`.
-5. While a capability is false, the UI that uses it shall be hidden or disabled rather than failing on use: no Hydrus bar without `hydrus`, no D&D Beyond tab without `ddb`, and no Send to webhook without at least one target.
+5. While a capability is false, the UI that uses it shall be hidden or disabled rather than failing on use: no Hydrus bar without `hydrus`, no D&D Beyond tab without `ddb`, and no target list in the send modal without one. The UI shall read `capabilities()`, never the settings, so in remote mode a device whose own `data.json` still carries Hydrus credentials is offered nothing the server does not provide.
 
 ### Secrets
 
@@ -74,7 +75,7 @@
 - `server/tests/config_secrets.rs` — a secret from the environment and from a `_FILE` path, both forms set is an error, no secret in any response or log
 - `server/tests/prefs.rs` — the document round trip, unknown key, bad shape, the push to every control socket
 - `test/conformance/integrations.conformance.ts` — remote-only: the capability block, `/api/prefs`, and that the view token opens no integration route
-- `test/e2e/specs/remote.e2e.ts` — real Obsidian in remote mode: the settings tab hides the credential fields and the Hydrus bar follows the server's capability
+- `test/e2e/specs/remote.e2e.ts` — real Obsidian in remote mode: with Hydrus credentials set on the device and none on the server, the Hydrus bar stays hidden and `capabilities()` reports none; the settings tab offers no credential field and keeps only the control token
 
 ## Non-goals
 

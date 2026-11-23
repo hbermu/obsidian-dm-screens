@@ -34,6 +34,12 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     ...overrides,
   } as any;
   plugin.transport = new EmbeddedTransport(plugin);
+  (plugin as any).gateway ??= {
+    capabilities: () => ({ hydrus: false, ddb: false, webhooks: [] }),
+    hydrus: () => null,
+    ddb: () => null,
+    webhooks: () => ({ targets: () => [], send: async () => {} }),
+  };
   return plugin;
 }
 

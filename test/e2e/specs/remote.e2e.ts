@@ -123,6 +123,48 @@ describe("remote server mode", function () {
     other.close();
   });
 
+  it("follows the server's integrations, not this device's settings", async function () {
+    // The device is told Hydrus is configured; the server says otherwise,
+    // and the server is what decides in remote mode.
+    await browser.executeObsidian(async ({ app }) => {
+      const plugin = (app as any).plugins.plugins["dm-screen"];
+      plugin.settings.hydrusEnabled = true;
+      plugin.settings.hydrusApiUrl = "http://hydrus.local:45869";
+      plugin.settings.hydrusApiKey = "device-key";
+      await plugin.saveSettings();
+      (app.workspace.getLeavesOfType("dm-control-panel")[0].view as any).render();
+    });
+    expect(await browser.$(".dm-hydrus-bar").isExisting()).toBe(false);
+    expect(await browser.executeObsidian(({ app }) => (app as any).plugins.plugins["dm-screen"].gateway.capabilities())).toEqual({
+      hydrus: false,
+      ddb: false,
+      webhooks: [],
+    });
+  });
+
+  it("offers no credential field in the settings tab", async function () {
+    const headings = await browser.executeObsidian(({ app }) => {
+      const plugin = (app as any).plugins.plugins["dm-screen"];
+      const tab = plugin.settingTab;
+      const host = document.createElement("div");
+      tab.containerEl = host;
+      tab.display();
+      const text = host.textContent ?? "";
+      return {
+        text,
+        inputs: host.querySelectorAll("input[type=password]").length,
+      };
+    });
+    expect(headings.text).toContain("Integrations");
+    // The credential fields themselves, not the words: the summary names the
+    // services it provides.
+    for (const gone of ["Enable Hydrus integration", "CobaltSession", "Add webhook"]) {
+      expect(headings.text).not.toContain(gone);
+    }
+    // Only the control token remains a secret this device holds.
+    expect(headings.inputs).toBe(1);
+  });
+
   it("rebuilds the panel from the server's session after a reconnect", async function () {
     await (await panelButton("Disconnect")).click();
     await waitForStatus("disconnected");

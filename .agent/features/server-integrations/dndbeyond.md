@@ -32,6 +32,8 @@
 9. After a failed poll the server shall send `ddb-state` with an `error` field naming the failure, so the panel can show that tracking is unhealthy.
 10. The loop shall stop when the last control socket disconnects, so a forgotten encounter is not polled forever.
 11. The plugin shall turn `ddb-state` into initiative broadcasts exactly as it turns a local poll result into them today — round-1 reveal, renames, conditions and exhaustion all stay on the DM side — and only while it holds the lease.
+12. The panel shall start and stop tracking with one call, `track(encounterId, onState)` and `track(null, …)`, which the embedded gateway serves with its own poller and the remote one by asking the server to poll and forwarding what it pushes.
+13. In remote mode a monster avatar shall arrive as the asset URL the server stored (`requirement 4`), and the panel shall turn it into a layer the same way it turns a locally cached avatar into one.
 
 ## Broadcast / IPC
 
@@ -43,7 +45,7 @@
 
 - `server/tests/ddb.rs` — against a stub D&D Beyond: the token refresh and its retry on `401`, id validation, avatars stored as assets, `501` unconfigured, `502` upstream, the loop's start, replace and stop, `ddb-state` after a poll and after a failure, the last state replayed to a new socket, the loop stopping with the last socket
 - `src/__tests__/gateway-remote.test.ts` — `RemoteDdb` routes and the `ddb-state` subscription
-- `src/__tests__/ddb-panel-tracking-state.test.ts` — the panel maps a `ddb-state` exactly as it maps a local poll, and broadcasts only with the lease
+- `src/__tests__/ddb-panel-tracking-state.test.ts` — tracking state through `track`, the panel mapping a poll result, and no broadcast without the lease
 
 ## Non-goals
 

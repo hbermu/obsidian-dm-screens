@@ -625,7 +625,9 @@ export class DmControlPanel extends ItemView {
 
   // Standalone bar between sections: always visible, never collapsible.
   private renderHydrusBar(container: HTMLElement) {
-    if (!this.plugin.settings.hydrusEnabled || !this.plugin.settings.hydrusApiUrl) return;
+    // Whoever provides Hydrus decides: this device's settings in embedded
+    // mode, the server's in remote mode.
+    if (!this.plugin.gateway.capabilities().hydrus) return;
     const bar = container.createDiv("dm-hydrus-bar");
     const hydrusBtn = bar.createEl("button", { text: "Media from Hydrus" });
     hydrusBtn.addEventListener("click", async () => {
@@ -1223,7 +1225,7 @@ export class DmControlPanel extends ItemView {
 
   private renderCombatBody(section: HTMLElement, ownsDdbPanel: boolean) {
     // Tabs: Local Track + (optionally) D&D Beyond, full-width
-    const ddbActive = this.plugin.settings.ddbEnabled && this.plugin.settings.ddbCobaltSession;
+    const ddbActive = this.plugin.gateway.capabilities().ddb;
     const tabBar = section.createDiv("dm-combat-tabs");
 
     const initTab = tabBar.createEl("button", {

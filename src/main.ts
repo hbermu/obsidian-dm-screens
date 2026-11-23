@@ -36,6 +36,7 @@ export default class DmScreenPlugin extends Plugin {
   replayCache: ReplayCache = new ReplayCache();
   transport: SceneTransport = new EmbeddedTransport(this);
   gateway: IntegrationGateway = new LocalGateway(this);
+  settingTab: DmScreenSettingTab | null = null;
   prefs: SessionPreferences = new SessionPreferences(this);
   // Open Exploration modals, told when this device gains or loses control.
   exploreModals = new Set<{ applyEditable(): void }>();
@@ -131,7 +132,8 @@ export default class DmScreenPlugin extends Plugin {
     });
 
     // Settings tab
-    this.addSettingTab(new DmScreenSettingTab(this.app, this));
+    this.settingTab = new DmScreenSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
 
     if (this.settings.autoStartServer) {
       debug("Auto-starting the session in", this.settings.serverMode, "mode");

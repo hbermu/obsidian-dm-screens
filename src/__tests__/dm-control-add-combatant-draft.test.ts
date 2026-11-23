@@ -52,6 +52,12 @@ function makePanel() {
     saveSettings: vi.fn(async () => {}),
     app: { workspace: { getLeavesOfType: () => [] }, plugins: { getPlugin: () => null } },
   } as any;
+  (plugin as any).gateway = {
+    capabilities: () => ({ hydrus: false, ddb: false, webhooks: [] }),
+    hydrus: () => null,
+    ddb: () => null,
+    webhooks: () => ({ targets: () => [], send: async () => {} }),
+  };
   const panel = new DmControlPanel({} as any, plugin);
   const contentEl = document.createElement("div");
   document.body.appendChild(contentEl);

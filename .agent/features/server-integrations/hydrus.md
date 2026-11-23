@@ -29,9 +29,10 @@
 
 ### Plugin side
 
-9. `RemoteHydrus` shall offer the methods `HydrusClient` offers — `verifyAccess`, `getServices`, `searchFiles`, `searchTags`, `getFileMetadata`, `getThumbnailBytes`, `getFileRange` — so every caller is unchanged beyond where it gets the client.
+9. The gateway's Hydrus surface shall offer the read methods `HydrusClient` offers — `verifyAccess`, `getServices`, `searchFiles`, `searchTags`, `getFileMetadata`, `getFileBytes`, `getThumbnailBytes`, `getFileRange` — plus `publish(hash)` and `markUsed(hash)`, so every caller is unchanged beyond where it gets the client.
+9b. `publish(hash)` shall make the file reachable by the screens and answer its URL, its media type and its known tags: the vault cache and a `/vault/` URL in embedded mode, the server's asset store and an `/assets/` URL in remote mode. Every caller that used to copy a file into the vault shall use it.
 10. In remote mode, applying a Hydrus file as a background, a layer or a map shall publish it with `POST /api/assets/hydrus` and use the returned asset URL, and shall not download it into the vault or the plugin cache.
-11. In remote mode, the explorer shall render a tile's thumbnail from `GET /api/hydrus/thumbnail/<hash>` and its preview from the asset URL once published.
+11. In remote mode, the explorer shall render a tile's thumbnail from `GET /api/hydrus/thumbnail/<hash>` and its full preview from `GET /api/hydrus/file/<hash>`. It shall not offer the local-cache source or the per-tile cache actions (download, re-download, delete the local copy), because there is no vault cache to list or evict.
 12. In remote mode, a note's `hydrus://` reference shall resolve through the gateway: available when the metadata call finds it, and applied per requirement 10 without a local copy.
 13. In remote mode, the media's natural dimensions shall be measured from the URL the device can load (the asset URL), since there is no local file to measure.
 14. In remote mode, `recoverVaultImage` shall not run: an `/assets/` URL is the server's to keep, and the server's retention is what governs it.
@@ -40,7 +41,7 @@
 
 - `server/tests/hydrus.rs` — each operation against the stub Hydrus: the key attached, hash validation, the search and metadata limits, `501` unconfigured, `502` on an upstream error with nothing of the body in the response, thumbnail caching, a forwarded `Range`
 - `src/__tests__/gateway-remote.test.ts` — `RemoteHydrus` maps each method to its route and shape
-- `src/__tests__/hydrus-explorer-remote.test.ts` — tiles, thumbnails and apply-as-background in remote mode without a vault write
+- `src/__tests__/hydrus-explorer-search.test.ts` — the explorer searching through the gateway
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian: the Hydrus bar appears from the server's capability
 
 ## Non-goals
