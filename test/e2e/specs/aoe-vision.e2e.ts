@@ -78,8 +78,8 @@ describe("aoe overlays and vision", function () {
     });
     await expect(browser.$(".dm-control-panel .dm-map-vision-dot")).toExist();
 
-    const card = browser.$(".dm-control-panel .dm-control-card");
-    await card.$(".dm-control-card-header").click();
+    // Resolved now, not held: the panel re-renders after the broadcast above.
+    await browser.$(".dm-control-panel .dm-control-card .dm-control-card-header").click();
 
     const seen = rec.count("map-vision");
     await browser.$(".dm-control-panel .dm-map-vision-bind").click();
