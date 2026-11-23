@@ -8,7 +8,7 @@
 - `server/src/derivatives.rs` — WebP and MP4 derivatives, the on-disk derivative cache
 - `server/src/hydrus.rs` — server-side Hydrus download with hash verification
 - `server/src/allowlist.rs` — the display allowlist over `/assets/` URLs
-- `src/transport/assetUpload.ts` — the plugin side: fingerprint, lookup, upload, Hydrus request, URL rewriting
+- `src/transport/assetUpload.ts` — the plugin side: fingerprint, lookup, upload, Hydrus request, URL rewriting, source recording
 - `src/player/safeUrl.ts` — accepts `/assets/<64 hex>.<ext>` URLs
 - `src/hydrus/hashFromPath.ts` — recognises a Hydrus cache path so its hash can be used directly
 
@@ -45,15 +45,15 @@
 
 14. To publish a `/vault/<path>` URL the plugin shall send its fingerprint (`path`, and `size` and `mtime` from `vault.adapter.stat`) to the lookup route, and only on `404` read the file and upload it in `chunkSize` pieces, resuming from `received` on a `409`.
 15. If the vault path is a Hydrus cache path (`hydrusHashFromVaultPath`), then the plugin shall first ask `GET /api/assets/<hash>`, then, when the server reports `hydrus: true` in `control-hello`, `POST /api/assets/hydrus`, and fall back to requirement 14 only when both miss and the file exists locally.
-16. When the Hydrus explorer or a note's `hydrus://` reference sets a background, layer or map while connected to a server with `hydrus: true`, the plugin shall request the file through requirement 15 and shall not download it into the vault; the DM-side preview loads it per `overview.md` requirement 24.
+16. The plugin shall keep downloading Hydrus files into its own cache as in embedded mode (it measures and previews them locally); publishing such a file goes through requirement 15, so with `hydrus: true` its bytes are fetched by the server and never uploaded from the device.
 17. To publish a `data:` URL the plugin shall decode it and upload the bytes with the extension from its MIME type, without a fingerprint.
 18. The plugin shall remember, per session, which source URLs it has published and their asset URLs, so an unchanged source is not looked up twice.
 
 ### Serving
 
-19. `GET /assets/<sha256>.<ext>` shall require a view or control token as in `server.md` requirement 6; with the view token, an asset not on the display allowlist shall answer `404` before any disk read.
+19. `GET /assets/<sha256>.<ext>` shall require a view or control token as in `server.md` requirement 6, also accepted as a `Bearer` authorization header (the controller fetches fog masks that way); with the view token, an asset not on the display allowlist shall answer `404` before any disk read.
 20. The display allowlist shall be maintained from relayed messages exactly as `../player-server/vault-routing.md` requirements 3–4 maintain the embedded one, over `/assets/` URLs instead of `/vault/` ones, and shall additionally admit the URL in `map-fog.payload.dataUrl`.
-21. The server shall honour single `Range` requests on `/assets/` with `206` and `Content-Range`, and advertise `Accept-Ranges: bytes`.
+21. The server shall honour single `Range` requests on `/assets/` with `206` and `Content-Range`, advertise `Accept-Ranges: bytes`, and send `Access-Control-Allow-Origin: *` so the controller can draw an asset into a canvas (the token in the URL still decides access).
 22. A `?w=` request shall follow `../player-server/vault-routing.md` requirements 15–17 — width rounded up to 256 and capped at 16384; still images as WebP at quality 0.9; videos re-encoded with `ffmpeg` to H.264 MP4 inside the `videoTargetSize` box with audio dropped; the original when it already fits or the encode fails — with access checks before any work.
 23. Derivatives shall be cached on disk under `<data dir>/derivatives/` with least-recently-used eviction above `DM_SCREEN_DERIVATIVE_CACHE_MB`, and concurrent requests for one derivative shall share one encode.
 
@@ -63,7 +63,7 @@
 - `server/tests/hydrus.rs` — fetch against a stub Hydrus: success, hash mismatch, upstream error, unconfigured (the URL policy at startup is a unit test in `server/src/config.rs`)
 - `server/tests/derivatives.rs` — with the real `ffmpeg`: a WebP at the rounded width, the original when it fits, a video fitted inside 1080p and served by range, no derivative for a GIF
 - `src/__tests__/asset-upload.test.ts` — the plugin side (requirements 14–18)
-- `src/__tests__/safe-url.test.ts` — `/assets/` acceptance and rejection of malformed hashes and extensions
+- `src/__tests__/safe-player-url.test.ts` — `/assets/` acceptance by kind and rejection of malformed hashes, other extensions and appended text
 - `test/conformance/assets.conformance.ts` — the display allowlist against both servers, `Range` and the `map-fog` entry against the remote one
 
 ## Non-goals

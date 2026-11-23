@@ -177,6 +177,8 @@ services:
       OBSIDIAN_VERSIONS: ${OBSIDIAN_VERSIONS:-latest/latest}
       E2E_SPEC: ${E2E_SPEC:-}
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # Set by `make test-e2e-remote`; the remote spec skips itself without it.
+      DM_SCREEN_E2E_REMOTE_URL: ${DM_SCREEN_E2E_REMOTE_URL:-}
     shm_size: "1gb"
     volumes:
       - .:/app
@@ -188,6 +190,21 @@ services:
         npm run build &&
         xvfb-run -a npx wdio run wdio.conf.mts
       "
+
+  # The remote server for the real-Obsidian remote e2e spec. The `.local'
+  # alias is a host the plugin's URL policy accepts over plain http. The
+  # tokens are test fixtures, not secrets.
+  e2e-server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    profiles: ["tools"]
+    environment:
+      DM_SCREEN_VIEW_TOKEN: e2e-view-0123456789abcdef0123456789
+      DM_SCREEN_CONTROL_TOKEN: e2e-ctrl-0123456789abcdef0123456789
+    networks:
+      default:
+        aliases: [dmscreen.local]
 
 volumes:
   node_modules: {}

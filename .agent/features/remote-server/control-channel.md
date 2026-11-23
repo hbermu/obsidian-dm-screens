@@ -24,7 +24,7 @@
 4. If `protocol` is not exactly the server's `PROTOCOL_VERSION`, then the server shall close the socket with code `4001` and reason `protocol-mismatch:<server PROTOCOL_VERSION>`.
 5. If four control sockets are already open, then the server shall close the new one with code `1013`.
 5b. After any close the server initiates, it shall keep reading until the client answers the close (two seconds at most), so the client observes the close code instead of a reset connection.
-6. The `Origin` rule of `../player-server/websocket-protocol.md` requirement 11 shall apply to control handshakes too.
+6. The server shall accept a control handshake from any `Origin`. The `Origin` rule of `../player-server/websocket-protocol.md` requirement 11 exists because viewers authenticate with an ambient cookie a foreign page could reuse; the control token travels only explicitly in the query, and the controller is Obsidian (`app://`, `capacitor://`), never a page on the server's origin.
 
 ### Lease
 

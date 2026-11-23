@@ -10,7 +10,6 @@ import {
   sceneFogFolder,
   sceneNotePath,
   serializeSceneNote,
-  sourceFromVaultUrl,
   type MapScene,
   type PlayerScene,
   type Scene,
@@ -25,13 +24,12 @@ export interface CapturedScene {
 }
 
 export function capturePlayerScene(plugin: DmScreenPlugin, panel: DmControlPanel, name: string): CapturedScene {
-  const cacheBase = plugin.settings.cacheBaseFolder;
   const fogs: Record<string, string> = {};
   const skipped: string[] = [];
 
   let background: PlayerScene["background"] = null;
   const bgUrl = panel.activeBackgroundUrl;
-  const bgSource = bgUrl ? sourceFromVaultUrl(bgUrl, cacheBase) : null;
+  const bgSource = bgUrl ? plugin.transport.sourceOf(bgUrl) : null;
   if (bgUrl && bgSource) {
     const cached = plugin.replayCache.entries.get("show-background-media");
     const payload = cached ? (JSON.parse(cached) as { payload?: { loop?: unknown; muted?: unknown } }).payload : undefined;
@@ -73,7 +71,7 @@ export function capturePlayerScene(plugin: DmScreenPlugin, panel: DmControlPanel
 
 export function captureMapScene(plugin: DmScreenPlugin, mapPanel: MapScreenPanel, name: string): CapturedScene | null {
   const map = mapPanel.activeMap;
-  const source = map ? sourceFromVaultUrl(map.url, plugin.settings.cacheBaseFolder) : null;
+  const source = map ? plugin.transport.sourceOf(map.url) : null;
   if (!map || !source) return null;
   const s = mapPanel.state;
   const scene: MapScene = {

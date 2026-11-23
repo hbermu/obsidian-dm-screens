@@ -526,7 +526,7 @@ class MapScreen {
   private syncMediaSource(ppi: number, nw: number, nh: number, vw: number, vh: number, dpr: number) {
     if (!this.media || !this.mediaBase) return;
     let width: number | null = null;
-    if (this.mediaBase.startsWith("/vault/") && this.currentProfile()?.quality !== "original") {
+    if ((this.mediaBase.startsWith("/vault/") || this.mediaBase.startsWith("/assets/")) && this.currentProfile()?.quality !== "original") {
       const scales = (["physical", "fit"] as const).map((mode) =>
         mapScale({ ...this.view, mode }, ppi, this.config.pxPerSquare, nw, nh, vw, vh)
       );

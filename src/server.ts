@@ -156,6 +156,13 @@ export class ReplayCache {
     this.emitChange();
   }
 
+  // Adopts a cache wholesale: in remote mode the server's copy is the session.
+  replace(entries: Record<string, string>): void {
+    this.entries.clear();
+    for (const [type, data] of Object.entries(entries)) this.entries.set(type, data);
+    this.emitChange();
+  }
+
   forget(types: string[]): void {
     for (const type of types) {
       this.entries.delete(type);

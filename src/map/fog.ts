@@ -64,13 +64,17 @@ export async function saveFogSidecar(adapter: FogAdapter, mapUrl: string, dataUr
   await adapter.writeBinary(fogSidecarPath(mapUrl), dataUrlBuffer(dataUrl));
 }
 
-export function pngDataUrl(bytes: Uint8Array): string {
+export function bytesDataUrl(bytes: Uint8Array, mime: string): string {
   let bin = "";
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
     bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
-  return `data:image/png;base64,${btoa(bin)}`;
+  return `data:${mime};base64,${btoa(bin)}`;
+}
+
+export function pngDataUrl(bytes: Uint8Array): string {
+  return bytesDataUrl(bytes, "image/png");
 }
 
 export function dataUrlBuffer(dataUrl: string): ArrayBuffer {

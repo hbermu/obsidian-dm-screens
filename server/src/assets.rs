@@ -1,5 +1,5 @@
 use crate::allowlist::ASSET_EXTENSIONS;
-use crate::auth::{Role, request_token, role_for};
+use crate::auth::{Role, api_token, role_for};
 use crate::persist::{load, now_secs, state_dir};
 use crate::state::AppState;
 use crate::viewers::unauthorized;
@@ -457,6 +457,12 @@ pub async fn serve_file(path: &FsPath, mime: &str, range: Option<&str>) -> Respo
             HeaderValue::from_static("public, max-age=3600"),
         );
         h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+        // The controller draws assets into canvases (layer fog editing), which
+        // needs CORS; the token in the URL is still what grants access.
+        h.insert(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_static("*"),
+        );
     };
     let (status, start, len) = match range {
         None => (StatusCode::OK, 0, size),
@@ -500,7 +506,7 @@ pub async fn serve(
     headers: HeaderMap,
 ) -> Response {
     let Some(role) = role_for(
-        &request_token(uri.query(), &headers),
+        &api_token(uri.query(), &headers),
         &state.config.view_token,
         &state.config.control_token,
     ) else {

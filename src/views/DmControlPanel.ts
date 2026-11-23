@@ -7,15 +7,15 @@ import { MapScreenPanel } from "./MapScreenPanel";
 import type { ClientInfo } from "../server";
 import { vaultPathFromUrl } from "../server";
 import { SendToWebhookModal } from "./SendToWebhookModal";
+import { TakeControlModal } from "./TakeControlModal";
 import { buildLayerContextMenu } from "./layerContextMenu";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { recoverVaultImage } from "../hydrus/recoverImage";
 import { sortByInitiative, clampTrackerScale, advanceTurn, applyRound1Reveal } from "../combat/tracker";
-import { encodeForVaultUrl, uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
+import { uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
 import { resolveSourceLabel, type SourceLabel } from "../sourceLabel";
 import { debug, debugWarn, debugError } from "../debug";
 import { CONDITIONS, decodeStatus, encodeExhaustion } from "../conditions";
-import { buildJoinUrl } from "../auth";
 
 export const DM_CONTROL_VIEW_TYPE = "dm-control-panel";
 
@@ -446,12 +446,19 @@ export class DmControlPanel extends ItemView {
     const scrollTop = container.scrollTop;
     container.empty();
     container.addClass("dm-control-panel");
+    const readonly = !this.plugin.canEditSession();
+    container.classList.toggle("dm-readonly", readonly);
 
     this.renderServerSection(container);
-    this.renderHydrusBar(container);
-    this.renderPlayerScreenSection(container);
-    this.mapPanel.renderSection(container);
-    this.renderInitiativeSection(container);
+    if (readonly) this.renderReadonlyBanner(container);
+    // Inert while read-only: nothing below can broadcast or persist, and it
+    // cannot take focus either, so the keyboard cannot reach it.
+    const session = container.createDiv("dm-session");
+    session.inert = readonly;
+    this.renderHydrusBar(session);
+    this.renderPlayerScreenSection(session);
+    this.mapPanel.renderSection(session);
+    this.renderInitiativeSection(session);
     for (const mirror of this.combatMirrors) this.renderCombatMirror(mirror);
 
     this.broadcastInitialScale();
@@ -502,10 +509,95 @@ export class DmControlPanel extends ItemView {
 
   // ─── Server Section ─────────────────────────────────────────────────
 
+  private renderReadonlyBanner(container: HTMLElement) {
+    const remote = this.plugin.remote;
+    if (!remote) return;
+    const banner = container.createDiv("dm-readonly-banner");
+    if (remote.status === "readonly") {
+      const holder = remote.holder?.name ?? "another device";
+      banner.createSpan({ text: `Read-only — ${holder} has control` });
+      const take = banner.createEl("button", { text: "Take control", cls: "dm-take-control-btn mod-cta" });
+      take.addEventListener("click", () => new TakeControlModal(this.app, holder, () => remote.claim()).open());
+    } else {
+      banner.createSpan({ text: remote.status === "connecting" ? "Reconnecting…" : "Disconnected — press Connect to control the session" });
+    }
+  }
+
+  private renderRemoteServerSection(section: HTMLElement) {
+    const remote = this.plugin.remote!;
+    const statusEl = section.createDiv("dm-server-status");
+    const label: Record<string, string> = {
+      active: "Connected — this device has control",
+      readonly: "Connected — read-only",
+      connecting: "Connecting…",
+      disconnected: "Disconnected",
+    };
+    const on = remote.status === "active" || remote.status === "readonly";
+    statusEl.createSpan({ text: label[remote.status], cls: on ? "dm-status-on" : "dm-status-off" });
+    statusEl.createSpan({ text: ` · ${this.plugin.settings.remoteServerUrl || "no server URL set"}`, cls: "dm-status-detail" });
+    const btn = section.createEl("button", { text: remote.status === "disconnected" ? "Connect" : "Disconnect", cls: "mod-cta" });
+    btn.addEventListener("click", () => {
+      this.plugin.toggleServer();
+      this.render();
+    });
+  }
+
+  // Remote mode: rebuild every section from the session cache the server
+  // handed over. Layer images and fog come back as data URLs, as in embedded
+  // mode, so the editing tools and webhooks keep working on them.
+  async reloadFromSession(): Promise<void> {
+    const remote = this.plugin.remote;
+    if (!remote) return;
+    const cache = this.plugin.replayCache.toRecord();
+    const payload = (type: string): any => {
+      try {
+        return cache[type] ? JSON.parse(cache[type]).payload : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    try {
+      const geometry = new Map<string, Record<string, unknown>>(
+        ((payload("image-layers-geometry")?.layers ?? []) as Array<Record<string, unknown>>).map((g) => [String(g.id), g])
+      );
+      const raw = (payload("image-layers-sync")?.layers ?? []) as ImageLayer[];
+      this.imageLayers = await Promise.all(
+        raw.map(async (l) => ({
+          ...l,
+          ...(geometry.get(l.id) ?? {}),
+          source: remote.sourceOf(l.dataUrl) ?? undefined,
+          dataUrl: await remote.fetchDataUrl(l.dataUrl),
+          fogDataUrl: l.fogDataUrl ? await remote.fetchDataUrl(l.fogDataUrl) : "",
+        }))
+      );
+    } catch (e) {
+      new Notice(`Could not load the session's layers: ${(e as Error).message}`, 8000);
+      this.imageLayers = [];
+    }
+    if (this.imageLayers.length > 0) this.nextZIndex = Math.max(...this.imageLayers.map((l) => l.zIndex)) + 1;
+    this.activeBackgroundUrl = payload("show-background-media")?.url ?? null;
+    this.activeVideoPath = null;
+    this.mapPanel.resetForSession();
+    await this.mapPanel.restoreFromCache(cache);
+    if (this.mapPanel.fogDataUrl?.startsWith("/assets/")) {
+      try {
+        this.mapPanel.fogDataUrl = await remote.fetchDataUrl(this.mapPanel.fogDataUrl);
+      } catch {
+        this.mapPanel.fogDataUrl = null;
+      }
+    }
+    debug("DmControlPanel: reloadFromSession — layers:", this.imageLayers.length, "bg:", this.activeBackgroundUrl ?? "(none)");
+    this.render();
+  }
+
   private renderServerSection(container: HTMLElement) {
     const section = container.createDiv("dm-section");
-    const title = section.createEl("h3", { text: "Player Screen Server" });
+    const title = section.createEl("h3", { text: this.plugin.remote ? "Remote Server" : "Player Screen Server" });
     this.makeCollapsible(section, title, "server");
+    if (this.plugin.remote) {
+      this.renderRemoteServerSection(section);
+      return;
+    }
 
     const isRunning = !!this.plugin.server;
     const statusEl = section.createDiv("dm-server-status");
@@ -529,21 +621,6 @@ export class DmControlPanel extends ItemView {
       this.plugin.toggleServer();
       this.render();
     });
-  }
-
-  getLanIp(): string | null {
-    try {
-      const os = require("os");
-      const interfaces = os.networkInterfaces();
-      for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-          if (iface.family === "IPv4" && !iface.internal) {
-            return iface.address;
-          }
-        }
-      }
-    } catch { /* ignore */ }
-    return null;
   }
 
   // Standalone bar between sections: always visible, never collapsible.
@@ -570,21 +647,12 @@ export class DmControlPanel extends ItemView {
     this.makeCollapsible(section, title, "player-screen");
     this.renderSceneButtons(header, "player", !!this.activeBackgroundUrl || this.imageLayers.length > 0);
 
-    if (this.plugin.server) {
-      const port = this.plugin.settings.serverPort;
-      const lanIp = this.getLanIp();
-      const playerUrl = `http://${lanIp ?? "localhost"}:${port}`;
-      // The link and the clipboard carry the token; the visible text does not,
-      // so the DM panel stays readable and a screenshot of it is harmless.
-      const joinUrl = buildJoinUrl(
-        lanIp ?? "localhost",
-        port,
-        this.plugin.settings.accessToken,
-        "/",
-      );
+    const join = this.plugin.transport.joinLink("/");
+    if (join) {
+      const joinUrl = join.href;
       const urlRow = section.createDiv("dm-server-url");
       const link = urlRow.createEl("a", {
-        text: `Player: ${playerUrl}`,
+        text: `Player: ${join.text}`,
         href: joinUrl,
         cls: "dm-server-url-link",
       });
@@ -669,10 +737,7 @@ export class DmControlPanel extends ItemView {
       ? effForBg
       : this.connectedClients.find(c => c.width === effForBg.width && c.height === effForBg.height);
     if (this.activeBackgroundUrl && activeClient && activeClient.width > 0 && activeClient.height > 0) {
-      const bgUrl = resolveBackgroundPreviewUrl(
-        this.activeBackgroundUrl,
-        this.plugin.app.vault.adapter as { getResourcePath?: (path: string) => string }
-      );
+      const bgUrl = this.plugin.transport.displayUrl(this.activeBackgroundUrl);
       if (bgUrl) {
         const browserAspect = activeClient.width / activeClient.height;
         const previewAspect = tvW / tvH;
@@ -2067,7 +2132,7 @@ export class DmControlPanel extends ItemView {
     try {
       const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
       if (asBackground) {
-        const url = `/vault/${encodeForVaultUrl(entry.vaultPath)}`;
+        const url = await this.plugin.transport.mediaUrl(entry.vaultPath);
         debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), ref.mediaType);
         this.activeBackgroundUrl = url;
         this.activeVideoPath = ref.mediaType === "video" ? entry.vaultPath : null;
@@ -2243,7 +2308,7 @@ export class DmControlPanel extends ItemView {
 
     if (images.length + hydrusActionable.length === 1 && disabled.length === 0) {
       if (images.length === 1) {
-        this.setImageAsBackground(images[0]);
+        void this.setImageAsBackground(images[0]);
       } else {
         void this.applyHydrusRef(hydrusActionable[0], true);
       }
@@ -2254,7 +2319,7 @@ export class DmControlPanel extends ItemView {
     for (const img of images) {
       menu.addItem((item: any) => {
         item.setTitle(img.label);
-        item.onClick(() => this.setImageAsBackground(img));
+        item.onClick(() => void this.setImageAsBackground(img));
       });
     }
     for (const ref of hydrus) {
@@ -2270,8 +2335,14 @@ export class DmControlPanel extends ItemView {
     menu.showAtMouseEvent(evt);
   }
 
-  private setImageAsBackground(img: { path: string; label: string }): void {
-    const url = `/vault/${encodeURIComponent(img.path)}`;
+  private async setImageAsBackground(img: { path: string; label: string }): Promise<void> {
+    let url: string;
+    try {
+      url = await this.plugin.transport.mediaUrl(img.path);
+    } catch (e) {
+      new Notice(`Could not publish the background: ${(e as Error).message}`, 8000);
+      return;
+    }
     debug("DmControlPanel: setImageAsBackground", img.path);
     this.activeBackgroundUrl = url;
     this.activeVideoPath = null;
@@ -2293,16 +2364,23 @@ export class DmControlPanel extends ItemView {
 
   // The scene loader's entry point: replaces the background and every layer
   // in one step, through the same broadcasts the DM's own actions use.
-  applyPlayerScene(
+  async applyPlayerScene(
     background: { vaultPath: string; mediaType: "image" | "video"; loop: boolean; muted: boolean; hydrusHash?: string } | null,
     layers: ImageLayer[]
-  ): void {
+  ): Promise<void> {
     this.imageLayers = layers;
     if (layers.length > 0) {
       this.nextZIndex = Math.max(this.nextZIndex, ...layers.map((l) => l.zIndex + 1));
     }
+    let url: string | null = null;
     if (background) {
-      const url = `/vault/${encodeForVaultUrl(background.vaultPath)}`;
+      try {
+        url = await this.plugin.transport.mediaUrl(background.vaultPath);
+      } catch (e) {
+        new Notice(`Could not publish the background: ${(e as Error).message}`, 8000);
+      }
+    }
+    if (background && url) {
       this.activeBackgroundUrl = url;
       this.activeVideoPath = background.mediaType === "video" ? background.vaultPath : null;
       this.setBackgroundLabel(resolveSourceLabel({ url, hydrusHash: background.hydrusHash, plugin: this.plugin }));
@@ -2446,7 +2524,7 @@ export class DmControlPanel extends ItemView {
     debug("DmControlPanel: broadcastImageLayers —", this.imageLayers.length, "layer(s)");
     this.plugin.broadcast({
       type: "image-layers-sync",
-      payload: { layers: this.imageLayers.map(({ source: _source, ...wire }) => wire) },
+      payload: { layers: this.imageLayers },
     });
     // A fresh geometry snapshot always follows the full sync so the cached
     // image-layers-geometry can never be staler than the cached sync —
@@ -2611,17 +2689,6 @@ export class DmControlPanel extends ItemView {
     setting.open();
     setting.openTabById("dm-screen");
   }
-}
-
-export function resolveBackgroundPreviewUrl(
-  activeUrl: string | null,
-  adapter: { getResourcePath?: (path: string) => string }
-): string | null {
-  if (!activeUrl) return null;
-  if (!activeUrl.startsWith("/vault/")) return activeUrl;
-  if (typeof adapter.getResourcePath !== "function") return null;
-  const vaultPath = decodeURIComponent(activeUrl.slice("/vault/".length));
-  return adapter.getResourcePath(vaultPath);
 }
 
 export function isVideoBackgroundUrl(url: string): boolean {

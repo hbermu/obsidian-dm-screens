@@ -16,6 +16,13 @@ export interface MapDataStore {
   saveWalls(mapUrl: string, walls: MapWall[]): Promise<void>;
 }
 
+export interface JoinLink {
+  // Carries the token: used for the anchor and the clipboard.
+  href: string;
+  // Never carries the token, so a screenshot of the panel is harmless.
+  text: string;
+}
+
 export interface SceneTransport {
   readonly mode: "embedded" | "remote";
   readonly mapData: MapDataStore;
@@ -30,4 +37,13 @@ export interface SceneTransport {
   // A live-only message: dropped unless live, so the caller re-sends it
   // whenever the transport goes live. When sent it is cached like any other.
   sendLive(message: PlayerMessage): void;
+  // The URL a broadcast uses for a vault file: `/vault/<path>` in embedded
+  // mode, the published `/assets/<sha256>.<ext>` in remote mode.
+  mediaUrl(vaultPath: string): Promise<string>;
+  // Something an <img>/<video> inside Obsidian can load for a media URL, or
+  // null when this device cannot show it.
+  displayUrl(url: string): string | null;
+  // The scene source reference (`vault:…`, `hydrus:…`) a media URL came from.
+  sourceOf(url: string): string | null;
+  joinLink(path: "/" | "/map"): JoinLink | null;
 }

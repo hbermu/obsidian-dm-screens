@@ -2383,3 +2383,21 @@
 .dm-scene-error {
   color: var(--text-error);
 }
+
+.dm-readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.dm-readonly .dm-session,
+.dm-explore-readonly {
+  opacity: 0.55;
+}

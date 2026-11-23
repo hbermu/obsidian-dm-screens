@@ -94,6 +94,7 @@ describe.runIf(onlyOn("remote"))("remote-only asset serving", () => {
     expect(res.status).toBe(206);
     expect(res.headers["content-range"]).toBe(`bytes 2-5/${png(10).length}`);
     expect(res.headers["accept-ranges"]).toBe("bytes");
+    expect(res.headers["access-control-allow-origin"]).toBe("*");
     expect([...res.body]).toEqual([...png(10).slice(2, 6)]);
   });
 });

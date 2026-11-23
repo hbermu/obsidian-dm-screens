@@ -55,7 +55,7 @@
 
 ### Map data
 
-14. The server shall keep a map-data document with four collections: `configs` (map URL key → stored map state), `profiles` (screen key → calibration profile), `fog` (map URL key → asset URL or `null`), `walls` (map URL key → wall list), persisted to `<data dir>/state/mapdata.json` under requirements 11–12.
+14. The server shall keep a map-data document with five collections: `configs` (map URL key → stored map state), `profiles` (screen key → calibration profile), `fog` (map URL key → asset URL or `null`), `walls` (map URL key → wall list), `sources` (asset name → the scene source reference it was published from), persisted to `<data dir>/state/mapdata.json` under requirements 11–12.
 15. `GET /api/mapdata` shall return the whole document.
 16. `PUT /api/mapdata/<collection>/<url-encoded key>` with a JSON body shall set that entry, and `DELETE` on the same path shall remove it; an unknown collection shall answer `404`, a body over 1 MiB `413`, invalid JSON `400`.
 17. Every `/api/` route shall require the control token (as `k` or as a `Bearer` authorization header) and answer `401` otherwise; the view token shall not open any `/api/` route.

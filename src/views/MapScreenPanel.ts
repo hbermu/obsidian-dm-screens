@@ -1,11 +1,11 @@
 import { Menu, Notice, setIcon } from "obsidian";
 import type DmScreenPlugin from "../main";
 import type { CombatMirror, DmControlPanel } from "./DmControlPanel";
-import { encodeForVaultUrl, layerLabelFromTags } from "./HydrusExplorerModal";
+import { layerLabelFromTags } from "./HydrusExplorerModal";
 import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { resolveSourceLabel } from "../sourceLabel";
 import { recoverVaultImage } from "../hydrus/recoverImage";
-import { vaultPathFromUrl, type ClientInfo } from "../server";
+import type { ClientInfo } from "../server";
 import { fogCanvasSize } from "../map/fog";
 import { MapFogModal } from "./MapFogModal";
 import { MapExploreModal } from "./MapExploreModal";
@@ -29,7 +29,6 @@ import { finiteScale, fitScale } from "./mapStage";
 import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
-import { buildJoinUrl } from "../auth";
 import { renderControlCard } from "./controlCard";
 
 export interface ActiveMap {
@@ -90,6 +89,16 @@ export class MapScreenPanel {
   private expandedVisionId: string | null = null;
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
+
+  // A session reload starts from nothing, so a map the server no longer
+  // shows does not linger on a read-only device.
+  resetForSession() {
+    this.activeMap = null;
+    this.aoes = [];
+    this.visions = [];
+    this.walls = [];
+    this.fogDataUrl = null;
+  }
 
   async restoreFromCache(cache: Record<string, string>) {
     const show = cache["map-show"];
@@ -367,15 +376,21 @@ export class MapScreenPanel {
     vaultPath: string,
     mediaType: "image" | "video",
     opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string; offerFoundryWalls?: boolean }
-  ) {
+  ): Promise<string | null> {
     const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
     const resourceUrl = adapter.getResourcePath?.(vaultPath);
     const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
     if (!dims) {
       new Notice("Could not read the map's dimensions.");
-      return;
+      return null;
     }
-    const url = `/vault/${encodeForVaultUrl(vaultPath)}`;
+    let url: string;
+    try {
+      url = await this.plugin.transport.mediaUrl(vaultPath);
+    } catch (e) {
+      new Notice(`Could not publish the map: ${(e as Error).message}`, 8000);
+      return null;
+    }
     const stored = this.plugin.transport.mapData.config(url);
     this.state = stored
       ? { ...stored }
@@ -416,6 +431,7 @@ export class MapScreenPanel {
     this.persistState();
     this.host.render();
     if (opts?.hydrusHash && opts.offerFoundryWalls !== false) void this.offerFoundryWalls(url);
+    return url;
   }
 
   // The scene loader's entry point: applies the map as Add Map does, then
@@ -434,9 +450,8 @@ export class MapScreenPanel {
       visions: MapVision[];
     }
   ): Promise<boolean> {
-    await this.setVaultMap(vaultPath, mediaType, { ...opts, offerFoundryWalls: false });
-    const url = `/vault/${encodeForVaultUrl(vaultPath)}`;
-    if (this.activeMap?.url !== url) return false;
+    const url = await this.setVaultMap(vaultPath, mediaType, { ...opts, offerFoundryWalls: false });
+    if (!url) return false;
     this.state = { ...this.state, ...scene.view, ...scene.grid };
     this.clampStateToViewport();
     this.aoes = scene.aoes.map((a) => ({ ...a }));
@@ -641,19 +656,11 @@ export class MapScreenPanel {
       exploreBtn.title = "Add a map to explore it";
     }
 
-    const isRunning = !!this.plugin.server;
-    if (isRunning) {
-      const port = this.plugin.settings.serverPort;
-      const lanIp = this.host.getLanIp();
-      const mapUrl = `http://${lanIp ?? "localhost"}:${port}/map`;
-      const joinUrl = buildJoinUrl(
-        lanIp ?? "localhost",
-        port,
-        this.plugin.settings.accessToken,
-        "/map",
-      );
+    const join = this.plugin.transport.joinLink("/map");
+    if (join) {
+      const joinUrl = join.href;
       const urlRow = section.createDiv("dm-server-url");
-      const link = urlRow.createEl("a", { text: `Map: ${mapUrl}`, href: joinUrl, cls: "dm-server-url-link" });
+      const link = urlRow.createEl("a", { text: `Map: ${join.text}`, href: joinUrl, cls: "dm-server-url-link" });
       link.setAttr("target", "_blank");
       const copyBtn = urlRow.createEl("button", { text: "Copy", cls: "dm-copy-url-btn" });
       copyBtn.addEventListener("click", () => {
@@ -687,7 +694,7 @@ export class MapScreenPanel {
           new MapCalibrationModal(this.plugin.app, this.plugin, c, () => this.host.render()).open();
         });
       }
-    } else if (isRunning) {
+    } else if (join) {
       section.createDiv({
         cls: "dm-status-detail",
         text: "Open the map URL on the table screen to connect it.",
@@ -1094,9 +1101,7 @@ export class MapScreenPanel {
       if (e.button === 1 || (e.button === 0 && this.previewLocked)) startLookAround(e);
     });
 
-    const vaultPath = vaultPathFromUrl(map.url);
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = vaultPath ? adapter.getResourcePath?.(vaultPath) : null;
+    const resourceUrl = this.plugin.transport.displayUrl(map.url);
     if (resourceUrl) {
       if (map.mediaType === "video") {
         const v = stage.createEl("video");

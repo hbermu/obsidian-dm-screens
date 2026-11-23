@@ -6,6 +6,8 @@
 //
 // Rules:
 //   - relative /vault/... paths (served by our own HTTP listener) are accepted
+//   - relative /assets/<sha256>.<ext> paths (the remote server's content
+//     store) are accepted when the extension fits the expected kind
 //   - data:image/... and data:video/... URLs are accepted ONLY for an
 //     allowlisted MIME family (no SVG, no text/*, nothing exotic)
 //   - everything else (javascript:, data:text/html, http(s)://, …) is rejected
@@ -30,11 +32,19 @@ const ALLOWED_VIDEO_MIME = new Set([
   "video/quicktime",
 ]);
 
+const ASSET_URL = {
+  image: /^\/assets\/[0-9a-f]{64}\.(png|jpg|jpeg|webp|gif)$/,
+  video: /^\/assets\/[0-9a-f]{64}\.(mp4|webm)$/,
+};
+
 export function safePlayerUrl(url: unknown, kind: "image" | "video"): string | null {
   if (typeof url !== "string" || url.length === 0) return null;
 
   // Relative vault paths served by our own PlayerScreenServer.
   if (url.startsWith("/vault/")) return url;
+
+  // Content-addressed assets served by the remote server.
+  if (ASSET_URL[kind].test(url)) return url;
 
   // Parse the URL so we can branch on the scheme via the WHATWG URL API.
   let parsed: URL;

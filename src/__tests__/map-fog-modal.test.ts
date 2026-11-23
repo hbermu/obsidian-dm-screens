@@ -56,6 +56,8 @@ function polyfillHTMLElement() {
 
 // ---- Stubs ----
 const appStub = { vault: { adapter: { getResourcePath: () => null as null } } };
+// The modals resolve the map preview through the transport; no media in these tests.
+const transportStub = { displayUrl: () => null as null };
 
 function makePanelStub(walls: MapWall[] = []) {
   const commitFogSpy = vi.fn().mockResolvedValue(undefined);
@@ -71,7 +73,7 @@ function makePanelStub(walls: MapWall[] = []) {
     pickFoundryScene: MapScreenPanel.prototype.pickFoundryScene,
     activeMap: null as ActiveMap | null,
     activeMapTags: [] as string[],
-    plugin: { app: appStub },
+    plugin: { app: appStub, transport: transportStub },
     fogDataUrl: null as string | null,
     walls,
     state: {
@@ -98,7 +100,7 @@ function openModal(panelStub: ReturnType<typeof makePanelStub>, walls?: MapWall[
 } {
   const modal = new MapFogModal(
     appStub as never,
-    { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+    { app: appStub, transport: transportStub, settings: { mapFogTvOpacity: 0.9 } } as never,
     panelStub as never,
     mapStub
   );
@@ -621,7 +623,7 @@ describe("MapFogModal — uvtt import", () => {
     };
     const modal = new MapFogModal(
       appStub as never,
-      { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+      { app: appStub, transport: transportStub, settings: { mapFogTvOpacity: 0.9 } } as never,
       panel as never,
       halfMap
     );
@@ -789,7 +791,7 @@ describe("MapFogModal — Foundry import", () => {
     };
     const modal = new MapFogModal(
       appStub as never,
-      { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+      { app: appStub, transport: transportStub, settings: { mapFogTvOpacity: 0.9 } } as never,
       panel as never,
       map
     );

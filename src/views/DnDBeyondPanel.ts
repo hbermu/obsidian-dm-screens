@@ -213,6 +213,8 @@ export class DnDBeyondPanel {
   }
 
   private onPollUpdate(state: DdbPolledState): void {
+    // Only the device holding the remote lease turns polls into broadcasts.
+    if (!this.plugin.canEditSession()) return;
     const firstPoll = this.polledState === null;
     this.polledState = state;
     if (firstPoll && !this.showFullTurnOrderUserSet && state.encounter.roundNum >= 2) {

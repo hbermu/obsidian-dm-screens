@@ -1,4 +1,4 @@
-import { App, Menu, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Menu, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import type DmScreenPlugin from "./main";
 import type { WebhookConfig } from "./webhooks/types";
 import type { ScreenProfile, StoredMapState } from "./map/types";
@@ -50,6 +50,9 @@ export const WEBHOOK_TEMPLATES: { label: string; build: () => Omit<WebhookConfig
 export interface DmScreenSettings {
   serverPort: number;
   autoStartServer: boolean;
+  serverMode: "embedded" | "remote";
+  remoteServerUrl: string;
+  remoteControlToken: string;
   accessToken: string;
   tvWidth: number;
   tvHeight: number;
@@ -100,6 +103,9 @@ export interface DmScreenSettings {
 export const DEFAULT_SETTINGS: DmScreenSettings = {
   serverPort: 3000,
   autoStartServer: false,
+  serverMode: "embedded",
+  remoteServerUrl: "",
+  remoteControlToken: "",
   // Minted on first load, not here: a module-level generate would hand every
   // vault the token of whichever process imported this file first.
   accessToken: "",
@@ -158,7 +164,49 @@ export class DmScreenSettingTab extends PluginSettingTab {
 
     containerEl.createEl("h2", { text: "DM Screen Settings" });
 
-    new Setting(containerEl)
+    // Mobile cannot host a server, so the choice only exists on desktop.
+    if (Platform.isDesktopApp) {
+      new Setting(containerEl)
+        .setName("Server mode")
+        .setDesc("Embedded: Obsidian hosts the player and map screens. Remote: Obsidian controls a DM Screen server running elsewhere.")
+        .addDropdown((dd) =>
+          dd
+            .addOption("embedded", "Embedded")
+            .addOption("remote", "Remote server")
+            .setValue(this.plugin.settings.serverMode)
+            .onChange(async (value) => {
+              await this.plugin.setServerMode(value === "remote" ? "remote" : "embedded");
+              this.display();
+            })
+        );
+    }
+
+    if (this.plugin.settings.serverMode === "remote") {
+      new Setting(containerEl)
+        .setName("Remote server URL")
+        .setDesc("Base URL of the DM Screen server, e.g. the https address of its reverse proxy. Plain http is accepted only for a local network host.")
+        .addText((text) =>
+          text
+            .setPlaceholder("https://")
+            .setValue(this.plugin.settings.remoteServerUrl)
+            .onChange(async (value) => {
+              this.plugin.settings.remoteServerUrl = value.trim();
+              await this.plugin.saveSettings();
+            })
+        );
+      new Setting(containerEl)
+        .setName("Control token")
+        .setDesc("The server's control token (DM_SCREEN_CONTROL_TOKEN). Screens use the separate view token, which the server hands over on connect.")
+        .addText((text) => {
+          text.inputEl.type = "password";
+          text.setValue(this.plugin.settings.remoteControlToken).onChange(async (value) => {
+            this.plugin.settings.remoteControlToken = value.trim();
+            await this.plugin.saveSettings();
+          });
+        });
+    }
+
+    if (this.plugin.settings.serverMode === "embedded") new Setting(containerEl)
       .setName("Server Port")
       .setDesc("Port for the Player Screen web server")
       .addText((text) =>

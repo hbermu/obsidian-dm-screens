@@ -63,6 +63,7 @@ function makePlugin() {
   return {
     settings: { ddbCobaltSession: "" },
     sendInitiativeUpdate: vi.fn(),
+    canEditSession: () => true,
   } as any;
 }
 
@@ -414,5 +415,15 @@ describe("DnDBeyondPanel monsterStatuses", () => {
 
     panel.stopTracking();
     expect((panel as any).monsterStatuses.size).toBe(0);
+  });
+});
+
+describe("DnDBeyondPanel on a read-only remote device", () => {
+  it("does not turn polls into broadcasts without the lease", () => {
+    const plugin = { ...makePlugin(), canEditSession: () => false };
+    const panel = new DnDBeyondPanel(plugin, document.createElement("div"));
+    (panel as any).render = vi.fn();
+    (panel as any).onPollUpdate(makeState({ roundNum: 2, turnNum: 1, participants: [{ name: "A", initiative: 10, kind: "player" }] }));
+    expect(plugin.sendInitiativeUpdate).not.toHaveBeenCalled();
   });
 });

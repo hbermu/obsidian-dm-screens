@@ -3,7 +3,6 @@ import type DmScreenPlugin from "../main";
 import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize } from "../map/fog";
 import { buildBlockedMask, floodRegion, regionToCanvas } from "../map/walls";
-import { vaultPathFromUrl } from "../server";
 import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
@@ -73,7 +72,17 @@ export class MapExploreModal extends Modal {
     void this.panel.commitFog(this.fogCanvas.toDataURL("image/png"));
   }
 
+  // Read-only (a remote device without the lease): nothing in the modal may
+  // broadcast or persist, so its content goes inert until control returns.
+  applyEditable() {
+    const readonly = !this.plugin.canEditSession();
+    this.contentEl.inert = readonly;
+    this.modalEl.classList.toggle("dm-explore-readonly", readonly);
+  }
+
   onOpen() {
+    this.plugin.exploreModals.add(this);
+    this.applyEditable();
     this.walls = [...this.panel.walls];
     this.modalEl.addClass("dm-explore-modal");
     const { contentEl } = this;
@@ -127,9 +136,7 @@ export class MapExploreModal extends Modal {
     // and layout-free in tests where the rect is stubbed).
     const inner = stage.createDiv("dm-explore-inner");
 
-    const vaultPath = vaultPathFromUrl(this.map.url);
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = vaultPath ? adapter.getResourcePath?.(vaultPath) : null;
+    const resourceUrl = this.plugin.transport.displayUrl(this.map.url);
     if (resourceUrl) {
       if (this.map.mediaType === "video") {
         const v = inner.createEl("video");
@@ -749,6 +756,7 @@ export class MapExploreModal extends Modal {
   }
 
   onClose() {
+    this.plugin.exploreModals.delete(this);
     this.activeDrag?.();
     this.activeDrag = null;
     this.cleanupListeners?.();

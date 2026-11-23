@@ -444,10 +444,10 @@ export class HydrusExplorerModal extends Modal {
   private async handleSetBackground(tile: Tile) {
     try {
       const entry = await this.ensureCached(tile);
-      // Relative URL — the player browser resolves it against the plugin
-      // server's own origin (whatever LAN IP/host it bound to). Hardcoding
-      // localhost breaks any client that isn't on the DM machine.
-      const url = `/vault/${encodeForVaultUrl(entry.vaultPath)}`;
+      // Relative URL — the player browser resolves it against the server's
+      // own origin. Hardcoding localhost breaks any client that isn't on the
+      // DM machine.
+      const url = await this.plugin.transport.mediaUrl(entry.vaultPath);
       const mediaType = mediaTypeOf(entry.mime);
       debug("HydrusExplorer: handleSetBackground", entry.hash.slice(0, 12), mediaType, entry.vaultPath);
       this.plugin.broadcast({

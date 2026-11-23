@@ -5,7 +5,6 @@ import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize, gridCellRectAt } from "../map/fog";
 import { buildBlockedMask, floodRegion, regionToCanvas } from "../map/walls";
 import { blocksSight } from "../map/los";
-import { vaultPathFromUrl } from "../server";
 import type { MapWall } from "../map/types";
 import { parseUvttWalls } from "../map/uvtt";
 import { collectFoundryScenes, sceneImportResult, type FoundryScene } from "../map/foundry";
@@ -87,9 +86,7 @@ export class MapFogModal extends Modal {
     const stage = contentEl.createDiv("dm-fog-stage");
     stage.style.aspectRatio = `${this.map.naturalWidth} / ${this.map.naturalHeight}`;
 
-    const vaultPath = vaultPathFromUrl(this.map.url);
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = vaultPath ? adapter.getResourcePath?.(vaultPath) : null;
+    const resourceUrl = this.plugin.transport.displayUrl(this.map.url);
     if (resourceUrl) {
       if (this.map.mediaType === "video") {
         const v = stage.createEl("video");

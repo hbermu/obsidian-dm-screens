@@ -41,8 +41,9 @@ describe.runIf(onlyOn("remote"))("control channel", () => {
       expect(await reason).toBe("protocol-mismatch:1");
     });
 
-    it("closes 1008 on a cross-origin handshake", async () => {
-      expect(await client(DEVICE_A, {}, { Origin: "http://evil.example" }).closed).toBe(1008);
+    it("accepts any Origin, since the token is explicit and Obsidian is never same-origin", async () => {
+      const c = client(DEVICE_A, {}, { Origin: "app://obsidian.md" });
+      expect((await c.waitFor("control-hello")).payload.role).toBe("active");
     });
 
     it("refuses a fifth control socket with 1013", async () => {
@@ -190,7 +191,7 @@ describe.runIf(onlyOn("remote"))("control channel", () => {
       expect((await api(server.baseUrl, "PUT", `/api/mapdata/fog/${key}`, "{not json")).status).toBe(400);
       expect((await api(server.baseUrl, "PUT", `/api/mapdata/fog/${key}`, JSON.stringify("x".repeat(1100 * 1024)))).status).toBe(413);
       const doc = (await api(server.baseUrl, "GET", "/api/mapdata")).json;
-      expect(doc).toEqual({ configs: { "/vault/Maps/a b.png": { mode: "fit" } }, profiles: {}, fog: {}, walls: { "/vault/Maps/a b.png": [{ x1: 0 }] } });
+      expect(doc).toEqual({ configs: { "/vault/Maps/a b.png": { mode: "fit" } }, profiles: {}, fog: {}, walls: { "/vault/Maps/a b.png": [{ x1: 0 }] }, sources: {} });
       expect((await api(server.baseUrl, "DELETE", `/api/mapdata/configs/${key}`)).status).toBe(204);
       expect((await api(server.baseUrl, "GET", "/api/mapdata")).json.configs).toEqual({});
     });

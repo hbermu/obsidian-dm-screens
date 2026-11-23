@@ -58,6 +58,8 @@ function polyfillHTMLElement() {
 
 // ---- Stubs ----
 const appStub = { vault: { adapter: { getResourcePath: () => null as null } } };
+// The modals resolve the map preview through the transport; no media in these tests.
+const transportStub = { displayUrl: () => null as null };
 
 function makePanelStub(
   walls: MapWall[] = [],
@@ -145,7 +147,7 @@ function openModal(
 } {
   const modal = new MapExploreModal(
     appStub as never,
-    { app: appStub, settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
+    { app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
     panelStub as never,
     mapStub
   );
@@ -216,7 +218,7 @@ describe("MapExploreModal — visible source label", () => {
   it("renders a visible label in the bar with the map label text", () => {
     const panel = makePanelStub();
     const pluginStub = {
-      app: appStub,
+      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(),
       settings: {
         lastSourceLabels: { map: { label: "Test Map", title: "Full Title" } },
       },
@@ -242,7 +244,7 @@ describe("MapExploreModal — visible source label", () => {
   it("resolves label from URL when no saved label", () => {
     const panel = makePanelStub();
     const pluginStub = {
-      app: appStub,
+      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(),
       settings: { lastSourceLabels: {} },
       hydrusCache: null,
     };
@@ -776,7 +778,7 @@ describe("MapExploreModal — Combat window", () => {
     const modal = new MapExploreModal(
       appStub as never,
       {
-        app: appStub,
+        app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(),
         settings: { exploreWindows: { combat: { x: 0.25, y: 0.5, minimized: true } } },
         saveSettings: vi.fn(),
       } as never,

@@ -22,6 +22,10 @@ pub struct MapData {
     pub fog: IndexMap<String, Value>,
     #[serde(default)]
     pub walls: IndexMap<String, Value>,
+    // Asset name → the scene source it was published from (vault:… or
+    // hydrus:…), so any controller can save a scene after a hand-over.
+    #[serde(default)]
+    pub sources: IndexMap<String, Value>,
 }
 
 impl MapData {
@@ -31,6 +35,7 @@ impl MapData {
             "profiles" => Some(&mut self.profiles),
             "fog" => Some(&mut self.fog),
             "walls" => Some(&mut self.walls),
+            "sources" => Some(&mut self.sources),
             _ => None,
         }
     }

@@ -1,10 +1,10 @@
 use crate::auth::{Role, query_param, role_for};
 use crate::protocol::{self, PROTOCOL_VERSION};
 use crate::state::{AppState, ControlConn, Holder, Outbound, Session};
-use crate::viewers::{RateWindow, close_with, drain, origin_ok, spawn_writer};
+use crate::viewers::{RateWindow, close_with, drain, spawn_writer};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{OriginalUri, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
@@ -26,7 +26,7 @@ enum Refusal {
     Close(u16, String),
 }
 
-fn check(state: &AppState, query: Option<&str>, headers: &HeaderMap) -> Result<Handshake, Refusal> {
+fn check(state: &AppState, query: Option<&str>) -> Result<Handshake, Refusal> {
     let token = query_param(query, "k").unwrap_or_default();
     if role_for(
         &token,
@@ -36,9 +36,9 @@ fn check(state: &AppState, query: Option<&str>, headers: &HeaderMap) -> Result<H
     {
         return Err(Refusal::Close(1008, "Unauthorized".into()));
     }
-    if !origin_ok(headers) {
-        return Err(Refusal::Close(1008, "Unauthorized".into()));
-    }
+    // No Origin rule here: the controller is Obsidian (app://, capacitor://),
+    // never a page on the server's origin, and the token travels explicitly in
+    // the query rather than as an ambient cookie a foreign page could reuse.
     let device = query_param(query, "device").unwrap_or_default();
     let name = query_param(query, "name").unwrap_or_default();
     let device_ok = device.len() == 32
@@ -60,13 +60,12 @@ fn check(state: &AppState, query: Option<&str>, headers: &HeaderMap) -> Result<H
 pub async fn control(
     State(state): State<Arc<AppState>>,
     OriginalUri(uri): OriginalUri,
-    headers: HeaderMap,
     ws: Upgrade,
 ) -> Response {
     let Ok(ws) = ws else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let checked = check(&state, uri.query(), &headers);
+    let checked = check(&state, uri.query());
     ws.max_message_size(2 * MAX_CONTROL_FRAME)
         .on_upgrade(move |socket| async move {
             match checked {

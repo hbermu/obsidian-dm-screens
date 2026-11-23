@@ -24,8 +24,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     },
     server: null,
     replayCache: new ReplayCache(),
-    broadcast(msg: unknown) {
-      this.server?.broadcast(msg);
+    broadcast(msg: any) {
+      this.transport.broadcast(msg);
     },
     sendInitiativeUpdate: vi.fn(),
     broadcastMapCalibration: vi.fn(),

@@ -77,7 +77,7 @@ export class Setting {
 export class TFile {}
 export class TFolder {}
 export class App {}
-export const Platform = { isDesktop: true, isMobile: false };
+export const Platform = { isDesktop: true, isMobile: false, isDesktopApp: true, isIosApp: false, isAndroidApp: false, isTablet: false };
 export type MarkdownPostProcessorContext = unknown;
 
 // YAML is a superset of JSON, so a JSON round trip stands in for Obsidian's

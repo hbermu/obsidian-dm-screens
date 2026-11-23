@@ -14,6 +14,7 @@ import { HydrusClient } from "./hydrus/client";
 import { DdbImageCache } from "./dndbeyond/imageCache";
 import { initDebug, debug, debugWarn, debugError } from "./debug";
 import { EmbeddedTransport } from "./transport/embedded";
+import { RemoteTransport } from "./transport/remote";
 import type { SceneTransport } from "./transport/transport";
 import { SCENE_CODE_BLOCK, type Scene } from "./scenes/format";
 import { renderSceneCard } from "./scenes/codeBlock";
@@ -29,6 +30,8 @@ export default class DmScreenPlugin extends Plugin {
   server: PlayerScreenServer | null = null;
   replayCache: ReplayCache = new ReplayCache();
   transport: SceneTransport = new EmbeddedTransport(this);
+  // Open Exploration modals, told when this device gains or loses control.
+  exploreModals = new Set<{ applyEditable(): void }>();
   private replayCacheSaveTimer: number | null = null;
   hydrusCache: HydrusCache | null = null;
   ddbImageCache: DdbImageCache | null = null;
@@ -63,6 +66,7 @@ export default class DmScreenPlugin extends Plugin {
     debug("Plugin loading. Version:", this.manifest?.version ?? "unknown");
     this.initReplayCache();
     this.initHydrusCache();
+    this.transport = this.buildTransport();
 
     // Register views
     this.registerView(DM_CONTROL_VIEW_TYPE, (leaf) => new DmControlPanel(leaf, this));
@@ -108,8 +112,8 @@ export default class DmScreenPlugin extends Plugin {
     this.addSettingTab(new DmScreenSettingTab(this.app, this));
 
     if (this.settings.autoStartServer) {
-      debug("Auto-starting server on port", this.settings.serverPort);
-      this.startServer();
+      debug("Auto-starting the session in", this.settings.serverMode, "mode");
+      this.startSession();
     }
 
     // Add ribbon icon
@@ -153,6 +157,83 @@ export default class DmScreenPlugin extends Plugin {
       await this.saveSettings();
     }
     this.stopServer();
+    this.remote?.disconnect();
+  }
+
+  get remote(): RemoteTransport | null {
+    return this.transport instanceof RemoteTransport ? this.transport : null;
+  }
+
+  private buildTransport() {
+    if (this.settings.serverMode !== "remote") return new EmbeddedTransport(this);
+    return new RemoteTransport(this, {
+      onSession: (cache, active) => void this.onRemoteSession(cache, active),
+      onRole: (active) => this.onRemoteRole(active),
+      onMirror: (message) => this.onRemoteMirror(message),
+      onScreens: (clients) => this.applyScreens(clients),
+      onStatus: () => this.refreshOpenDmPanels(),
+    });
+  }
+
+  async setServerMode(mode: "embedded" | "remote"): Promise<void> {
+    if (mode === this.settings.serverMode) return;
+    this.stopServer();
+    this.remote?.disconnect();
+    this.settings.serverMode = mode;
+    await this.saveSettings();
+    this.transport = this.buildTransport();
+    this.refreshOpenDmPanels();
+  }
+
+  startSession(): void {
+    if (this.remote) this.remote.connect();
+    else this.startServer();
+  }
+
+  private panels(): DmControlPanel[] {
+    return this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE).map((leaf) => leaf.view as DmControlPanel);
+  }
+
+  // The server's cache is the session: adopt it, rebuild the panels from it,
+  // and, holding the lease, re-send the live-only seeds a server start sends.
+  private async onRemoteSession(cache: Record<string, string>, active: boolean): Promise<void> {
+    this.replayCache.replace(cache);
+    for (const panel of this.panels()) await panel.reloadFromSession?.();
+    if (active) this.sendSeeds();
+    this.refreshOpenDmPanels();
+  }
+
+  private onRemoteRole(active: boolean): void {
+    if (active) this.sendSeeds();
+    this.refreshOpenDmPanels();
+  }
+
+  private mirrorTimer: number | null = null;
+
+  // A read-only device follows the session: apply the mirrored message, then
+  // rebuild the panels once the burst settles.
+  private onRemoteMirror(message: PlayerMessage): void {
+    this.replayCache.record(message);
+    if (this.mirrorTimer !== null) window.clearTimeout(this.mirrorTimer);
+    this.mirrorTimer = window.setTimeout(() => {
+      this.mirrorTimer = null;
+      for (const panel of this.panels()) void panel.reloadFromSession?.();
+    }, 100);
+  }
+
+  private sendSeeds(): void {
+    this.broadcastWaitingScreen();
+    this.broadcastInspirationStyle();
+    this.broadcastMapCalibration();
+  }
+
+  private applyScreens(clients: Array<{ width: number; height: number; devicePixelRatio: number; channel?: "player" | "map" }>): void {
+    for (const view of this.panels()) {
+      view.connectedClients = clients.filter((c) => c.channel !== "map");
+      view.mapPanel.mapClients = clients.filter((c) => c.channel === "map");
+      view.playerConnected = view.connectedClients.length > 0;
+      view.debouncedRender?.();
+    }
   }
 
   // Coalesces bursty state changes (drags, sliders) into one data.json write.
@@ -243,21 +324,9 @@ export default class DmScreenPlugin extends Plugin {
     this.server = new PlayerScreenServer(this, this.replayCache);
     this.server.maxClients = this.settings.maxClients;
     this.server.onClientInfo = (info) => this.onPlayerClientInfo(info);
-    this.server.onClientCountChanged = () => {
-      const clients = this.server?.getConnectedClients() ?? [];
-      const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-      for (const leaf of leaves) {
-        const view = leaf.view as DmControlPanel;
-        view.connectedClients = clients.filter((c) => c.channel !== "map");
-        view.mapPanel.mapClients = clients.filter((c) => c.channel === "map");
-        view.playerConnected = view.connectedClients.length > 0;
-        view.debouncedRender?.();
-      }
-    };
+    this.server.onClientCountChanged = () => this.applyScreens(this.server?.getConnectedClients() ?? []);
     this.server.start(this.settings.serverPort);
-    this.broadcastWaitingScreen();
-    this.broadcastInspirationStyle();
-    this.broadcastMapCalibration();
+    this.sendSeeds();
     const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view as DmControlPanel;
@@ -303,6 +372,7 @@ export default class DmScreenPlugin extends Plugin {
       const view = leaf.view as DmControlPanel;
       view.debouncedRender?.();
     }
+    for (const modal of this.exploreModals) modal.applyEditable();
   }
 
   private onPlayerClientInfo(_info: { width: number; height: number; devicePixelRatio: number; channel?: "player" | "map" }) {
@@ -336,6 +406,12 @@ export default class DmScreenPlugin extends Plugin {
   }
 
   toggleServer() {
+    const remote = this.remote;
+    if (remote) {
+      if (remote.status === "disconnected") remote.connect();
+      else remote.disconnect();
+      return;
+    }
     if (this.server) {
       this.stopServer();
     } else {

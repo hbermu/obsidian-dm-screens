@@ -4,7 +4,26 @@ import { fogSidecarPath, loadFogSidecar, saveFogSidecar, type FogAdapter } from 
 import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
 import type { MapWall, ScreenProfile, StoredMapState } from "../map/types";
 import { debug } from "../debug";
-import type { MapDataStore, SceneTransport } from "./transport";
+import { buildJoinUrl } from "../auth";
+import { vaultPathFromUrl } from "../server";
+import { sourceFromVaultUrl } from "../scenes/format";
+import type { JoinLink, MapDataStore, SceneTransport } from "./transport";
+import { encodeVaultPath, toWire } from "./wire";
+
+// The first non-internal IPv4 address: what a screen on the LAN dials.
+function lanAddress(): string | null {
+  try {
+    const os = require("os") as typeof import("os");
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const iface of list ?? []) {
+        if (iface.family === "IPv4" && !iface.internal) return iface.address;
+      }
+    }
+  } catch {
+    /* no os module (mobile): no LAN address to offer */
+  }
+  return null;
+}
 
 class EmbeddedMapData implements MapDataStore {
   constructor(private plugin: DmScreenPlugin) {}
@@ -71,15 +90,39 @@ export class EmbeddedTransport implements SceneTransport {
   // The replay cache stays current while the server is stopped; the server
   // replays it to clients on start.
   broadcast(message: PlayerMessage): void {
+    const wire = toWire(message);
     if (this.plugin.server) {
-      this.plugin.server.broadcast(message);
+      this.plugin.server.broadcast(wire);
       return;
     }
     debug("broadcast (server stopped, cached only):", message.type);
-    this.plugin.replayCache.record(message);
+    this.plugin.replayCache.record(wire);
   }
 
   sendLive(message: PlayerMessage): void {
-    this.plugin.server?.broadcast(message);
+    this.plugin.server?.broadcast(toWire(message));
+  }
+
+  async mediaUrl(vaultPath: string): Promise<string> {
+    return `/vault/${encodeVaultPath(vaultPath)}`;
+  }
+
+  displayUrl(url: string): string | null {
+    const vaultPath = vaultPathFromUrl(url);
+    if (vaultPath === null) return url;
+    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
+    return adapter.getResourcePath?.(vaultPath) ?? null;
+  }
+
+  sourceOf(url: string): string | null {
+    return sourceFromVaultUrl(url, this.plugin.settings.cacheBaseFolder);
+  }
+
+  joinLink(path: "/" | "/map"): JoinLink | null {
+    if (!this.plugin.server) return null;
+    const host = lanAddress() ?? "localhost";
+    const port = this.plugin.settings.serverPort;
+    const text = `http://${host}:${port}${path === "/" ? "" : path}`;
+    return { href: buildJoinUrl(host, port, this.plugin.settings.accessToken, path), text };
   }
 }

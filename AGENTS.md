@@ -83,6 +83,7 @@ All targets run inside Docker; the container manages `node_modules`.
 | `make test-visual` | Playwright visual regression suite (inside the official `mcr.microsoft.com/playwright` image) |
 | `make test-visual-update` | Refresh committed visual baselines (inside container — host-generated PNGs WILL diff) |
 | `make test-e2e` | Real-Obsidian end-to-end suite (WebdriverIO inside the Playwright image; first run downloads Obsidian into `.obsidian-cache/`) |
+| `make test-e2e-remote` | The remote-mode e2e spec (`test/e2e/specs/remote.e2e.ts`) in real Obsidian against a fresh remote server container (`e2e-server`, alias `dmscreen.local`); the spec skips itself in a plain `make test-e2e` |
 | `make test-conformance` | Black-box server contract in `test/conformance/` (HTTP + WebSocket) against the embedded server, or the remote one with `CONFORMANCE_TARGET=remote`; a case only one server implements is marked with `onlyOn(...)` |
 | `make server-test` | `cargo test` for the remote server in `server/` (Rust toolchain + `ffmpeg` in the `server` service); exports the screens into `server/assets/` first |
 | `make server-lint` | `cargo fmt --check` + `cargo clippy -- -D warnings` |
@@ -134,6 +135,11 @@ src/
   transport/
     transport.ts         # SceneTransport + MapDataStore: the seam every emitter and persister uses
     embedded.ts          # EmbeddedTransport: in-process server, ReplayCache, settings, vault sidecars
+    remote.ts            # RemoteTransport: control socket, lease roles, reconnect, ordered relay queue
+    remoteApi.ts         # /api/ and /assets/ calls through requestUrl
+    assetUpload.ts       # AssetPublisher: fingerprint lookup, chunked upload, Hydrus by hash, message rewriting
+    remoteMapData.ts     # Map configs, calibration, fog, walls and asset sources on the server
+    wire.ts              # What screens may see of a message (no layer sources)
   scenes/
     format.ts            # dm-scene format, source references, paths
     capture.ts           # Scene from panel state; writes the note and its fog masks

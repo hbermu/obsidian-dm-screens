@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parseYaml, TFile } from "obsidian";
 import { ReplayCache } from "../server";
 import { captureMapScene, capturePlayerScene, writeScene } from "../scenes/capture";
-import { extractSceneBlock, parseScene } from "../scenes/format";
+import { extractSceneBlock, parseScene, sourceFromVaultUrl } from "../scenes/format";
 import type { ImageLayer } from "../types";
 
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
@@ -19,6 +19,7 @@ function makePlugin() {
   return {
     settings: { cacheBaseFolder: ".dm-screen", hydrusDefaultLoop: true, hydrusDefaultMuted: false },
     replayCache: new ReplayCache(),
+    transport: { sourceOf: (url: string) => sourceFromVaultUrl(url, ".dm-screen") },
   } as any;
 }
 

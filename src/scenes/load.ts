@@ -80,7 +80,7 @@ export async function loadPlayerScene(plugin: DmScreenPlugin, panel: DmControlPa
     });
   }
 
-  panel.applyPlayerScene(background, layers);
+  await panel.applyPlayerScene(background, layers);
   debug("loadPlayerScene:", scene.name, "layers:", layers.length, "skipped:", skipped.length);
   if (skipped.length > 0) new Notice(`Scene "${scene.name}" loaded without: ${skipped.join(", ")} (not found).`, 8000);
 }

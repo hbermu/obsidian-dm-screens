@@ -4,14 +4,19 @@
 
 ## Source files
 
-- `src/transport/transport.ts` — `SceneTransport` interface: `broadcast(message)`, `publishAsset(ref)`, map-data reads and writes; every DM-side emitter and persister goes through it
-- `src/transport/embedded.ts` — `EmbeddedTransport`: today's behaviour (in-process `PlayerScreenServer`, `ReplayCache`, settings and vault sidecars)
-- `src/transport/remote.ts` — `RemoteTransport`: the control WebSocket client, role tracking, reconnect, the ordered relay queue
-- `src/transport/assetUpload.ts` — fingerprint lookup, chunked upload, Hydrus fetch request, URL rewriting of outgoing messages
-- `src/transport/remoteMapData.ts` — the server-backed store for map configs, calibration profiles, fog and walls
+- `src/transport/transport.ts` — `SceneTransport` (`broadcast`, `sendLive`, `isLive`, `canEdit`, `mediaUrl`, `displayUrl`, `sourceOf`, `joinLink`) and `MapDataStore`; every DM-side emitter and persister goes through it
+- `src/transport/embedded.ts` — `EmbeddedTransport`: the in-process `PlayerScreenServer`, the `ReplayCache`, settings and vault sidecars, LAN join links
+- `src/transport/wire.ts` — `toWire` (a layer's `source` never leaves the DM side), `encodeVaultPath`
+- `src/transport/remote.ts` — `RemoteTransport`: the control WebSocket client, `deviceId`/`deviceName`, role tracking, reconnect backoff, the ordered relay queue, `fetchDataUrl`, `claim`
+- `src/transport/remoteApi.ts` — `callApi`: `/api/` and `/assets/` requests through `requestUrl` with a `Bearer` token
+- `src/transport/assetUpload.ts` — `AssetPublisher`: fingerprint lookup, chunked upload, Hydrus by hash, the progress Notice, `rewrite` of outgoing messages
+- `src/transport/remoteMapData.ts` — `RemoteMapData`: the server-backed store for map configs, calibration profiles, fog, walls and asset sources
 - `src/protocol.ts` — `PROTOCOL_VERSION` and the control-channel message types shared with the conformance suite
-- `src/main.ts` — selects the transport from `serverMode`, loads the embedded server only on desktop, wires connect/disconnect
-- `src/views/DmControlPanel.ts`, `src/views/MapScreenPanel.ts` — server row (Connect/Disconnect, role, holder), read-only banner and disabled controls
+- `src/main.ts` — `buildTransport` from `serverMode`, `setServerMode`, `startSession`, `toggleServer`, the remote hooks (`onRemoteSession`, `onRemoteRole`, `onRemoteMirror`, `applyScreens`), `exploreModals`
+- `src/views/DmControlPanel.ts` — `renderRemoteServerSection` (Connect/Disconnect, status), `renderReadonlyBanner`, the inert `.dm-session` wrapper, `reloadFromSession`
+- `src/views/MapScreenPanel.ts` — `resetForSession`; media published through `transport.mediaUrl` in `setVaultMap`
+- `src/views/MapExploreModal.ts` — `applyEditable`
+- `src/views/DnDBeyondPanel.ts` — polls broadcast only while `canEditSession()`
 - `src/views/TakeControlModal.ts` — confirmation before claiming control from another device
 - `src/settings.ts` — the server-mode settings group
 - `server/` — the standalone server (see `server.md`)
@@ -44,31 +49,33 @@ The device identity is deliberately **not** a setting: `data.json` may be synced
 9. If the server closes the handshake for a protocol mismatch, then the plugin shall show a Notice naming both protocol versions and telling the DM to update the plugin or the server, and shall not retry until the DM presses Connect again.
 10. If the server closes the handshake for a wrong token, then the plugin shall show a Notice `Remote server rejected the control token` and shall not retry automatically.
 11. When the control socket drops for any other reason, the plugin shall reconnect with exponential backoff from 1 s to 30 s; while disconnected the panel shall show a `Reconnecting…` banner and shall behave as read-only (requirement 15).
-12. The player and map join links in remote mode shall be built from `remoteServerUrl`, the path, and the view token received in `control-hello`, following `../player-server/overview.md` requirement 28 (the visible text omits the token).
+12. The player and map join links in remote mode shall be built from `remoteServerUrl`, the path, and the view token received in `control-hello`, following `../player-server/overview.md` requirement 28 (the visible text omits the token); the panels take both modes' links from `transport.joinLink`.
 
 ### Roles
 
-13. When `control-hello` assigns the role `active`, the plugin shall replace the contents of its `ReplayCache` with the server's cache, restore the DM panel from it exactly as on panel open, and re-send the live-only seeds (`waiting-screen`, `inspiration-style`, `map-calibration`) as it does on an embedded server start.
+13. When `control-hello` assigns the role `active`, the plugin shall replace the contents of its `ReplayCache` with the server's cache (`ReplayCache.replace`), rebuild every open DM panel from it (`reloadFromSession`), and re-send the live-only seeds (`waiting-screen`, `inspiration-style`, `map-calibration`) as it does on an embedded server start. `reloadFromSession` shall take the layers from the cached `image-layers-sync` merged with the cached `image-layers-geometry`, fetch each layer image and fog mask back as a data URL (`fetchDataUrl`) and restore each layer's `source` from the server's `sources` collection, keep the background's and the map's `/assets/` URLs, and fetch the map fog mask back as a data URL — so the editing tools and webhooks work on the same data as in embedded mode.
 14. When `control-hello` or `control-role` assigns the role `readonly`, the plugin shall load the server's cache the same way, then stop sending relays.
-15. While the role is `readonly` or the socket is disconnected, `transport.canEdit()` shall return false, and the DM panel and the Exploration Mode modal shall add the class `dm-readonly` to their root, disable every control that would broadcast or persist, and show a banner `Read-only — <holder name> has control` with a `Take control` button (`.dm-take-control-btn`); while disconnected the banner shall read `Reconnecting…` without the button.
+15. While the role is `readonly` or the socket is not connected, `transport.canEdit()` shall return false; the DM panel shall add the class `dm-readonly` to its root, make everything below the server section inert (the `.dm-session` wrapper: no input, no focus), and show a `.dm-readonly-banner` reading `Read-only — <holder name> has control` with a `Take control` button (`.dm-take-control-btn`), `Reconnecting…` while it retries, or `Disconnected — press Connect to control the session` when it does not; an open Exploration Mode modal shall make its content inert and carry `dm-explore-readonly` (`applyEditable`, re-run on every status change).
 16. When the DM presses `Take control`, the plugin shall open `TakeControlModal` naming the current holder; on confirm it shall send `control-claim`.
 17. While the role is `readonly`, when a `mirror` message arrives, the plugin shall apply it to its `ReplayCache` and re-restore the panel (debounced 100 ms), so the read-only device follows the session live.
-18. While the role is `active`, only the D&D Beyond poller of the active device shall run; a device that becomes `readonly` shall stop its poller, and a device that becomes `active` shall start it if `ddbEnabled` and an encounter is tracked.
+18. While `canEditSession()` is false, the D&D Beyond panel shall not turn poll results into broadcasts, so only the device holding the lease feeds the screens.
 
 ### Broadcasting and media
 
-19. While the role is `active`, `plugin.broadcast(message)` shall record the message in the local `ReplayCache` with its original URLs (so DM-side previews keep resolving locally) and enqueue a copy for the server, rewritten by requirement 20.
+18b. In remote mode, every path that turns a vault file into a background or map URL (note picker, a note's `hydrus://` reference, the Hydrus explorer, scene loading) shall publish it first through `transport.mediaUrl` and use the returned `/assets/<sha256>.<ext>` URL as the panel's identity for that medium, so every device names a medium the same way; a failed publish shall show a Notice and leave the current medium in place.
+19. While the role is `active`, `plugin.broadcast(message)` shall record the message in the local `ReplayCache` as given (with layer sources, so the DM side keeps them) and enqueue a copy for the server, rewritten by requirement 20; while it is not, the message shall be neither recorded nor relayed.
 20. Before a queued message is relayed, every media URL field it carries — `show-background-media.payload.url`, `map-show.payload.url`, `image-layers-sync.payload.layers[].dataUrl`, `image-layers-sync.payload.layers[].fogDataUrl`, `map-fog.payload.dataUrl` — shall be rewritten to an `/assets/<sha256>.<ext>` URL by publishing it per `assets.md` (vault file, Hydrus file, or `data:` URL); an empty or `null` value shall pass through unchanged.
 21. The relay queue shall be FIFO across message types, shall hold a message until all of its media are published, and shall drop a queued message when a newer message of the same `type` is enqueued before it is sent; an `image-layers-geometry` shall never be relayed before the `image-layers-sync` enqueued ahead of it.
 22. If publishing a medium fails, then the plugin shall show a Notice naming the file (never a URL or token), drop that message, and keep relaying later messages.
 23. When an upload is larger than 8 MiB, the plugin shall show a persistent Notice with the file name and percentage, updated per chunk and hidden on completion or failure.
-24. DM-side previews of an `/assets/` URL (an item fetched by the server from Hydrus and never stored on this device) shall load `<remoteServerUrl>/assets/<sha256>.<ext>?k=<remoteControlToken>`.
+24. DM-side previews of an `/assets/` URL shall load `<remoteServerUrl>/assets/<sha256>.<ext>?k=<remoteControlToken>` (`transport.displayUrl`); a `/vault/` URL keeps resolving through the vault adapter.
 
 ### Map data
 
-25. In remote mode, map configs (`mapConfigs` equivalent), calibration profiles (`mapScreenProfiles` equivalent), fog masks and walls shall be read from and written to the server's map-data store (`server.md` requirements 20–23) instead of `data.json` and the `.dm-screen/fog`/`.dm-screen/walls` sidecars, keyed by the same map URL keys as embedded mode.
+25. In remote mode, map configs (`mapConfigs` equivalent), calibration profiles (`mapScreenProfiles` equivalent), fog masks and walls shall be read from and written to the server's map-data store (`server.md` requirements 14–17) instead of `data.json` and the `.dm-screen/fog`/`.dm-screen/walls` sidecars, keyed by the map's `/assets/` URL (requirement 18b), which is the same on every device.
 26. The plugin shall load the whole map-data document once per `control-hello` and write each change with one `PUT` (or `DELETE` for a removal), so a change made on one device is what the next device to take control sees.
 27. A fog mask committed in remote mode shall be published as a PNG asset and stored in the map-data store as that asset URL; the `map-fog` broadcast carries the same URL.
+28. Whenever the plugin publishes a vault file, or relays a layer that has a `source`, it shall record the asset name → scene source pair in the server's `sources` collection (only when it changes); `transport.sourceOf` shall resolve an `/assets/` URL through that collection, so a device that took the session over can still save scenes by reference.
 
 ## Broadcast / IPC
 
@@ -76,13 +83,13 @@ The control-channel messages are specified in `control-channel.md`. Player- and 
 
 ## Tests covering this
 
-- `src/__tests__/transport-embedded.test.ts` — the embedded transport is behaviour-identical to the pre-transport code paths (broadcast, cache, map data, sidecars)
-- `src/__tests__/transport-remote.test.ts` — handshake handling, role transitions, read-only gating, mirror application, reconnect backoff, protocol-mismatch and bad-token Notices
-- `src/__tests__/transport-relay-queue.test.ts` — FIFO order, same-type supersession, sync-before-geometry, failure isolation
-- `src/__tests__/asset-upload.test.ts` — URL rewriting per field, fingerprint lookup hit/miss, chunked upload, Hydrus fetch path, progress Notice threshold
-- `src/__tests__/remote-map-data.test.ts` — load once per hello, PUT/DELETE per change, fog as asset URL
-- `src/__tests__/mobile-load.test.ts` — with `Platform.isDesktopApp` false the plugin loads without requiring `http` or `ws` and forces remote mode
-- `test/e2e/specs/remote.e2e.ts` — real Obsidian against the real remote server container: connect, broadcast a background and a map, a second controller reads only, take control, reconnect
+- `src/__tests__/transport-embedded.test.ts` — the embedded transport: broadcast, live-only sends, cache while stopped, map data in settings and sidecars, `/vault/` media URLs and previews, sources, LAN join links, `source` stripped before the server and the cache
+- `src/__tests__/transport-remote.test.ts` — the control URL and stable device id, the URL policy, the active and read-only hellos, join links, previews, `control-role` and claim, mirror and screens hand-off, protocol-mismatch and bad-token Notices, reconnect backoff
+- `src/__tests__/transport-relay-queue.test.ts` — local record with original URLs, sync-before-geometry, same-type supersession, failure isolation with a Notice
+- `src/__tests__/asset-upload.test.ts` — fingerprint reuse, chunked upload with fingerprint and memo, 409 resume, Hydrus by hash and server fetch, a missing file named, the progress Notice, data URL dedupe by hash, unsupported types, message rewriting and source recording
+- `src/__tests__/remote-map-data.test.ts` — load once per hello, PUT/DELETE per change with encoded keys, fog as an asset, sources written on change, one warning on a refused write
+- `src/__tests__/ddb-panel-tracking-state.test.ts` — a read-only device does not broadcast polls (requirement 18)
+- `test/e2e/specs/remote.e2e.ts` — real Obsidian against the server container (`make test-e2e-remote`): the map published and served by hash, a layer relayed as an asset without its source, read-only on another device's claim and Take control back, the panel rebuilt from the session after a reconnect
 
 ## Non-goals
 

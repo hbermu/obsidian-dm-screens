@@ -80,7 +80,7 @@ A screen's token can no longer push anything: broadcasts arrive only over `/cont
 
 These exist because the boundary is the network, and they are enforced in the specs under `.agent/features/`:
 
-- Payload URLs bound for a DOM sink in the player bundle pass `safePlayerUrl()` (`src/player/safeUrl.ts`), which admits only `/vault/...` paths and `data:image/...` / `data:video/...` with an allowlisted MIME family.
+- Payload URLs bound for a DOM sink in the player bundle pass `safePlayerUrl()` (`src/player/safeUrl.ts`), which admits only `/vault/...` paths, content-addressed `/assets/<sha256>.<ext>` paths whose extension fits the media kind, and `data:image/...` / `data:video/...` with an allowlisted MIME family.
 - Neither browser bundle builds DOM from markup strings; the statblock renderer and the map chrome construct nodes and text nodes instead.
 - Outbound requests (webhooks, Hydrus, D&D Beyond images) pass `assertOutboundUrl()` (`src/net/urlPolicy.ts`): `http`/`https` only, no embedded credentials, and plaintext only to a loopback/RFC1918/`.local` host. Credentials are bound to their configured destination — the Hydrus API key is attached only when the request origin matches `hydrusApiUrl`.
 - Debug logging passes URLs through `redactUrl()` and secrets through `redactSecret()`, and never logs a response body.

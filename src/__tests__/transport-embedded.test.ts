@@ -98,3 +98,55 @@ describe("EmbeddedTransport map data", () => {
     expect(await transport.mapData.loadWalls("/vault/a.png")).toEqual([{ x1: 0, y1: 0, x2: 1, y2: 1 }]);
   });
 });
+
+describe("EmbeddedTransport media and links", () => {
+  it("names vault files with segment-encoded /vault/ URLs", async () => {
+    const { transport } = makePlugin();
+    expect(await transport.mediaUrl("Maps/a b#1.png")).toBe("/vault/Maps/a%20b%231.png");
+  });
+
+  it("resolves /vault/ URLs through the adapter and passes anything else through", () => {
+    const { plugin, transport } = makePlugin();
+    (plugin.app.vault.adapter as any).getResourcePath = vi.fn((p: string) => `app://res/${p}`);
+    expect(transport.displayUrl("/vault/foo%20bar.png")).toBe("app://res/foo bar.png");
+    expect(transport.displayUrl("/vault/.dm-screen/hydrus/abc.webm")).toBe("app://res/.dm-screen/hydrus/abc.webm");
+    expect(transport.displayUrl("data:image/png;base64,AA==")).toBe("data:image/png;base64,AA==");
+    expect(transport.displayUrl("https://cdn.example/foo.png")).toBe("https://cdn.example/foo.png");
+  });
+
+  it("returns null for a /vault/ URL when the adapter cannot resolve it", () => {
+    const { transport } = makePlugin();
+    expect(transport.displayUrl("/vault/foo.png")).toBeNull();
+  });
+
+  it("derives scene sources from /vault/ URLs", () => {
+    const { plugin, transport } = makePlugin();
+    (plugin.settings as any).cacheBaseFolder = ".dm-screen";
+    const hash = "c".repeat(64);
+    expect(transport.sourceOf(`/vault/.dm-screen/hydrus/${hash}.png`)).toBe(`hydrus:${hash}`);
+    expect(transport.sourceOf("/vault/Maps/a.png")).toBe("vault:Maps/a.png");
+    expect(transport.sourceOf("data:image/png;base64,AA==")).toBeNull();
+  });
+
+  it("offers join links only while the server runs, with the token kept out of the text", () => {
+    const { plugin, transport } = makePlugin();
+    (plugin.settings as any).serverPort = 3000;
+    (plugin.settings as any).accessToken = "tok";
+    expect(transport.joinLink("/")).toBeNull();
+    (plugin as any).server = { broadcast: vi.fn() };
+    const link = transport.joinLink("/map")!;
+    expect(link.href).toMatch(/^http:\/\/[^/]+:3000\/map\?k=tok$/);
+    expect(link.text).toMatch(/^http:\/\/[^/]+:3000\/map$/);
+  });
+
+  it("strips each layer's source before a message reaches the server or the cache", () => {
+    const server = { broadcast: vi.fn() };
+    const { plugin, transport } = makePlugin(server);
+    const sync = { type: "image-layers-sync", payload: { layers: [{ id: "1", dataUrl: "d", source: "vault:x.png" }] } };
+    transport.broadcast(sync);
+    expect(server.broadcast).toHaveBeenCalledWith({ type: "image-layers-sync", payload: { layers: [{ id: "1", dataUrl: "d" }] } });
+    (plugin as any).server = null;
+    transport.broadcast(sync);
+    expect(plugin.replayCache.entries.get("image-layers-sync")).not.toContain("source");
+  });
+});
