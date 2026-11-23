@@ -2401,3 +2401,37 @@
 .dm-explore-readonly {
   opacity: 0.55;
 }
+
+/* ── Touch ───────────────────────────────────────────────────────────── */
+
+/* A surface that drags must claim the gesture, or the browser pans or zooms
+   the page and the first pointermove never arrives. */
+.dm-explore-overlay,
+.dm-explore-markers,
+.dm-explore-inner,
+.dm-map-preview-stage,
+.dm-fog-stage,
+.dm-map-aoe-dot,
+.dm-map-vision-dot,
+.dm-map-aoe-rot-handle,
+.dm-map-viewport-rect,
+.dm-player-viewport-rect {
+  touch-action: none;
+}
+
+/* A finger is far blunter than a cursor: the hit area grows to the 44px a
+   touch target needs, without changing what is drawn. */
+@media (pointer: coarse) {
+  .dm-map-aoe-dot::before,
+  .dm-map-vision-dot::before,
+  .dm-map-aoe-rot-handle::before {
+    inset: calc(-17px * var(--dm-map-zoom, 1));
+  }
+
+  .dm-explore-bar button,
+  .dm-section-actions button,
+  .dm-explore-open-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

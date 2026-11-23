@@ -12,6 +12,8 @@ import { debug } from "../debug";
 import { fitScale } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
 import { FloatingWindow, type WindowState } from "./FloatingWindow";
+import { blockWebkitGestures, onLongPress, trackPointerDrag } from "./pointerDrag";
+import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pinchZoom";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's
@@ -20,11 +22,23 @@ import { FloatingWindow, type WindowState } from "./FloatingWindow";
 // the panel. Doors are ALWAYS room boundaries here (regardless of open/closed),
 // so a room stays discrete even with an open door; open/closed only affects LoS
 // on the player screen via the map-walls broadcast.
+// A finger that travels further than this was panning or pinching, not
+// tapping a room.
+const EXPLORE_TAP_SLOP = 12;
+
 export class MapExploreModal extends Modal {
   private fogCanvas: HTMLCanvasElement;
   private redrawOverlay: (() => void) | null = null;
   private renderMarkers: (() => void) | null = null;
   private cleanupListeners: (() => void) | null = null;
+  // Long-press handlers on markers, torn down with each re-render.
+  private markerCleanups: Array<() => void> = [];
+  private cancelWebkitGestures: (() => void) | null = null;
+  private cancelStageZoom: Array<() => void> = [];
+  // Pinch/wheel zoom over the stage, applied as a CSS transform on the inner
+  // box; every client↔fog conversion reads a live rect, so it needs no maths
+  // of its own.
+  private stageView: StageView = { ...IDENTITY_VIEW };
   // Force-detaches an in-progress document drag if the modal closes mid-gesture.
   private activeDrag: (() => void) | null = null;
   private walls: MapWall[] = [];
@@ -85,6 +99,8 @@ export class MapExploreModal extends Modal {
     this.applyEditable();
     this.walls = [...this.panel.walls];
     this.modalEl.addClass("dm-explore-modal");
+    // Safari would pinch-zoom the whole app on top of the map's own gestures.
+    this.cancelWebkitGestures = blockWebkitGestures(this.modalEl);
     const { contentEl } = this;
     contentEl.addClass("dm-explore-content");
 
@@ -118,6 +134,7 @@ export class MapExploreModal extends Modal {
       syncLockIcon();
       this.renderMarkers?.();
     });
+    const zoomBtn = bar.createEl("button", { cls: "dm-explore-zoom-btn" });
     const scaleBtn = bar.createEl("button");
     const gridBtn = bar.createEl("button");
     const syncToggleLabels = () => {
@@ -166,11 +183,22 @@ export class MapExploreModal extends Modal {
     const layout = () => {
       const rotW = sideways ? nh : nw;
       const rotH = sideways ? nw : nh;
+      applyStageView();
       const s = fitScale(stage.clientWidth, stage.clientHeight, rotW, rotH);
       if (s === null) return;
       inner.style.width = `${nw * s}px`;
       inner.style.height = `${nh * s}px`;
-      inner.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+    };
+    const applyStageView = () => {
+      const { zoom, offsetX, offsetY } = this.stageView;
+      inner.style.transform =
+        `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${zoom}) rotate(${rotation}deg)`;
+      // The marker dots counter-scale off this, so a finger target stays the
+      // same size however far the map is zoomed in.
+      inner.style.setProperty("--dm-map-zoom", String(zoom));
+      zoomBtn.textContent = `Zoom: ${Math.round(zoom * 100)}%`;
+      zoomBtn.title = zoom > 1 ? "Click to fit the map to the stage" : "Pinch, or ctrl+wheel, to zoom in";
+      zoomBtn.toggleClass("dm-fog-active", zoom > 1);
     };
     layout();
     requestAnimationFrame(layout);
@@ -319,6 +347,7 @@ export class MapExploreModal extends Modal {
     };
 
     const renderMarkers = () => {
+      for (const cleanup of this.markerCleanups.splice(0)) cleanup();
       markers.empty();
       this.buildAoeMarkers(markers, nw, nh, rotation, overlayGeom, deltaToMap, redraw);
       this.buildVisionMarkers(markers, nw, nh, deltaToMap, redraw);
@@ -413,6 +442,33 @@ export class MapExploreModal extends Modal {
       redraw();
       this.commitFog();
     });
+    // Set while a finger is down over the overlay, so a pinch can take the
+    // gesture away from the exploration tap it started as.
+    let cancelTap: (() => void) | null = null;
+    const abortTap = () => {
+      const cancel = cancelTap;
+      cancelTap = null;
+      cancel?.();
+    };
+
+    const stageSize = () => ({ width: inner.clientWidth, height: inner.clientHeight });
+    const setStageView = (view: StageView) => {
+      this.stageView = view;
+      applyStageView();
+    };
+    this.cancelStageZoom.push(
+      trackPinch(stage, {
+        view: () => this.stageView,
+        apply: setStageView,
+        size: stageSize,
+        onStart: () => abortTap(),
+      }),
+      trackWheelZoom(stage, { view: () => this.stageView, apply: setStageView, size: stageSize })
+    );
+    zoomBtn.addEventListener("click", () => {
+      if (this.stageView.zoom === 1) return;
+      setStageView({ ...IDENTITY_VIEW });
+    });
     scaleBtn.addEventListener("click", () => {
       this.panel.toggleScaleMode();
       syncToggleLabels();
@@ -444,10 +500,8 @@ export class MapExploreModal extends Modal {
       return nearest;
     };
 
-    const onDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      const { x: fx, y: fy } = toFog(e.clientX, e.clientY);
+    const explore = (clientX: number, clientY: number) => {
+      const { x: fx, y: fy } = toFog(clientX, clientY);
 
       const door = nearestDoor(fx, fy);
       if (door) {
@@ -474,7 +528,37 @@ export class MapExploreModal extends Modal {
       this.commitFog();
     };
 
-    const onMove = (e: MouseEvent) => {
+    // A finger explores on the lift, not the press: a pinch starts with one
+    // finger down, and a map that toggled a door before the second finger
+    // landed would be unusable on a tablet. A mouse keeps acting at once.
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") {
+        explore(e.clientX, e.clientY);
+        return;
+      }
+      abortTap();
+      const { clientX: sx, clientY: sy } = e;
+      let aborted = false;
+      const stop = trackPointerDrag(e, {
+        onMove: (m) => {
+          if (Math.hypot(m.clientX - sx, m.clientY - sy) > EXPLORE_TAP_SLOP) aborted = true;
+        },
+        onEnd: (u) => {
+          if (!aborted) explore(u.clientX, u.clientY);
+        },
+        onRelease: () => {
+          cancelTap = null;
+        },
+      });
+      cancelTap = () => {
+        aborted = true;
+        stop();
+      };
+    };
+
+    const onMove = (e: PointerEvent) => {
       const { x: fx, y: fy } = toFog(e.clientX, e.clientY);
       const cx = Math.floor(fx);
       const cy = Math.floor(fy);
@@ -490,9 +574,9 @@ export class MapExploreModal extends Modal {
       redraw();
     };
 
-    overlay.addEventListener("mousedown", onDown);
-    overlay.addEventListener("mousemove", onMove);
-    overlay.addEventListener("mouseleave", onLeave);
+    overlay.addEventListener("pointerdown", onDown);
+    overlay.addEventListener("pointermove", onMove);
+    overlay.addEventListener("pointerleave", onLeave);
 
     // Hold Shift to focus exploration: the markers layer goes pointer-transparent
     // so clicks fall straight through to the overlay's door/room gestures — even
@@ -507,9 +591,9 @@ export class MapExploreModal extends Modal {
     window.addEventListener("blur", onBlur);
 
     this.cleanupListeners = () => {
-      overlay.removeEventListener("mousedown", onDown);
-      overlay.removeEventListener("mousemove", onMove);
-      overlay.removeEventListener("mouseleave", onLeave);
+      overlay.removeEventListener("pointerdown", onDown);
+      overlay.removeEventListener("pointermove", onMove);
+      overlay.removeEventListener("pointerleave", onLeave);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
@@ -552,15 +636,20 @@ export class MapExploreModal extends Modal {
       };
       position();
 
-      dot.addEventListener("contextmenu", (ev: MouseEvent) => {
-        ev.preventDefault();
-        ev.stopPropagation();
+      const removeAoe = () => {
         this.panel.removeAoe(aoe.id);
         this.renderMarkers?.();
         redraw();
+      };
+      dot.addEventListener("contextmenu", (ev: MouseEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        removeAoe();
       });
+      // A finger has no right button, so a long press removes it instead.
+      this.markerCleanups.push(onLongPress(dot, removeAoe));
 
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -569,6 +658,7 @@ export class MapExploreModal extends Modal {
         const startAoeX = aoe.x;
         const startAoeY = aoe.y;
         this.beginDrag(
+          ev,
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
@@ -582,11 +672,12 @@ export class MapExploreModal extends Modal {
         );
       });
 
-      handle?.addEventListener("mousedown", (ev: MouseEvent) => {
+      handle?.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         this.beginDrag(
+          ev,
           (me) => {
             const { cx, cy, uw } = overlayGeom();
             if (!(uw > 0)) return;
@@ -625,7 +716,7 @@ export class MapExploreModal extends Modal {
       };
       position();
       positions.push(position);
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -634,6 +725,7 @@ export class MapExploreModal extends Modal {
         const targets = visionDragTargets(this.panel.visions, vision, this.panel.visionGroup);
         const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.beginDrag(
+          ev,
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
@@ -677,7 +769,7 @@ export class MapExploreModal extends Modal {
     if (this.panel.viewLocked) return;
 
     const hasBoundVision = this.panel.visions.some((v) => v.followsView);
-    rect.addEventListener("mousedown", (ev: MouseEvent) => {
+    rect.addEventListener("pointerdown", (ev: PointerEvent) => {
       if (ev.button !== 0) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -698,6 +790,7 @@ export class MapExploreModal extends Modal {
         }
       };
       this.beginDrag(
+          ev,
         (me) => step(me, false),
         (me) => step(me, true)
       );
@@ -707,25 +800,20 @@ export class MapExploreModal extends Modal {
   private disposeOverlayRepaint: (() => void) | null = null;
   private cancelOverlayRepaint: (() => void) | null = null;
 
-  private beginDrag(onMove: (e: MouseEvent) => void, onUp?: (e: MouseEvent) => void) {
-    // Tear down any prior drag whose mouseup was missed (e.g. released off-window)
-    // so its document listeners can't outlive this one or the modal.
+  private beginDrag(start: PointerEvent, onMove: (e: PointerEvent) => void, onUp?: (e: PointerEvent) => void) {
+    // Tear down any prior drag whose release was missed (off-window, or a
+    // touch the browser took over) so its listeners can't outlive this one.
     this.activeDrag?.();
     const release = this.panel.beginPanelDrag();
-    const move = (e: MouseEvent) => onMove(e);
-    const up = (e: MouseEvent) => {
-      cleanup();
-      onUp?.(e);
-    };
-    const cleanup = () => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      release();
-      this.activeDrag = null;
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-    this.activeDrag = cleanup;
+    const cancel = trackPointerDrag(start, {
+      onMove,
+      onEnd: onUp,
+      onRelease: () => {
+        release();
+        this.activeDrag = null;
+      },
+    });
+    this.activeDrag = cancel;
   }
 
   private blockedMask(fogScale: number): Uint8Array {
@@ -761,6 +849,11 @@ export class MapExploreModal extends Modal {
     this.activeDrag = null;
     this.cleanupListeners?.();
     this.cleanupListeners = null;
+    this.cancelWebkitGestures?.();
+    this.cancelWebkitGestures = null;
+    for (const cancel of this.cancelStageZoom.splice(0)) cancel();
+    this.stageView = { ...IDENTITY_VIEW };
+    for (const cleanup of this.markerCleanups.splice(0)) cleanup();
     this.renderMarkers = null;
     this.hoverCell = null;
     this.hoverRegion = null;

@@ -168,8 +168,10 @@ function openModal(
   return { modal, overlay, markers, contentEl: modal.contentEl };
 }
 
-function fireDocMouse(type: "mousemove" | "mouseup", x: number, y: number) {
-  document.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
+// The modal's gestures are pointer events now, so mouse, touch and pen all
+// drive the same code; these helpers stand in for a press, a move and a lift.
+function fireDocPointer(type: "pointermove" | "pointerup", x: number, y: number, pointerId = 1) {
+  document.dispatchEvent(new PointerEvent(type, { pointerId, clientX: x, clientY: y, bubbles: true }));
 }
 
 function findBtn(contentEl: HTMLElement, text: string): HTMLButtonElement {
@@ -184,12 +186,28 @@ function coverAll(contentEl: HTMLElement) {
   findBtn(contentEl, "Cover All").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
-function fireMousedown(overlay: HTMLElement, x: number, y: number, button = 0) {
-  overlay.dispatchEvent(new MouseEvent("mousedown", { clientX: x, clientY: y, button, bubbles: true }));
+function firePointerdown(overlay: HTMLElement, x: number, y: number, button = 0, pointerId = 1) {
+  overlay.dispatchEvent(
+    new PointerEvent("pointerdown", { pointerId, clientX: x, clientY: y, button, bubbles: true })
+  );
 }
 
-function fireMousemove(overlay: HTMLElement, x: number, y: number) {
-  overlay.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }));
+function fireTouch(el: HTMLElement, type: string, pointerId: number, x: number, y: number) {
+  el.dispatchEvent(
+    new PointerEvent(type, { pointerId, pointerType: "touch", clientX: x, clientY: y, bubbles: true, cancelable: true })
+  );
+}
+
+function stageOf(contentEl: HTMLElement) {
+  const stage = contentEl.querySelector(".dm-explore-stage") as HTMLElement;
+  stage.getBoundingClientRect = () => ({
+    left: 0, top: 0, width: FOG_W, height: FOG_H, right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+  });
+  return stage;
+}
+
+function firePointermove(overlay: HTMLElement, x: number, y: number) {
+  overlay.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: x, clientY: y, bubbles: true }));
 }
 
 async function decodeLastFog(commitFog: ReturnType<typeof vi.fn>) {
@@ -277,7 +295,7 @@ describe("MapExploreModal — room fog auto-toggle", () => {
     panel.commitFog.mockClear();
 
     // Click Room A center (fog x=256)
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
 
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/png;base64,/)));
     const ctx = await decodeLastFog(panel.commitFog);
@@ -297,13 +315,13 @@ describe("MapExploreModal — room fog auto-toggle", () => {
     panel.commitFog.mockClear();
 
     // First click reveals Room A
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(1));
     let ctx = await decodeLastFog(panel.commitFog);
     expect(ctx.getImageData(200, 384, 1, 1).data[3]).toBeLessThan(50);
 
     // Second click on the now-revealed room covers it again
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(2));
     ctx = await decodeLastFog(panel.commitFog);
     expect(ctx.getImageData(200, 384, 1, 1).data[3]).toBeGreaterThan(200);
@@ -318,7 +336,7 @@ describe("MapExploreModal — room fog auto-toggle", () => {
     panel.commitFog.mockClear();
 
     // fog (512, 384) → natural (500, 375): on the wall
-    fireMousedown(overlay, 512, 384);
+    firePointerdown(overlay, 512, 384);
 
     await new Promise((r) => setTimeout(r, 20));
     expect(panel.commitFog).not.toHaveBeenCalled();
@@ -342,7 +360,7 @@ describe("MapExploreModal — doors are always room boundaries", () => {
     coverAll(contentEl);
     panel.commitFog.mockClear();
 
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
 
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalled());
     const ctx = await decodeLastFog(panel.commitFog);
@@ -363,7 +381,7 @@ describe("MapExploreModal — door marker toggle", () => {
     const { modal, overlay } = openModal(panel);
 
     // Door midpoint natural (500, 300) → fog (512, 307)
-    fireMousedown(overlay, 512, 307);
+    firePointerdown(overlay, 512, 307);
 
     expect(panel.commitWalls).toHaveBeenCalledTimes(1);
     const walls = panel.commitWalls.mock.calls[0][0] as MapWall[];
@@ -378,7 +396,7 @@ describe("MapExploreModal — door marker toggle", () => {
 });
 
 describe("MapExploreModal — listener cleanup", () => {
-  it("Exit closes the modal and no commit fires after a post-close mousemove", async () => {
+  it("Exit closes the modal and no commit fires after a post-close pointermove", async () => {
     const panel = makePanelStub([{ x1: 500, y1: 0, x2: 500, y2: MAP_H }]);
     const { modal, overlay, contentEl } = openModal(panel);
     coverAll(contentEl);
@@ -386,8 +404,8 @@ describe("MapExploreModal — listener cleanup", () => {
 
     modal.onClose();
 
-    // A synthetic mousemove on the overlay after close must be inert.
-    fireMousemove(overlay, 256, 384);
+    // A synthetic pointermove on the overlay after close must be inert.
+    firePointermove(overlay, 256, 384);
 
     await new Promise((r) => setTimeout(r, 20));
     expect(panel.commitFog).not.toHaveBeenCalled();
@@ -405,7 +423,7 @@ describe("MapExploreModal — rotated view", () => {
     panel.commitFog.mockClear();
 
     // Client (384, 256) un-rotates (invRotation 270) to fog Room A centre (256, 384).
-    fireMousedown(overlay, 384, 256);
+    firePointerdown(overlay, 384, 256);
 
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalled());
     const ctx = await decodeLastFog(panel.commitFog);
@@ -435,11 +453,11 @@ describe("MapExploreModal — players' viewport rectangle", () => {
 
     // Overlay rect is 1:1 with fog px (1024×768); deltaToMap divides by that and
     // scales to natural (1000×750). Drag +102.4 fog px → +100 natural px.
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 500 + 102.4, 400);
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 500 + 102.4, 400);
     expect(panel.applyExplorePan).toHaveBeenLastCalledWith(MAP_W / 2 + 100, MAP_H / 2, false);
 
-    fireDocMouse("mouseup", 500 + 102.4, 400);
+    fireDocPointer("pointerup", 500 + 102.4, 400);
     expect(panel.applyExplorePan).toHaveBeenLastCalledWith(MAP_W / 2 + 100, MAP_H / 2, true);
 
     modal.onClose();
@@ -458,12 +476,12 @@ describe("MapExploreModal — AoE and vision markers", () => {
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 102.4, 0); // +100 natural px in x
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 102.4, 0); // +100 natural px in x
     expect(aoe.x).toBeCloseTo(MAP_W / 2 + 100, 1);
     expect(panel.broadcastAoes).toHaveBeenCalledWith();
 
-    fireDocMouse("mouseup", 102.4, 0);
+    fireDocPointer("pointerup", 102.4, 0);
     expect(panel.broadcastAoes).toHaveBeenLastCalledWith(true);
 
     modal.onClose();
@@ -480,14 +498,14 @@ describe("MapExploreModal — AoE and vision markers", () => {
     const startX = aoe.x;
     const startY = aoe.y;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 400, 400);
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 400, 400);
 
     expect(aoe.x).toBe(startX);
     expect(aoe.y).toBe(startY);
     expect(panel.broadcastAoes).not.toHaveBeenCalled();
 
-    fireDocMouse("mouseup", 400, 400);
+    fireDocPointer("pointerup", 400, 400);
     modal.onClose();
   });
 
@@ -497,14 +515,14 @@ describe("MapExploreModal — AoE and vision markers", () => {
     const { modal, markers } = openModal(panel, { width: 0, height: 0 });
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 400, 400);
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 400, 400);
 
     expect(vision.x).toBe(MAP_W / 2);
     expect(vision.y).toBe(MAP_H / 2);
     expect(panel.broadcastVisions).not.toHaveBeenCalled();
 
-    fireDocMouse("mouseup", 400, 400);
+    fireDocPointer("pointerup", 400, 400);
     modal.onClose();
   });
 
@@ -552,12 +570,12 @@ describe("MapExploreModal — AoE and vision markers", () => {
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 0, 102.4); // +100 natural px in y (768 fog h → 750 natural)
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 0, 102.4); // +100 natural px in y (768 fog h → 750 natural)
     expect(vision.y).toBeCloseTo(MAP_H / 2 + 100, 0);
     expect(panel.broadcastVisions).toHaveBeenCalledWith();
 
-    fireDocMouse("mouseup", 0, 102.4);
+    fireDocPointer("pointerup", 0, 102.4);
     expect(panel.broadcastVisions).toHaveBeenLastCalledWith(true);
 
     modal.onClose();
@@ -608,8 +626,8 @@ describe("MapExploreModal — view lock", () => {
     const { modal, markers } = openModal(panel);
     const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
 
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 700, 400);
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 700, 400);
     expect(panel.applyExplorePan).not.toHaveBeenCalled();
 
     modal.onClose();
@@ -673,13 +691,13 @@ describe("MapExploreModal — view-bound vision", () => {
     const { modal, markers } = openModal(panel);
     const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
 
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 500 + 102.4, 400); // +100 natural px in x
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 500 + 102.4, 400); // +100 natural px in x
     // applyExplorePan (stub) moved the bound vision onto the new view centre.
     expect(vision.x).toBeCloseTo(MAP_W / 2 + 100, 1);
     expect(vision.y).toBeCloseTo(MAP_H / 2, 1);
 
-    fireDocMouse("mouseup", 500 + 102.4, 400);
+    fireDocPointer("pointerup", 500 + 102.4, 400);
     modal.onClose();
   });
 
@@ -692,16 +710,16 @@ describe("MapExploreModal — view-bound vision", () => {
     const { modal, markers } = openModal(panel);
 
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 102.4, 0); // +100 natural px in x
-    fireDocMouse("mouseup", 102.4, 0);
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 102.4, 0); // +100 natural px in x
+    fireDocPointer("pointerup", 102.4, 0);
     expect(vision.viewOffsetX).toBeCloseTo(100, 1);
     expect(vision.viewOffsetY).toBeCloseTo(0, 1);
 
     const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 500, 400 + 51.2); // +50 natural px in y
-    fireDocMouse("mouseup", 500, 400 + 51.2);
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 500, 400 + 51.2); // +50 natural px in y
+    fireDocPointer("pointerup", 500, 400 + 51.2);
     expect(vision.x).toBeCloseTo(MAP_W / 2 + 100, 1);
     expect(vision.y).toBeCloseTo(MAP_H / 2 + 50, 1);
 
@@ -791,5 +809,91 @@ describe("MapExploreModal — Combat window", () => {
     expect(combat.classList.contains("dm-floating-window-minimized")).toBe(true);
     expect(combat.style.width).toBe("320px");
     modal.onClose();
+  });
+});
+
+describe("MapExploreModal — touch exploration", () => {
+  const twoRoomWalls = (): MapWall[] => [{ x1: 500, y1: 0, x2: 500, y2: MAP_H }];
+
+  it("a tapping finger explores on the lift, not the press", async () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, overlay, contentEl } = openModal(panel);
+    coverAll(contentEl);
+    panel.commitFog.mockClear();
+
+    fireTouch(overlay, "pointerdown", 1, 256, 384);
+    expect(panel.commitFog).not.toHaveBeenCalled();
+
+    fireTouch(document.documentElement, "pointerup", 1, 256, 384);
+    await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(1));
+
+    modal.onClose();
+  });
+
+  it("a finger that slides away was panning, so it explores nothing", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, overlay, contentEl } = openModal(panel);
+    coverAll(contentEl);
+    panel.commitFog.mockClear();
+
+    fireTouch(overlay, "pointerdown", 1, 256, 384);
+    fireTouch(document.documentElement, "pointermove", 1, 256, 500);
+    fireTouch(document.documentElement, "pointerup", 1, 256, 500);
+
+    expect(panel.commitFog).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("a second finger takes the gesture over: it zooms and reveals nothing", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, overlay, contentEl } = openModal(panel);
+    const stage = stageOf(contentEl);
+    const inner = contentEl.querySelector(".dm-explore-inner") as HTMLElement;
+    coverAll(contentEl);
+    panel.commitFog.mockClear();
+
+    fireTouch(overlay, "pointerdown", 1, 400, 384);
+    fireTouch(stage, "pointerdown", 2, 600, 384);
+    fireTouch(stage, "pointermove", 2, 800, 384);
+    fireTouch(stage, "pointerup", 2, 800, 384);
+    fireTouch(document.documentElement, "pointerup", 1, 400, 384);
+
+    expect(panel.commitFog).not.toHaveBeenCalled();
+    expect(inner.style.transform).toContain("scale(2)");
+    modal.onClose();
+  });
+
+  it("the zoom button reports the zoom and puts the map back to fit", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, contentEl } = openModal(panel);
+    const stage = stageOf(contentEl);
+    const inner = contentEl.querySelector(".dm-explore-inner") as HTMLElement;
+    const zoomBtn = contentEl.querySelector(".dm-explore-zoom-btn") as HTMLButtonElement;
+    expect(zoomBtn.textContent).toBe("Zoom: 100%");
+
+    fireTouch(stage, "pointerdown", 1, 400, 384);
+    fireTouch(stage, "pointerdown", 2, 600, 384);
+    fireTouch(stage, "pointermove", 2, 1000, 384);
+    expect(zoomBtn.textContent).toBe("Zoom: 300%");
+    expect(inner.style.getPropertyValue("--dm-map-zoom")).toBe("3");
+
+    zoomBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(zoomBtn.textContent).toBe("Zoom: 100%");
+    expect(inner.style.transform).toContain("scale(1)");
+    modal.onClose();
+  });
+
+  it("stops zooming once the modal is closed", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, contentEl } = openModal(panel);
+    const stage = stageOf(contentEl);
+    const inner = contentEl.querySelector(".dm-explore-inner") as HTMLElement;
+    modal.onClose();
+
+    fireTouch(stage, "pointerdown", 1, 400, 384);
+    fireTouch(stage, "pointerdown", 2, 600, 384);
+    fireTouch(stage, "pointermove", 2, 1000, 384);
+
+    expect(inner.style.transform).toContain("scale(1)");
   });
 });

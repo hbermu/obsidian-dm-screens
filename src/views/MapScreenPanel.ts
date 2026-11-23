@@ -30,6 +30,7 @@ import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
 import { renderControlCard } from "./controlCard";
+import { trackPointerDrag } from "./pointerDrag";
 
 export interface ActiveMap {
   url: string;
@@ -293,26 +294,21 @@ export class MapScreenPanel {
   // Every preview drag goes through here: it holds the panel's drag lock for
   // the gesture, so a background render cannot empty the container and detach
   // the stage the drag's closures measure against.
-  trackDrag(onMove: (e: MouseEvent) => void, onEnd?: () => void) {
-    // A mouseup released outside the window never arrives. Without this the
-    // lock would leak and the panel would stop taking background renders for
-    // the rest of its life, so a new drag tears down any prior one first.
+  trackDrag(start: PointerEvent, onMove: (e: PointerEvent) => void, onEnd?: () => void) {
+    // A release outside the window never arrives at the element. Without this
+    // the lock would leak and the panel would stop taking background renders
+    // for the rest of its life, so a new drag tears down any prior one first.
     this.activeDrag?.();
     const release = this.beginPanelDrag();
-    const move = (e: MouseEvent) => onMove(e);
-    const cleanup = () => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      release();
-      this.activeDrag = null;
-    };
-    const up = () => {
-      cleanup();
-      onEnd?.();
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-    this.activeDrag = cleanup;
+    const cancel = trackPointerDrag(start, {
+      onMove,
+      onEnd: () => onEnd?.(),
+      onRelease: () => {
+        release();
+        this.activeDrag = null;
+      },
+    });
+    this.activeDrag = cancel;
   }
 
   private clampStateToViewport() {
@@ -1024,7 +1020,7 @@ export class MapScreenPanel {
     const zoomControls = preview.createDiv("dm-map-zoom-controls");
     // Clicks on the overlay controls must never fall through to the preview's
     // click-to-center pan handler.
-    zoomControls.addEventListener("mousedown", (e: MouseEvent) => e.stopPropagation());
+    zoomControls.addEventListener("pointerdown", (e: PointerEvent) => e.stopPropagation());
 
     const zoomSlider = zoomControls.createEl("input", { type: "range" });
     zoomSlider.min = "1";
@@ -1087,20 +1083,20 @@ export class MapScreenPanel {
     // DM-local "look around": pans the preview stage only (previewPanX/Y),
     // never broadcast, so the players' view stays put. Bound to middle-drag
     // always, and to left-drag while the view is locked.
-    const startLookAround = (e: MouseEvent) => {
+    const startLookAround = (e: PointerEvent) => {
       e.preventDefault();
       const startX = e.clientX;
       const startY = e.clientY;
       const startPanX = this.previewPanX;
       const startPanY = this.previewPanY;
-      this.trackDrag((ev: MouseEvent) => {
+      this.trackDrag(e, (ev: PointerEvent) => {
         this.previewPanX = startPanX + (ev.clientX - startX);
         this.previewPanY = startPanY + (ev.clientY - startY);
         applyTransform();
       });
     };
 
-    preview.addEventListener("mousedown", (e: MouseEvent) => {
+    preview.addEventListener("pointerdown", (e: PointerEvent) => {
       // Middle-drag always looks around; left-drag looks around only while the
       // view is locked (unlocked left-drag moves the players' viewport below).
       if (e.button === 1 || (e.button === 0 && this.previewLocked)) startLookAround(e);
@@ -1170,7 +1166,7 @@ export class MapScreenPanel {
       positionMarkers();
       repositionMarkers.push(positionMarkers);
 
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -1180,7 +1176,8 @@ export class MapScreenPanel {
         const startAoeX = aoe.x;
         const startAoeY = aoe.y;
         this.trackDrag(
-          (me: MouseEvent) => {
+          ev,
+          (me: PointerEvent) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
             aoe.x = Math.max(0, Math.min(nw, startAoeX + d.x));
@@ -1193,12 +1190,13 @@ export class MapScreenPanel {
         );
       });
 
-      handle?.addEventListener("mousedown", (ev: MouseEvent) => {
+      handle?.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         this.trackDrag(
-          (me: MouseEvent) => {
+          ev,
+          (me: PointerEvent) => {
             const s = effectiveScale();
             if (s === null) return;
             const b = stage.getBoundingClientRect();
@@ -1231,7 +1229,7 @@ export class MapScreenPanel {
       positionVisionDot();
       repositionVisionDots.push(positionVisionDot);
       repositionMarkers.push(positionVisionDot);
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -1241,7 +1239,8 @@ export class MapScreenPanel {
         const targets = visionDragTargets(this.visions, vision, this.visionGroup);
         const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.trackDrag(
-          (me: MouseEvent) => {
+          ev,
+          (me: PointerEvent) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
             moveVisions(targets, starts, d.x, d.y, nw, nh);
@@ -1291,7 +1290,7 @@ export class MapScreenPanel {
       }
     };
 
-    preview.addEventListener("mousedown", (e: MouseEvent) => {
+    preview.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (this.previewLocked) return;
       e.preventDefault();
@@ -1306,7 +1305,8 @@ export class MapScreenPanel {
       // starts on the rectangle is already deliberate and starts immediately.
       let panStarted = fromRect;
       this.trackDrag(
-        (ev: MouseEvent) => {
+        e,
+        (ev: PointerEvent) => {
           if (!panStarted) {
             if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < PAN_START_THRESHOLD_PX) return;
             panStarted = true;

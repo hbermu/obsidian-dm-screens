@@ -1,6 +1,6 @@
 # Remote Server Mode
 
-> An optional second way to run DM Screen. Instead of hosting the player-screen server inside Obsidian (embedded mode, the default and unchanged), the plugin connects as the single controller of a standalone DM Screen server running elsewhere — a container on a home server — and the player and map screens connect to that server. This lets a device that cannot listen for connections (Obsidian on an iPad or an Android tablet) run the session, and lets a desktop run it without opening a port. The plugin stays the brain: it computes every broadcast exactly as in embedded mode; the remote server only relays, caches and serves media.
+> An optional second way to run DM Screen. Instead of hosting the player-screen server inside Obsidian (embedded mode, the default and unchanged), the plugin connects as the single controller of a standalone DM Screen server running elsewhere — a container on a home server — and the player and map screens connect to that server. This lets a device that cannot listen for connections (Obsidian on an iPad or an Android tablet) run the session, and lets a desktop run it without opening a port. What makes that device usable with a finger rather than a cursor is specified in `../map-screen/touch-input.md`. The plugin stays the brain: it computes every broadcast exactly as in embedded mode; the remote server only relays, caches and serves media.
 
 ## Source files
 

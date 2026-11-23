@@ -9,6 +9,50 @@ const repoRoot = path.resolve(__dirname, "../../..");
 const harnessOutDir = path.join(repoRoot, "test/visual/.harness");
 const cjsOut = path.join(harnessOutDir, "server-host.cjs");
 
+// The touch page carries the plugin's real stylesheet, so `touch-action` and
+// the coarse-pointer hit sizes are the ones that ship.
+async function buildTouchPage() {
+  const bundle = await esbuild.build({
+    entryPoints: [path.join(repoRoot, "test/visual/harness/touch-entry.ts")],
+    bundle: true,
+    format: "iife",
+    target: "es2020",
+    write: false,
+    logLevel: "warning",
+  });
+  const css = fs.readFileSync(path.join(repoRoot, "styles.css"), "utf8");
+  const page = `<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>${css}</style>
+<style>
+html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; }
+.dm-explore-content { height: 100vh; }
+.dm-explore-inner { width: 600px; height: 400px; background: #40506a; }
+.dm-explore-overlay { background: rgba(0,0,0,0.25); }
+.dm-floating-window { left: 12px; top: 12px; width: 220px; }
+.dm-floating-window-body { max-height: 120px; }
+.dm-floating-window-body p { margin: 0 0 240px; }
+</style>
+
+</head><body>
+<div class="dm-explore-content"><div class="dm-explore-body"><div class="dm-explore-stage">
+  <div class="dm-explore-inner">
+    <canvas class="dm-explore-overlay" width="600" height="400"></canvas>
+    <div class="dm-explore-markers"><div class="dm-map-aoe-dot" style="left: 25%; top: 25%; background: #ff4400;"></div></div>
+  </div>
+  <div class="dm-floating-window">
+    <div class="dm-floating-window-header"><div class="dm-floating-window-title">AoEs</div></div>
+    <div class="dm-floating-window-body"><p>scrollable</p><p>bottom</p></div>
+  </div>
+</div></div></div>
+<script>${bundle.outputFiles[0].text}</script>
+</body></html>`;
+  const out = path.join(harnessOutDir, "touch.html");
+  fs.writeFileSync(out, page);
+  return out;
+}
+
 export default async function globalSetup() {
   const cwd = process.cwd();
   process.chdir(repoRoot);
@@ -65,6 +109,7 @@ export default async function globalSetup() {
     });
 
     process.env.HARNESS_CJS = cjsOut;
+    process.env.HARNESS_TOUCH_PAGE = await buildTouchPage();
   } finally {
     process.chdir(cwd);
   }

@@ -80,8 +80,9 @@ All targets run inside Docker; the container manages `node_modules`.
 | `make test` | `vitest run` (all unit + integration tests) |
 | `make test-coverage` | `vitest run --coverage` — report in `./coverage/`; the `test` CI job runs this and posts the summary as a sticky PR comment. The browser bundles `src/player/player.ts` and `src/map/map.ts` are excluded from the coverage denominator (vitest cannot run them; the visual + e2e suites cover them). |
 | `make test-watch` | `vitest` in watch mode (interactive) |
-| `make test-visual` | Playwright visual regression suite (inside the official `mcr.microsoft.com/playwright` image) |
+| `make test-visual` | Playwright visual regression suite (inside the official `mcr.microsoft.com/playwright` image); it runs every project, the touch ones below included, which is what the `visual` CI job executes |
 | `make test-visual-update` | Refresh committed visual baselines (inside container — host-generated PNGs WILL diff) |
+| `make test-touch` | The touch-gesture suite (`test/visual/touch.spec.ts`) in the Playwright image, against the tablet profiles of both engines the DM may hold: `touch-chromium` and `touch-webkit`. It drives a harness page carrying the real gesture modules and the shipped `styles.css`, so `touch-action`, the coarse-pointer hit sizes and the pointer stream a tablet produces are checked in a real browser; the two-finger and injected-drag cases need Chromium's CDP touch injection and skip themselves on WebKit |
 | `make test-e2e` | Real-Obsidian end-to-end suite (WebdriverIO inside the Playwright image; first run downloads Obsidian into `.obsidian-cache/`) |
 | `make test-e2e-remote` | The remote-mode e2e spec (`test/e2e/specs/remote.e2e.ts`) in real Obsidian against a fresh remote server container (`e2e-server`, alias `dmscreen.local`); the spec skips itself in a plain `make test-e2e` |
 | `make test-conformance` | Black-box server contract in `test/conformance/` (HTTP + WebSocket) against the embedded server, or the remote one with `CONFORMANCE_TARGET=remote`; a case only one server implements is marked with `onlyOn(...)` |
@@ -199,7 +200,9 @@ src/
     MapCalibrationModal.ts  # Per-screen physical calibration (diagonal + fine-tune + test pattern)
     MapFogModal.ts       # Fog and walls editor
     FoundryImportModals.ts  # Foundry import confirmation and scene picker
-    MapExploreModal.ts   # Exploration Mode (room/door gestures, scale/grid toggles, floating AoE, Vision and Combat windows)
+    MapExploreModal.ts   # Exploration Mode (room/door gestures, pinch zoom, scale/grid toggles, floating AoE, Vision and Combat windows)
+    pointerDrag.ts       # trackPointerDrag / onLongPress / blockWebkitGestures — one drag for mouse, touch and pen
+    pinchZoom.ts         # StageView maths + trackPinch / trackWheelZoom for the exploration stage
     FloatingWindow.ts    # Draggable, minimizable window used by Exploration Mode
     controlCard.ts       # Collapsible AoE/vision control card
     mapStage.ts          # fitScale / finiteScale shared stage math

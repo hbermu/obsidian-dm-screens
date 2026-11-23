@@ -1,4 +1,4 @@
-.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-e2e test-e2e-remote test-conformance server-screens server-test server-lint server-image logs ps clean
+.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-touch test-e2e test-e2e-remote test-conformance server-screens server-test server-lint server-image logs ps clean
 
 help:                ## list available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -42,6 +42,9 @@ test-visual:         ## playwright visual regression (inside the official playwr
 
 test-visual-update:  ## refresh visual baselines (inside container — host PNGs WILL diff)
 	docker compose --profile tools run --rm visual sh -c "npm install --no-audit --no-fund && npx playwright test --update-snapshots"
+
+test-touch:          ## touch-gesture suite under real fingers (Chromium + WebKit tablet profiles)
+	docker compose --profile tools run --rm visual sh -c "npm install --no-audit --no-fund && npx playwright test --project=touch-chromium --project=touch-webkit"
 
 test-e2e:            ## real-Obsidian e2e suite (wdio; OBSIDIAN_VERSIONS=app/installer pairs, default latest/latest)
 	docker compose --profile tools run --rm e2e
