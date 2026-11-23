@@ -87,6 +87,23 @@ describe("RemoteTransport — connecting", () => {
     expect(t.joinLink("/")!.text).toBe("https://dm.example.lan");
   });
 
+  // A map the server fetched from Hydrus is bytes with no path, so the
+  // reference has to be recorded for a scene to be saveable from it.
+  it("resolves an asset by the source recorded for it, and ignores other URLs", async () => {
+    const { t } = connected();
+    const hash = "e".repeat(64);
+    expect(t.sourceOf(`/assets/${hash}.mp4`)).toBeNull();
+
+    t.rememberSource(`/assets/${hash}.mp4`, `hydrus:${hash}`);
+    expect(t.sourceOf(`/assets/${hash}.mp4`)).toBe(`hydrus:${hash}`);
+
+    // A vault URL carries its own source, so nothing is recorded for it.
+    t.rememberSource("/vault/Maps/a.png", "vault:Maps/a.png");
+    expect(t.sourceOf("/vault/Maps/a.png")).toBe("vault:Maps/a.png");
+    await flush();
+    expect(http.calls.filter((c) => c.path.startsWith("/api/mapdata/sources/"))).toHaveLength(1);
+  });
+
   it("previews server assets through the server with the control token", async () => {
     const { t } = connected();
     expect(t.displayUrl(`/assets/${"a".repeat(64)}.png`)).toBe(`https://dm.example.lan/assets/${"a".repeat(64)}.png?k=control-token`);

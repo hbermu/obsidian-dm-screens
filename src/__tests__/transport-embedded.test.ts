@@ -126,6 +126,9 @@ describe("EmbeddedTransport media and links", () => {
     expect(transport.sourceOf(`/vault/.dm-screen/hydrus/${hash}.png`)).toBe(`hydrus:${hash}`);
     expect(transport.sourceOf("/vault/Maps/a.png")).toBe("vault:Maps/a.png");
     expect(transport.sourceOf("data:image/png;base64,AA==")).toBeNull();
+    // Nothing to record: every URL here is a vault path that says where it
+    // came from, and there is no server document to write to.
+    expect(transport.rememberSource("/vault/Maps/a.png", "vault:Maps/a.png")).toBeUndefined();
   });
 
   it("offers join links only while the server runs, with the token kept out of the text", () => {

@@ -113,9 +113,14 @@ export class RemoteGateway implements IntegrationGateway {
       publish: async (hash): Promise<PublishedHydrusFile> => {
         const stored = await call("Hydrus fetch", "POST", "/api/assets/hydrus", { hash });
         const [meta] = await this.hydrus()!.getFileMetadata([hash]);
+        const url = `/assets/${stored.sha256}.${stored.ext}`;
+        // The asset store knows the bytes, not where they came from, so the
+        // Hydrus reference is recorded here — a scene saved from this file has
+        // nothing else to resolve it by.
+        this.plugin.transport.rememberSource(url, `hydrus:${hash}`);
         debug("RemoteGateway: published Hydrus", hash.slice(0, 12), "as", stored.ext);
         return {
-          url: `/assets/${stored.sha256}.${stored.ext}`,
+          url,
           mediaType: meta ? mediaTypeOf(meta.mime) : "image",
           knownTags: meta?.knownTags ?? [],
         };

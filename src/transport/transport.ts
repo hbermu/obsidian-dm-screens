@@ -49,5 +49,11 @@ export interface SceneTransport {
   displayUrl(url: string): string | null;
   // The scene source reference (`vault:…`, `hydrus:…`) a media URL came from.
   sourceOf(url: string): string | null;
+  // Records where a published URL came from, for media the transport cannot
+  // work out on its own: a `/vault/` URL carries its source in the path, but
+  // an `/assets/` URL the server fetched by Hydrus hash does not, and without
+  // this a scene saved from it would have nothing to resolve. A no-op in
+  // embedded mode, where every URL is a vault path.
+  rememberSource(url: string, source: string): void;
   joinLink(path: "/" | "/map"): JoinLink | null;
 }

@@ -31,7 +31,7 @@
 ### Plugin side
 
 9. The gateway's Hydrus surface shall offer the read methods `HydrusClient` offers — `verifyAccess`, `getServices`, `searchFiles`, `searchTags`, `getFileMetadata`, `getFileBytes`, `getThumbnailBytes`, `getFileRange` — plus `publish(hash)` and `markUsed(hash)`, so every caller is unchanged beyond where it gets the client.
-9b. `publish(hash)` shall make the file reachable by the screens and answer its URL, its media type and its known tags: the vault cache and a `/vault/` URL in embedded mode, the server's asset store and an `/assets/` URL in remote mode. Every caller that used to copy a file into the vault shall use it.
+9b. `publish(hash)` shall make the file reachable by the screens and answer its URL, its media type and its known tags: the vault cache and a `/vault/` URL in embedded mode, the server's asset store and an `/assets/` URL in remote mode. Every caller that used to copy a file into the vault shall use it. In remote mode it shall also record `hydrus:<hash>` as that asset's scene source (`../remote-server/overview.md` requirement 28), because an `/assets/` URL the server fetched by hash carries nothing that says where it came from, and a scene saved from such a map would otherwise be refused for having no map.
 10. In remote mode, applying a Hydrus file as a background, a layer or a map shall publish it with `POST /api/assets/hydrus` and use the returned asset URL, and shall not download it into the vault or the plugin cache.
 11. In remote mode, the explorer shall render a tile's thumbnail from `GET /api/hydrus/thumbnail/<hash>` and its full preview from `GET /api/hydrus/file/<hash>`. It shall not offer the local-cache source or the per-tile cache actions (download, re-download, delete the local copy), because there is no vault cache to list or evict.
 12. In remote mode, a note's `hydrus://` reference shall resolve through the gateway: available when the metadata call finds it, and applied per requirement 10 without a local copy.
@@ -41,7 +41,7 @@
 ## Tests covering this
 
 - `server/tests/hydrus.rs` — each operation against the stub Hydrus: the key attached, hash validation, a full page of hashes answered in batches whose queries stay small, the search and metadata limits, `501` unconfigured, `502` on an upstream error with nothing of the body in the response, thumbnail caching, a forwarded `Range`
-- `src/__tests__/gateway-remote.test.ts` — `RemoteHydrus` maps each method to its route and shape
+- `src/__tests__/gateway-remote.test.ts` — `RemoteHydrus` maps each method to its route and shape, and `publish` records `hydrus:<hash>` as the published asset's scene source (requirement 9b)
 - `src/__tests__/hydrus-explorer-search.test.ts` — the explorer searching through the gateway
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian: the Hydrus bar appears from the server's capability
 

@@ -299,6 +299,11 @@ export class RemoteTransport implements SceneTransport {
     return sourceFromVaultUrl(url, this.plugin.settings.cacheBaseFolder);
   }
 
+  rememberSource(url: string, source: string): void {
+    if (!url.startsWith("/assets/")) return;
+    this.mapData.setSource(url.slice("/assets/".length), source);
+  }
+
   joinLink(path: "/" | "/map"): JoinLink | null {
     if (!this.viewToken || this.status === "disconnected") return null;
     const { base } = this.endpoint();

@@ -70,8 +70,13 @@ describe("RemoteGateway — Hydrus", () => {
       if (c.path === "/api/hydrus/metadata") return { status: 200, json: { metadata: [{ hash: HASH, mime: "video/webm" }] } };
       return undefined;
     });
-    const api = makeGateway().gateway.hydrus()!;
+    const { plugin, gateway } = makeGateway();
+    const api = gateway.hydrus()!;
     expect(await api.publish(HASH)).toEqual({ url: `/assets/${HASH}.webm`, mediaType: "video", knownTags: [] });
+    // The asset store knows the bytes, not where they came from: without the
+    // recorded reference a scene saved from this file would have nothing to
+    // resolve, and saving it would report that there is no map.
+    expect(plugin.transport.sourceOf(`/assets/${HASH}.webm`)).toBe(`hydrus:${HASH}`);
     // Nothing local to mark; the server's retention governs the asset.
     await expect(api.markUsed(HASH)).resolves.toBeUndefined();
   });

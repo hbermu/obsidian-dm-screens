@@ -122,6 +122,8 @@ export class EmbeddedTransport implements SceneTransport {
     return sourceFromVaultUrl(url, this.plugin.settings.cacheBaseFolder);
   }
 
+  rememberSource(_url: string, _source: string): void {}
+
   joinLink(path: "/" | "/map"): JoinLink | null {
     if (!this.plugin.server) return null;
     const host = lanAddress() ?? "localhost";

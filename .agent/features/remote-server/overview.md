@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `src/transport/transport.ts` — `SceneTransport` (`broadcast`, `sendLive`, `isLive`, `canEdit`, `mediaUrl`, `displayUrl`, `sourceOf`, `joinLink`) and `MapDataStore`; every DM-side emitter and persister goes through it
+- `src/transport/transport.ts` — `SceneTransport` (`broadcast`, `sendLive`, `isLive`, `canEdit`, `mediaUrl`, `displayUrl`, `sourceOf`, `rememberSource`, `joinLink`) and `MapDataStore`; every DM-side emitter and persister goes through it
 - `src/transport/embedded.ts` — `EmbeddedTransport`: the in-process `PlayerScreenServer`, the `ReplayCache`, settings and vault sidecars, LAN join links
 - `src/transport/wire.ts` — `toWire` (a layer's `source` never leaves the DM side), `encodeVaultPath`
 - `src/transport/remote.ts` — `RemoteTransport`: the control WebSocket client, `deviceId`/`deviceName`, role tracking, reconnect backoff, the ordered relay queue, `fetchDataUrl`, `claim`
@@ -82,7 +82,7 @@ The device identity is deliberately **not** a setting: `data.json` may be synced
 25. In remote mode, map configs (`mapConfigs` equivalent), calibration profiles (`mapScreenProfiles` equivalent), fog masks and walls shall be read from and written to the server's map-data store (`server.md` requirements 14–17) instead of `data.json` and the `.dm-screen/fog`/`.dm-screen/walls` sidecars, keyed by the map's `/assets/` URL (requirement 18b), which is the same on every device.
 26. The plugin shall load the whole map-data document once per `control-hello` and write each change with one `PUT` (or `DELETE` for a removal), so a change made on one device is what the next device to take control sees.
 27. A fog mask committed in remote mode shall be published as a PNG asset and stored in the map-data store as that asset URL; the `map-fog` broadcast carries the same URL.
-28. Whenever the plugin publishes a vault file, or relays a layer that has a `source`, it shall record the asset name → scene source pair in the server's `sources` collection (only when it changes); `transport.sourceOf` shall resolve an `/assets/` URL through that collection, so a device that took the session over can still save scenes by reference.
+28. Whenever the plugin publishes a vault file, relays a layer that has a `source`, or has the server fetch a file from Hydrus by hash, it shall record the asset name → scene source pair in the server's `sources` collection (only when it changes), through `transport.rememberSource` — a no-op in embedded mode, where every URL is a vault path that states its own source. `transport.sourceOf` shall resolve an `/assets/` URL through that collection, so a device that took the session over can still save scenes by reference. A Hydrus file the server fetched is the case nothing else can cover: the asset store holds the bytes under their sha256 and knows nothing of where they came from, so without the recorded `hydrus:<hash>` a scene saved from it would have no map and the save would be refused.
 
 ## Broadcast / IPC
 
@@ -90,7 +90,7 @@ The control-channel messages are specified in `control-channel.md`. Player- and 
 
 ## Tests covering this
 
-- `src/__tests__/transport-embedded.test.ts` — the embedded transport: broadcast, live-only sends, cache while stopped, map data in settings and sidecars, `/vault/` media URLs and previews, sources, LAN join links, `source` stripped before the server and the cache
+- `src/__tests__/transport-embedded.test.ts` — the embedded transport: broadcast, live-only sends, cache while stopped, map data in settings and sidecars, `/vault/` media URLs and previews, sources (and `rememberSource` as a no-op), LAN join links, `source` stripped before the server and the cache
 - `src/__tests__/transport-remote.test.ts` — the control URL and stable device id, the URL policy, the active and read-only hellos, join links, previews, `control-role` and claim, mirror and screens hand-off, protocol-mismatch and bad-token Notices, reconnect backoff
 - `src/__tests__/transport-relay-queue.test.ts` — local record with original URLs, sync-before-geometry, same-type supersession, failure isolation with a Notice
 - `src/__tests__/asset-upload.test.ts` — fingerprint reuse, chunked upload with fingerprint and memo, 409 resume, Hydrus by hash and server fetch, a missing file named, the progress Notice, data URL dedupe by hash, unsupported types, message rewriting and source recording

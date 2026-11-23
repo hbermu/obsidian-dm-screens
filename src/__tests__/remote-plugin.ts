@@ -4,7 +4,15 @@ import { ReplayCache } from "../server";
 
 export function makeRemotePlugin(files: Record<string, Uint8Array> = {}, mtime = 1000) {
   const local = new Map<string, unknown>();
+  // Sources the code under test records for published assets, so a test can
+  // assert what a scene saved from them would resolve by.
+  const rememberedSources = new Map<string, string>();
   return {
+    rememberedSources,
+    transport: {
+      rememberSource: (url: string, source: string) => void rememberedSources.set(url, source),
+      sourceOf: (url: string) => rememberedSources.get(url) ?? null,
+    },
     settings: {
       remoteServerUrl: "https://dm.example.lan",
       remoteControlToken: "control-token",
