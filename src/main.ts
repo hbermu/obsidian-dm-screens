@@ -16,6 +16,10 @@ import { DdbImageCache } from "./dndbeyond/imageCache";
 import { initDebug, debug, debugWarn, debugError } from "./debug";
 import { EmbeddedTransport } from "./transport/embedded";
 import { RemoteTransport } from "./transport/remote";
+import { LocalGateway } from "./integrations/local";
+import { RemoteGateway, remoteCapabilities } from "./integrations/remote";
+import { SessionPreferences } from "./integrations/prefs";
+import type { IntegrationGateway } from "./integrations/gateway";
 import type { SceneTransport } from "./transport/transport";
 import { SCENE_CODE_BLOCK, type Scene } from "./scenes/format";
 import { renderSceneCard } from "./scenes/codeBlock";
@@ -31,6 +35,8 @@ export default class DmScreenPlugin extends Plugin {
   server: PlayerScreenServer | null = null;
   replayCache: ReplayCache = new ReplayCache();
   transport: SceneTransport = new EmbeddedTransport(this);
+  gateway: IntegrationGateway = new LocalGateway(this);
+  prefs: SessionPreferences = new SessionPreferences(this);
   // Open Exploration modals, told when this device gains or loses control.
   exploreModals = new Set<{ applyEditable(): void }>();
   private replayCacheSaveTimer: number | null = null;
@@ -68,6 +74,7 @@ export default class DmScreenPlugin extends Plugin {
     this.initReplayCache();
     this.initHydrusCache();
     this.transport = this.buildTransport();
+    this.gateway = this.buildGateway();
 
     // Register views
     this.registerView(DM_CONTROL_VIEW_TYPE, (leaf) => new DmControlPanel(leaf, this));
@@ -178,8 +185,27 @@ export default class DmScreenPlugin extends Plugin {
       onRole: (active) => this.onRemoteRole(active),
       onMirror: (message) => this.onRemoteMirror(message),
       onScreens: (clients) => this.applyScreens(clients),
+      onServerConfig: (integrations, prefs) => this.onServerConfig(integrations, prefs),
       onStatus: () => this.refreshOpenDmPanels(),
     });
+  }
+
+  private buildGateway(): IntegrationGateway {
+    const remote = this.remote;
+    if (!remote) return new LocalGateway(this);
+    // The real capabilities arrive with the hello; until then nothing is
+    // offered, which is what an unconnected device can actually do.
+    return new RemoteGateway(this, { hydrus: false, ddb: false, webhooks: [] }, () => remote.endpoint());
+  }
+
+  // The server says which integrations it has and hands over the session
+  // preferences; a later `prefs` message carries only the preferences.
+  private onServerConfig(integrations: unknown, prefs: Record<string, unknown>): void {
+    if (integrations !== undefined && this.gateway instanceof RemoteGateway) {
+      this.gateway.update(remoteCapabilities(integrations));
+    }
+    this.prefs.apply(prefs);
+    this.refreshOpenDmPanels();
   }
 
   async setServerMode(mode: "embedded" | "remote"): Promise<void> {
@@ -188,7 +214,9 @@ export default class DmScreenPlugin extends Plugin {
     this.remote?.disconnect();
     this.settings.serverMode = mode;
     await this.saveSettings();
+    (this.gateway as { dispose?: () => void }).dispose?.();
     this.transport = this.buildTransport();
+    this.gateway = this.buildGateway();
     this.refreshOpenDmPanels();
   }
 

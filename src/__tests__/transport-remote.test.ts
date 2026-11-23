@@ -10,7 +10,7 @@ vi.mock("obsidian", async (importOriginal) => {
 import { RemoteTransport } from "../transport/remote";
 
 function hooks() {
-  return { onSession: vi.fn(), onRole: vi.fn(), onMirror: vi.fn(), onScreens: vi.fn(), onStatus: vi.fn() };
+  return { onSession: vi.fn(), onRole: vi.fn(), onMirror: vi.fn(), onScreens: vi.fn(), onServerConfig: vi.fn(), onStatus: vi.fn() };
 }
 
 function connected(role: "active" | "readonly" = "active") {

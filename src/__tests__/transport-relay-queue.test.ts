@@ -11,7 +11,7 @@ import { RemoteTransport } from "../transport/remote";
 
 async function active() {
   const plugin = makeRemotePlugin();
-  const t = new RemoteTransport(plugin, { onSession: vi.fn(), onRole: vi.fn(), onMirror: vi.fn(), onScreens: vi.fn(), onStatus: vi.fn() });
+  const t = new RemoteTransport(plugin, { onSession: vi.fn(), onRole: vi.fn(), onMirror: vi.fn(), onScreens: vi.fn(), onServerConfig: vi.fn(), onStatus: vi.fn() });
   t.connect();
   const ws = FakeWebSocket.instances.at(-1)!;
   ws.open();

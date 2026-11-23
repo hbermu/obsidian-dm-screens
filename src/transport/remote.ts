@@ -25,6 +25,9 @@ export interface RemoteHooks {
   onRole(active: boolean): void;
   onMirror(message: PlayerMessage): void;
   onScreens(clients: ClientInfo[]): void;
+  // The server's integrations and session preferences, on every hello and
+  // whenever a preference changes.
+  onServerConfig(integrations: unknown, prefs: Record<string, unknown>): void;
   onStatus(): void;
 }
 
@@ -65,6 +68,7 @@ export class RemoteTransport implements SceneTransport {
   clients: ClientInfo[] = [];
   private viewToken = "";
   private hydrus = false;
+  private ddbListener: ((state: unknown) => void) | null = null;
   private ws: WebSocket | null = null;
   private wanted = false;
   private retryMs = MIN_RETRY_MS;
@@ -82,7 +86,7 @@ export class RemoteTransport implements SceneTransport {
     this.mapData = new RemoteMapData(() => this.endpoint(), this.publisher);
   }
 
-  private endpoint(): RemoteEndpoint {
+  endpoint(): RemoteEndpoint {
     return { base: this.plugin.settings.remoteServerUrl.replace(/\/+$/, ""), token: this.plugin.settings.remoteControlToken };
   }
 
@@ -162,7 +166,8 @@ export class RemoteTransport implements SceneTransport {
     switch (msg.type) {
       case "control-hello": {
         this.viewToken = p.viewToken ?? "";
-        this.hydrus = p.hydrus === true;
+        this.hydrus = p.integrations?.hydrus === true;
+        this.hooks.onServerConfig(p.integrations, p.prefs ?? {});
         this.holder = p.holder ?? null;
         this.clients = Array.isArray(p.clients) ? p.clients : [];
         this.publisher.reset();
@@ -180,6 +185,12 @@ export class RemoteTransport implements SceneTransport {
         this.hooks.onRole(active);
         return;
       }
+      case "prefs":
+        this.hooks.onServerConfig(undefined, p.prefs ?? {});
+        return;
+      case "ddb-state":
+        this.ddbListener?.(p);
+        return;
       case "mirror":
         if (p.message) this.hooks.onMirror(p.message as PlayerMessage);
         return;
@@ -191,6 +202,12 @@ export class RemoteTransport implements SceneTransport {
         debugWarn("RemoteTransport: server refused a message:", p.code);
         return;
     }
+  }
+
+  // The panel subscribes while it tracks an encounter; the server's poll
+  // loop is what produces the states.
+  onDdbState(listener: ((state: unknown) => void) | null): void {
+    this.ddbListener = listener;
   }
 
   isLive(): boolean {
