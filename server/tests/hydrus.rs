@@ -20,6 +20,8 @@ const GOOD: &[u8] = b"a hydrus image";
 #[derive(Default)]
 pub struct Calls {
     pub thumbnails: AtomicUsize,
+    pub metadata: AtomicUsize,
+    pub longest_query: AtomicUsize,
 }
 
 async fn stub() -> String {
@@ -31,6 +33,7 @@ async fn stub_counting() -> (String, Arc<Calls>) {
     let liar = "1".repeat(64);
     let calls = Arc::new(Calls::default());
     let thumb_calls = calls.clone();
+    let meta_calls = calls.clone();
     let key_ok = |headers: &HeaderMap| {
         headers
             .get("Hydrus-Client-API-Access-Key")
@@ -90,8 +93,19 @@ async fn stub_counting() -> (String, Arc<Calls>) {
         )
         .route(
             "/get_files/file_metadata",
-            get(|Query(q): Query<HashMap<String, String>>| async move {
-                axum::Json(json!({ "metadata": [{ "hash": q.get("hashes").cloned().unwrap_or_default() }] }))
+            get(move |Query(q): Query<HashMap<String, String>>| {
+                let calls = meta_calls.clone();
+                async move {
+                    let raw = q.get("hashes").cloned().unwrap_or_default();
+                    calls.metadata.fetch_add(1, Ordering::SeqCst);
+                    calls.longest_query.fetch_max(raw.len(), Ordering::SeqCst);
+                    let hashes: Vec<String> = serde_json::from_str(&raw).unwrap_or_default();
+                    let rows: Vec<Value> = hashes
+                        .into_iter()
+                        .map(|h| json!({ "hash": h, "mime": "image/png" }))
+                        .collect();
+                    axum::Json(json!({ "metadata": rows }))
+                }
             }),
         )
         .route(
@@ -315,14 +329,32 @@ async fn validates_hashes_and_bounds_the_batches() {
             "{path}"
         );
     }
-    let many: Vec<String> = (0..300).map(|_| sha256_hex(GOOD)).collect();
+    // A full explorer page must pass; only something far larger is refused.
+    let page: Vec<String> = (0..1000).map(|_| sha256_hex(GOOD)).collect();
+    let ok = s
+        .api(Method::POST, "/api/hydrus/metadata")
+        .json(&json!({ "hashes": page }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), 200);
+
+    let absurd: Vec<String> = (0..2000).map(|_| sha256_hex(GOOD)).collect();
     let res = s
         .api(Method::POST, "/api/hydrus/metadata")
-        .json(&json!({ "hashes": many }))
+        .json(&json!({ "hashes": absurd }))
         .send()
         .await
         .unwrap();
     assert_eq!(res.status(), 400);
+
+    let bad = s
+        .api(Method::POST, "/api/hydrus/metadata")
+        .json(&json!({ "hashes": ["not-a-hash"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
 
     let long = s
         .api(Method::POST, "/api/hydrus/search")
@@ -371,4 +403,29 @@ async fn reports_an_upstream_refusal_without_its_body() {
         !text.contains("wrong-key") && !text.contains("127.0.0.1"),
         "{text}"
     );
+}
+
+#[tokio::test]
+async fn asks_upstream_for_metadata_in_batches_and_joins_the_answers() {
+    let (s, calls) = proxying().await;
+    // A full explorer page: as one query this is tens of kilobytes, which an
+    // HTTP server refuses in a request line.
+    let page: Vec<String> = (0..200u32).map(|i| format!("{i:064x}")).collect();
+    let body: Value = s
+        .api(Method::POST, "/api/hydrus/metadata")
+        .json(&json!({ "hashes": page.clone() }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let rows = body["metadata"].as_array().unwrap();
+    assert_eq!(rows.len(), 200);
+    assert_eq!(rows[0]["hash"], page[0]);
+    assert_eq!(rows[199]["hash"], page[199]);
+    // 200 hashes in batches of 64.
+    assert_eq!(calls.metadata.load(Ordering::SeqCst), 4);
+    assert!(calls.longest_query.load(Ordering::SeqCst) < 8192);
 }

@@ -21,7 +21,8 @@
 1. The server shall expose exactly these operations, each requiring the control token: `GET /api/hydrus/verify`, `GET /api/hydrus/services`, `POST /api/hydrus/search` (`{tags, limit}`), `POST /api/hydrus/metadata` (`{hashes}`), `GET /api/hydrus/tags?search=&service=`, `GET /api/hydrus/thumbnail/<hash>`, `GET /api/hydrus/file/<hash>` (honouring `Range`), and the existing `POST /api/assets/hydrus` (`{hash}`) which stores the file and answers with its asset.
 2. Each shall call the matching Hydrus Client API route with the key in `Hydrus-Client-API-Access-Key`, and shall pass through the upstream's JSON body for the read operations, which carry no credential.
 3. `<hash>` shall be 64 lowercase hex characters; anything else shall answer `400` without a request upstream.
-4. `POST /api/hydrus/search` shall accept at most 64 tags, each at most 256 characters, and an optional positive `limit`; `POST /api/hydrus/metadata` at most 256 hashes.
+4. `POST /api/hydrus/search` shall accept at most 64 tags, each at most 256 characters, and an optional positive `limit`; `POST /api/hydrus/metadata` at most 1024 hashes, which covers a full explorer page.
+4b. Hydrus takes the hash list in the query string, so the server shall ask it for metadata in batches of at most 64 hashes and join the answers into one `metadata` array. A page of hashes in a single query is tens of kilobytes, past what an HTTP server accepts in a request line.
 5. If Hydrus is not configured, then every route of requirement 1 shall answer `501`.
 6. An upstream error shall answer `502` and log the operation and the upstream status, never the body or the URL (`overview.md` requirement 16).
 7. `GET /api/hydrus/thumbnail/<hash>` shall answer the thumbnail bytes with their content type and `Cache-Control: private, max-age=3600`, and shall keep them in a bounded in-memory cache so a grid of tiles costs one upstream request per file.
@@ -39,7 +40,7 @@
 
 ## Tests covering this
 
-- `server/tests/hydrus.rs` — each operation against the stub Hydrus: the key attached, hash validation, the search and metadata limits, `501` unconfigured, `502` on an upstream error with nothing of the body in the response, thumbnail caching, a forwarded `Range`
+- `server/tests/hydrus.rs` — each operation against the stub Hydrus: the key attached, hash validation, a full page of hashes answered in batches whose queries stay small, the search and metadata limits, `501` unconfigured, `502` on an upstream error with nothing of the body in the response, thumbnail caching, a forwarded `Range`
 - `src/__tests__/gateway-remote.test.ts` — `RemoteHydrus` maps each method to its route and shape
 - `src/__tests__/hydrus-explorer-search.test.ts` — the explorer searching through the gateway
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian: the Hydrus bar appears from the server's capability

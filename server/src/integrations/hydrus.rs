@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use futures_util::StreamExt;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -132,7 +132,11 @@ pub async fn fetch(State(state): State<Arc<AppState>>, Json(req): Json<HydrusReq
 
 const MAX_SEARCH_TAGS: usize = 64;
 const MAX_TAG_LEN: usize = 256;
-const MAX_METADATA_HASHES: usize = 256;
+const MAX_METADATA_HASHES: usize = 1024;
+// Hydrus takes the hash list in the query string, and a full page of them is
+// tens of kilobytes — past what an HTTP server accepts in a request line. The
+// batches are joined back into one answer.
+const METADATA_BATCH: usize = 64;
 const THUMBNAIL_CACHE_ENTRIES: usize = 256;
 
 struct Upstream {
@@ -225,23 +229,61 @@ pub async fn metadata(
     if req.hashes.len() > MAX_METADATA_HASHES || !req.hashes.iter().all(|h| is_sha256(h)) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let qs = serde_urlencoded::to_string([
-        (
-            "hashes",
-            serde_json::to_string(&req.hashes).unwrap_or_else(|_| "[]".into()),
-        ),
-        ("include_mimes", "true".into()),
-        ("include_sizes", "true".into()),
-        ("include_known_urls", "false".into()),
-        ("include_notes", "false".into()),
-    ])
-    .unwrap_or_default();
-    get_json(
-        &state,
-        "hydrus metadata",
-        &format!("/get_files/file_metadata?{qs}"),
-    )
-    .await
+    let mut rows: Vec<Value> = Vec::with_capacity(req.hashes.len());
+    for batch in req.hashes.chunks(METADATA_BATCH) {
+        let qs = serde_urlencoded::to_string([
+            (
+                "hashes",
+                serde_json::to_string(batch).unwrap_or_else(|_| "[]".into()),
+            ),
+            ("include_mimes", "true".into()),
+            ("include_sizes", "true".into()),
+            ("include_known_urls", "false".into()),
+            ("include_notes", "false".into()),
+        ])
+        .unwrap_or_default();
+        let body = match fetch_json(
+            &state,
+            "hydrus metadata",
+            &format!("/get_files/file_metadata?{qs}"),
+        )
+        .await
+        {
+            Ok(body) => body,
+            Err(res) => return *res,
+        };
+        match body.get("metadata").and_then(Value::as_array) {
+            Some(list) => rows.extend(list.iter().cloned()),
+            None => return upstream_failed("hydrus metadata", "no metadata array"),
+        }
+    }
+    axum::Json(json!({ "metadata": rows })).into_response()
+}
+
+// The same call, parsed, for an operation that joins several answers.
+async fn fetch_json(
+    state: &AppState,
+    op: &'static str,
+    path: &str,
+) -> Result<Value, Box<Response>> {
+    let Some(up) = upstream(state) else {
+        return Err(Box::new(not_configured(op)));
+    };
+    let res = http()
+        .get(format!("{}{path}", up.url))
+        .header(KEY_HEADER, &up.key)
+        .send()
+        .await
+        .map_err(|e| Box::new(upstream_failed(op, e.without_url())))?;
+    if !res.status().is_success() {
+        return Err(Box::new(upstream_failed(
+            op,
+            format!("status {}", res.status().as_u16()),
+        )));
+    }
+    res.json()
+        .await
+        .map_err(|e| Box::new(upstream_failed(op, e.without_url())))
 }
 
 #[derive(Deserialize)]
