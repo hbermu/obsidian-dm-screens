@@ -143,6 +143,18 @@ describe("UVTT and Foundry map import", function () {
     expect(cfg.payload.gridOffsetY).toBe(0);
   });
 
+  it("Rotate import turns the imported walls and re-derives the grid", async function () {
+    const wallsBefore = rec.count("map-walls");
+    const configBefore = rec.count("map-config");
+    await clickModalButton("Rotate import: 0°");
+
+    // The 10×8 grid turns to 8×10, so the 560 px map carries 560/8 = 70
+    // px per square and the four walls come back from the raw parse.
+    const w = await rec.waitFor("map-walls", { skip: wallsBefore, where: (m) => walls(m).length === 4 });
+    expect(walls(w).filter((x) => x.door).length).toBe(1);
+    await rec.waitFor("map-config", { skip: configBefore, where: (m) => m.payload.pxPerSquare === 70 });
+  });
+
   it("Import Foundry commits scaled walls and grid", async function () {
     const wallsBefore = rec.count("map-walls");
     const configBefore = rec.count("map-config");

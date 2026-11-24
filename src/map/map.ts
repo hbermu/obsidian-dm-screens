@@ -6,7 +6,6 @@ import { safePlayerUrl } from "../player/safeUrl";
 import { createRepaintScheduler, sizeCanvas } from "./canvas";
 import {
   cssPixelsPerInch,
-  gridAxisOffsets,
   gridLinePositions,
   mapScale,
   mapTranslation,
@@ -17,7 +16,7 @@ import {
   FALLBACK_PPI,
   finiteOr,
 } from "./transform";
-import type { MapAoe, MapGridConfig, MapMediaPayload, MapRotation, MapView, MapVision, MapWall, ScreenProfile } from "./types";
+import type { MapAoe, MapGridConfig, MapMediaPayload, MapView, MapVision, MapWall, ScreenProfile } from "./types";
 import { renderAoe } from "./aoe";
 import { eraseVisionWithWalls, normalizeVision } from "./vision";
 
@@ -265,9 +264,6 @@ class MapScreen {
           mode: p.mode === "physical" ? "physical" : "fit",
           panX: finiteOr(p.panX, 0),
           panY: finiteOr(p.panY, 0),
-          rotation: ([0, 90, 180, 270] as number[]).includes(p.rotation as number)
-            ? (p.rotation as MapRotation)
-            : 0,
         };
         this.applyLayout();
         break;
@@ -476,7 +472,6 @@ class MapScreen {
     }
 
     const { ppi, calibrated } = this.currentPpi();
-    const rotation = this.view.rotation ?? 0;
     const scale = mapScale(this.view, ppi, this.config.pxPerSquare, nw, nh, vw, vh);
     const { tx, ty } = mapTranslation(this.view, scale, nw, nh, vw, vh);
 
@@ -486,19 +481,18 @@ class MapScreen {
     mediaEl.style.width = `${nw}px`;
     mediaEl.style.height = `${nh}px`;
     this.syncMediaSource(ppi, nw, nh, vw, vh, dpr);
-    stage.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotation}deg) scale(${scale})`;
+    stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
 
     if (this.config.showGrid) {
-      const axes = gridAxisOffsets(rotation, this.config.gridOffsetX, this.config.gridOffsetY);
       ctx.globalAlpha = this.config.gridOpacity;
       ctx.strokeStyle = this.config.gridColor;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (const x of gridLinePositions(tx, axes.vertical, this.config.pxPerSquare, scale, vw)) {
+      for (const x of gridLinePositions(tx, this.config.gridOffsetX, this.config.pxPerSquare, scale, vw)) {
         ctx.moveTo(x, 0);
         ctx.lineTo(x, vh);
       }
-      for (const y of gridLinePositions(ty, axes.horizontal, this.config.pxPerSquare, scale, vh)) {
+      for (const y of gridLinePositions(ty, this.config.gridOffsetY, this.config.pxPerSquare, scale, vh)) {
         ctx.moveTo(0, y);
         ctx.lineTo(vw, y);
       }
@@ -507,7 +501,7 @@ class MapScreen {
     }
 
     for (const aoe of this.aoes) {
-      renderAoe(ctx, aoe, scale, tx, ty, this.config.pxPerSquare, rotation);
+      renderAoe(ctx, aoe, scale, tx, ty, this.config.pxPerSquare);
     }
 
     if (this.view.mode === "physical" && !calibrated) {

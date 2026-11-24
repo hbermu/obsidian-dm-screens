@@ -54,7 +54,7 @@ describe("purge rules", () => {
 
   it("map-clear purges the map channel except map-calibration and is not cached", async () => {
     await t.broadcast(msg("map-calibration", { profiles: {} }));
-    await t.broadcast(msg("map-view", { mode: "fit", panX: 0, panY: 0, rotation: 0 }));
+    await t.broadcast(msg("map-view", { mode: "fit", panX: 0, panY: 0 }));
     await t.broadcast(msg("combat-scale", { scale: 1 }));
     await t.broadcast(msg("map-clear"));
     expect((await replayed("map")).map((m) => m.type)).toEqual(["map-calibration"]);

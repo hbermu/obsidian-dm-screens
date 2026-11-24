@@ -42,7 +42,7 @@
 14. Channel selection shall be computed from the handshake path with the query string stripped, so `/map?k=…` still resolves to the `map` channel.
 15. Both browser bundles shall read the token from `?k=` first and fall back to the `dmScreenKey` cookie, and shall append it to their WebSocket URL (`/?k=…` for the player, `/map?k=…` for the map).
 16. Every payload field a bundle treats as a number shall be coerced with `finiteOr(value, default)` before it reaches a CSS transform, a canvas call, or stored state. A `NaN` or `Infinity` in a transform blanks the screen with nothing in the console, so the default wins silently instead. This covers the player's `panX`/`panY`/`zoom` and the map's `map-view` pan and `map-config` `pxPerSquare`/`gridOffsetX`/`gridOffsetY`/`gridOpacity` (opacity additionally clamped to 0–1).
-17. `map-view.mode` shall be accepted only as `fit` or `physical` and `map-view.rotation` only as 0, 90, 180 or 270; any other value falls back to `fit` and 0 respectively.
+17. `map-view.mode` shall be accepted only as `fit` or `physical`; any other value falls back to `fit`. The payload carries no rotation: the map screen always renders the map the way the file is, and the DM's 90° steps turn their own panel (`../map-screen/scale-and-grid.md` requirement 1b).
 18. Every payload array shall pass `boundedArray`, which returns `[]` for a non-array and truncates to 200 entries with a `console.warn`. This covers the player's `combatants` and both layer arrays and the map's `aoes`, `visions` and `walls`.
 19. When the late-joiner cache exceeds 2 MiB in total, the `ReplayCache` shall evict its largest entry repeatedly until it fits, never dropping the last remaining entry. The cache is persisted as `settings.lastBroadcastCache`, so the budget bounds `data.json` as well as the heap.
 20. The `ReplayCache` shall expose an `onChange(callback): () => void` method. The callback shall fire after every `record(message)` — cache purges (`clear`, `map-clear`, `hide-background-media`), cache updates and evictions — and every `forget(types)`. The returned unsubscribe function shall remove the callback.
@@ -62,7 +62,7 @@
 | `inspiration-style` | DM → player | `{ pulse: boolean }` | Server start; `ddbInspirationPulse` setting toggled | yes |
 | `clear` | DM → player | `{}` | DM clicks Clear Player Screen | no (purges player-channel cache) |
 | `map-show` | DM → map | `{ url: string, mediaType: "image" \| "video", naturalWidth: number, naturalHeight: number, loop?: boolean, muted?: boolean }` | DM applies a map (Add Map picker or Hydrus Set as map); `republishToServer()` | yes |
-| `map-view` | DM → map | `{ mode: "physical" \| "fit", panX: number, panY: number, rotation: 0 \| 90 \| 180 \| 270 }` | Scale-mode toggle; Rotate button; pan drag (throttled) | yes |
+| `map-view` | DM → map | `{ mode: "physical" \| "fit", panX: number, panY: number }` | Scale-mode toggle; pan drag (throttled) | yes |
 | `map-config` | DM → map | `{ pxPerSquare, gridOffsetX, gridOffsetY, showGrid, gridColor, gridOpacity }` | Any grid control change | yes |
 | `map-calibration` | DM → map | `{ profiles: Record<string, { diagonalInches, fineTune, quality? }> }` | Server start; calibration modal change | yes |
 | `map-calibration-overlay` | DM → map | `{ show: boolean }` | Calibration test-pattern toggle | yes |

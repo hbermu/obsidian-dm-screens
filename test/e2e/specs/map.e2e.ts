@@ -39,7 +39,7 @@ describe("map screen", function () {
 
     const view = await rec.waitFor("map-view");
     expect(view.payload.mode).toBe("fit");
-    expect(view.payload.rotation).toBe(0);
+    expect(view.payload.rotation).toBeUndefined();
     const config = await rec.waitFor("map-config");
     expect(typeof config.payload.pxPerSquare).toBe("number");
     const fog = await rec.waitFor("map-fog");
@@ -59,7 +59,7 @@ describe("map screen", function () {
     await late.waitFor("map-show");
     late.close();
 
-    for (const text of ["Stop Map", "Scale: fit screen", "Rotate: 0°", "Fog", "Explore"]) {
+    for (const text of ["Stop Map", "Scale: fit screen", "DM view: 0°", "Fog", "Explore"]) {
       await expect(panelButton(text)).toExist();
     }
   });
@@ -93,11 +93,12 @@ describe("map screen", function () {
     expect(text).toBe("Home");
   });
 
-  it("Rotate broadcasts an updated map-view", async function () {
+  it("DM view rotates the panel without touching what the screen shows", async function () {
     const seen = rec.count("map-view");
-    await (await panelButton("Rotate: 0°")).click();
-    await rec.waitFor("map-view", { skip: seen, where: (m) => m.payload.rotation === 90 });
-    await expect(panelButton("Rotate: 90°")).toExist();
+    await (await panelButton("DM view: 0°")).click();
+    await expect(panelButton("DM view: 90°")).toExist();
+    await new Promise((r) => setTimeout(r, 500));
+    expect(rec.count("map-view")).toBe(seen);
   });
 
   it("Stop Map clears the map channel cache", async function () {

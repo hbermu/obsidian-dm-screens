@@ -81,6 +81,7 @@ function makePanelStub(walls: MapWall[] = []) {
     plugin: { app: appStub, transport: transportStub },
     fogDataUrl: null as string | null,
     walls,
+    wallClipboard: [] as MapWall[],
     state: {
       pxPerSquare: 100,
       gridOffsetX: 0,
@@ -671,6 +672,26 @@ describe("MapFogModal — uvtt import", () => {
     modal.onClose();
   });
 
+  it("Rotate import turns the stored raw parse and re-derives the grid", () => {
+    const { modal, panel } = openModalWithWidth(UVTT_HALF_W);
+    modal.importUvttDoc(rawFixtureDoc);
+    panel.commitWalls.mockClear();
+    panel.applyGridConfig.mockClear();
+
+    findBtn(modal.contentEl, "Walls").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const rotateBtn = findBtn(modal.contentEl, "Rotate import: 0\u00b0");
+    rotateBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    // The 65×45 grid turns to 45×65, so the same 4160-wide map now carries
+    // 4160/45 px per square, and the walls come from the raw parse again.
+    expect(panel.applyGridConfig).toHaveBeenCalledWith(92.44, 0, 0);
+    const walls = panel.commitWalls.mock.calls[0][0] as MapWall[];
+    expect(walls).toHaveLength(173);
+    expect(findBtn(modal.contentEl, "Rotate import: 90\u00b0")).toBeTruthy();
+
+    modal.onClose();
+  });
+
   it("importUvttDoc with malformed doc shows Notice and does not call commitWalls", async () => {
     const obsidian = await import("obsidian");
     const noticeSpy = vi.spyOn(obsidian, "Notice");
@@ -1015,5 +1036,201 @@ describe("MapFogModal — touch", () => {
 
     expect(panel.commitWalls).not.toHaveBeenCalled();
     modal.onClose();
+  });
+});
+
+describe("MapFogModal Walls tab — Select tool", () => {
+  // Two separate walls, far enough apart that a marquee can take one and
+  // leave the other.
+  const left: MapWall = { x1: 100, y1: 100, x2: 200, y2: 100 };
+  const right: MapWall = { x1: 600, y1: 600, x2: 700, y2: 600 };
+
+  function openWalls(walls: MapWall[]) {
+    const panel = makePanelStub(walls);
+    const { modal, contentEl } = openModal(panel, walls);
+    findBtn(contentEl, "Walls").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const stage = modal.contentEl.querySelector(".dm-fog-stage") as HTMLElement;
+    const overlay = stage.querySelector(".dm-fog-overlay") as HTMLCanvasElement;
+    overlay.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: FOG_W, height: FOG_H,
+      right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+    });
+    findBtn(contentEl, "Select").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return { modal, contentEl, overlay, panel };
+  }
+
+  function lastCommit(panel: ReturnType<typeof makePanelStub>): MapWall[] {
+    const calls = panel.commitWalls.mock.calls;
+    return calls[calls.length - 1][0] as MapWall[];
+  }
+
+  // Natural coords × fogScale are the client coords the overlay rect maps 1:1.
+  const fog = (n: number) => n * fogScale;
+
+  function marquee(overlay: HTMLElement, x1: number, y1: number, x2: number, y2: number, shift = false) {
+    overlay.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 1, pointerType: "mouse", clientX: fog(x1), clientY: fog(y1), button: 0, shiftKey: shift, bubbles: true,
+      })
+    );
+    fireMousemove(fog(x2), fog(y2));
+    fireMouseup(fog(x2), fog(y2));
+  }
+
+  it("a marquee takes the walls it crosses and leaves the others", () => {
+    const { modal, contentEl, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+
+    // Rotating acts on the selection alone, so the untouched wall proves which
+    // walls the marquee took.
+    findBtn(contentEl, "⟳").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const walls = lastCommit(panel);
+    expect(walls[1]).toEqual(right);
+    expect(walls[0]).not.toEqual(left);
+
+    modal.onClose();
+  });
+
+  it("a tap on empty space puts the selection down", () => {
+    const { modal, contentEl, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+    marquee(overlay, 450, 50, 450, 50);
+
+    findBtn(contentEl, "Delete").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(panel.commitWalls).not.toHaveBeenCalled();
+
+    modal.onClose();
+  });
+
+  it("a shift-press adds a wall to the selection and a second one takes it out", () => {
+    const { modal, contentEl, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+    overlay.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 1, pointerType: "mouse", clientX: fog(650), clientY: fog(600), button: 0, shiftKey: true, bubbles: true,
+      })
+    );
+    findBtn(contentEl, "Delete").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(lastCommit(panel)).toEqual([]);
+
+    const second = openWalls([left, right]);
+    marquee(second.overlay, 50, 50, 300, 300);
+    for (const shiftKey of [true, true]) {
+      second.overlay.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          pointerId: 1, pointerType: "mouse", clientX: fog(650), clientY: fog(600), button: 0, shiftKey, bubbles: true,
+        })
+      );
+    }
+    findBtn(second.contentEl, "Delete").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(lastCommit(second.panel)).toEqual([right]);
+
+    modal.onClose();
+    second.modal.onClose();
+  });
+
+  it("dragging a selected wall moves the whole selection once", () => {
+    const { modal, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+
+    overlay.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 1, pointerType: "mouse", clientX: fog(150), clientY: fog(100), button: 0, bubbles: true,
+      })
+    );
+    fireMousemove(fog(200), fog(140));
+    fireMousemove(fog(250), fog(180));
+    fireMouseup(fog(250), fog(180));
+
+    expect(panel.commitWalls).toHaveBeenCalledTimes(1);
+    const walls = lastCommit(panel);
+    expect(walls[0].x1).toBeCloseTo(200, 5);
+    expect(walls[0].y1).toBeCloseTo(180, 5);
+    expect(walls[1]).toEqual(right);
+
+    modal.onClose();
+  });
+
+  it("rotating the selection 90° turns it about its own centre", () => {
+    const wall: MapWall = { x1: 100, y1: 100, x2: 300, y2: 100 };
+    const { modal, contentEl, overlay, panel } = openWalls([wall]);
+    marquee(overlay, 50, 50, 400, 200);
+
+    findBtn(contentEl, "⟳").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    // A horizontal 200-long segment centred on (200,100) becomes vertical,
+    // keeping that centre.
+    const turned = lastCommit(panel)[0];
+    expect(turned.x1).toBeCloseTo(200, 5);
+    expect(turned.y1).toBeCloseTo(0, 5);
+    expect(turned.x2).toBeCloseTo(200, 5);
+    expect(turned.y2).toBeCloseTo(200, 5);
+
+    modal.onClose();
+  });
+
+  it("To door and To wall convert the whole selection", () => {
+    const { modal, contentEl, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+
+    findBtn(contentEl, "To door").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(lastCommit(panel)[0]).toMatchObject({ door: true, open: false });
+
+    findBtn(contentEl, "To wall").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(lastCommit(panel)[0].door).toBeUndefined();
+    expect(lastCommit(panel)[0].open).toBeUndefined();
+
+    modal.onClose();
+  });
+
+  it("Copy and Paste carry the walls into another map's editor, half a square off", () => {
+    const panel = makePanelStub([left, right]);
+    const { modal, contentEl } = openModal(panel, [left, right]);
+    findBtn(contentEl, "Walls").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const overlay = modal.contentEl.querySelector(".dm-fog-overlay") as HTMLCanvasElement;
+    overlay.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: FOG_W, height: FOG_H,
+      right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+    });
+    findBtn(contentEl, "Select").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    marquee(overlay, 50, 50, 300, 300);
+    findBtn(contentEl, "Copy").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    modal.onClose();
+
+    // Same panel, a second editor session: the clipboard outlives the modal.
+    panel.walls = [];
+    panel.commitWalls.mockClear();
+    const second = openModal(panel, []);
+    findBtn(second.contentEl, "Walls").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    findBtn(second.contentEl, "Paste").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const pasted = lastCommit(panel);
+    expect(pasted).toHaveLength(1);
+    expect(pasted[0].x1).toBeCloseTo(left.x1 + 50, 5);
+    expect(pasted[0].y1).toBeCloseTo(left.y1 + 50, 5);
+
+    second.modal.onClose();
+  });
+
+  it("Delete drops the selection and leaves the rest", () => {
+    const { modal, contentEl, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+    findBtn(contentEl, "Delete").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(lastCommit(panel)).toEqual([right]);
+
+    modal.onClose();
+  });
+
+  it("the Delete key acts on the selection and a keypress after close is inert", () => {
+    const { modal, overlay, panel } = openWalls([left, right]);
+    marquee(overlay, 50, 50, 300, 300);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(lastCommit(panel)).toEqual([right]);
+
+    modal.onClose();
+    panel.commitWalls.mockClear();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(panel.commitWalls).not.toHaveBeenCalled();
   });
 });

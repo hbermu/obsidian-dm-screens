@@ -15,7 +15,7 @@ describe("channel routing", () => {
     const player = await connect(t, "player");
     const map = await connect(t, "map");
     await t.broadcast(msg("combat-scale", { scale: 1.5 }));
-    await t.broadcast(msg("map-view", { mode: "fit", panX: 0, panY: 0, rotation: 0 }));
+    await t.broadcast(msg("map-view", { mode: "fit", panX: 0, panY: 0 }));
     await player.waitFor("combat-scale");
     await map.waitFor("map-view");
     await sleep(100);

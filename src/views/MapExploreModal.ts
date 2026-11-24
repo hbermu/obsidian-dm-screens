@@ -249,7 +249,7 @@ export class MapExploreModal extends Modal {
       // AoE footprints at fog scale (mapRotation 0 — the inner box already
       // carries the view rotation via CSS transform).
       for (const aoe of this.panel.aoes) {
-        renderAoe(octx, aoe, fogScale, 0, 0, this.panel.state.pxPerSquare, 0);
+        renderAoe(octx, aoe, fogScale, 0, 0, this.panel.state.pxPerSquare);
       }
 
       // Vision range outlines.

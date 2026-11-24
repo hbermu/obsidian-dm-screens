@@ -1,24 +1,22 @@
-import { rotatePoint } from "./transform";
-import type { MapAoe, MapRotation } from "./types";
+import type { MapAoe } from "./types";
 
 const CONE_ANGLE_RAD = (53 * Math.PI) / 180;
 
-// The stage renders as `translate(tx,ty) rotate(θ) scale(s)`, so a map point
-// lands at T + s·R·p; the shape's own rotation composes on top of the map's.
+// The stage renders as `translate(tx,ty) scale(s)`, so a map point lands at
+// T + s·p. The DM previews ride a CSS-rotated stage, which carries the shape
+// with them; nothing here has to know their angle.
 export function renderAoe(
   ctx: CanvasRenderingContext2D,
   aoe: MapAoe,
   scale: number,
   tx: number,
   ty: number,
-  pxPerSquare: number,
-  mapRotation: MapRotation
+  pxPerSquare: number
 ): void {
   const ftToPx = pxPerSquare / 5;
-  const p = rotatePoint(aoe.x, aoe.y, mapRotation);
-  const screenX = tx + p.x * scale;
-  const screenY = ty + p.y * scale;
-  const rot = ((aoe.rotation + mapRotation) * Math.PI) / 180;
+  const screenX = tx + aoe.x * scale;
+  const screenY = ty + aoe.y * scale;
+  const rot = (aoe.rotation * Math.PI) / 180;
 
   ctx.save();
   ctx.translate(screenX, screenY);

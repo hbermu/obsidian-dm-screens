@@ -1,4 +1,4 @@
-import type { MapWall } from "./types";
+import type { MapRotation, MapWall } from "./types";
 import { fogSidecarPath, type FogAdapter } from "./fog";
 
 // Same key derivation as the fog sidecar, different folder and extension.
@@ -109,4 +109,89 @@ export function floodRegion(blocked: Uint8Array, w: number, h: number, sx: numbe
     if (i < w * (h - 1) && !blocked[i + w] && !region[i + w]) { region[i + w] = 1; queue[tail++] = i + w; }
   }
   return region;
+}
+
+// Rotates a wall set inside its own box, re-origining into the rotated box so
+// the result still starts at (0,0). A VTT file's coordinate box is sometimes
+// turned 90° or 180° against the map image it belongs to.
+export function rotateWalls(walls: MapWall[], rotation: MapRotation, boxW: number, boxH: number): MapWall[] {
+  if (rotation === 0) return walls.map((w) => ({ ...w }));
+  const point = (x: number, y: number): { x: number; y: number } => {
+    switch (rotation) {
+      case 90:
+        return { x: boxH - y, y: x };
+      case 180:
+        return { x: boxW - x, y: boxH - y };
+      default:
+        return { x: y, y: boxW - x };
+    }
+  };
+  return walls.map((w) => {
+    const a = point(w.x1, w.y1);
+    const b = point(w.x2, w.y2);
+    return {
+      ...w,
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+    };
+  });
+}
+
+export interface WallImportResult {
+  walls: MapWall[];
+  gridSquares: { x: number; y: number };
+  pixelsPerGrid: number;
+}
+
+export function rotateImportResult(result: WallImportResult, rotation: MapRotation): WallImportResult {
+  if (rotation === 0) return result;
+  const boxW = result.gridSquares.x * result.pixelsPerGrid;
+  const boxH = result.gridSquares.y * result.pixelsPerGrid;
+  const sideways = rotation % 180 !== 0;
+  return {
+    walls: rotateWalls(result.walls, rotation, boxW, boxH),
+    gridSquares: sideways
+      ? { x: result.gridSquares.y, y: result.gridSquares.x }
+      : { ...result.gridSquares },
+    pixelsPerGrid: result.pixelsPerGrid,
+  };
+}
+
+export interface WallBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+// A wall belongs to a marquee when any part of it falls inside the box, not
+// only its endpoints — Liang-Barsky against the box's four slabs.
+export function segmentCrossesBox(wall: MapWall, box: WallBox): boolean {
+  const dx = wall.x2 - wall.x1;
+  const dy = wall.y2 - wall.y1;
+  let t0 = 0;
+  let t1 = 1;
+  const slabs: Array<[number, number]> = [
+    [-dx, wall.x1 - box.minX],
+    [dx, box.maxX - wall.x1],
+    [-dy, wall.y1 - box.minY],
+    [dy, box.maxY - wall.y1],
+  ];
+  for (const [p, q] of slabs) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
+    }
+  }
+  return true;
 }
