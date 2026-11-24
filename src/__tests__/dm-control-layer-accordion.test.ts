@@ -173,6 +173,21 @@ describe("section jump bar", () => {
     expect(chips(contentEl)[0].getAttribute("aria-label")).toBe("Player Screen");
   });
 
+  // Which token the panel sits on depends on where it was opened, and picking
+  // one by selector painted a black band over a grey panel on a phone.
+  it("paints itself in the colour actually painted behind the panel", () => {
+    const { p, contentEl } = panelWithSections();
+    const host = document.createElement("div");
+    host.style.backgroundColor = "rgb(40, 40, 40)";
+    document.body.appendChild(host);
+    host.appendChild(contentEl);
+    p.render();
+
+    const nav = contentEl.querySelector(".dm-section-nav") as HTMLElement;
+    expect(nav.style.getPropertyValue("--dm-nav-surface")).toBe("rgb(40, 40, 40)");
+    host.remove();
+  });
+
   it("marks the section being read", () => {
     const { contentEl } = panelWithSections();
     expect(chips(contentEl)[0].classList.contains("dm-section-chip-active")).toBe(true);

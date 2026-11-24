@@ -28,19 +28,15 @@
   margin-inline: calc(-1 * var(--dm-panel-pad));
   padding-inline: var(--dm-panel-pad);
   background: transparent;
-  /* The panel sits on `--background-primary` in the main area and on
-     `--background-secondary` in a sidebar, so the bar asks which one it is on
-     instead of painting a token that is the wrong shade half the time. It used
-     to dodge the question with `backdrop-filter`, but that is the one property
-     here whose support cannot be assumed: Obsidian on iOS showed a black band
-     where the blur should have been, and a bar that is wrong on the phone is
-     worse than one that is not frosted on a desktop. */
+  /* The bar paints the surface it sits on. Which token that is depends on
+     where the panel was opened, so `DmControlPanel` reads the colour actually
+     painted behind the panel and sets it here; this is only the fallback for
+     when nothing up the tree paints anything. It used to dodge the question
+     with `backdrop-filter`, but that is the one property here whose support
+     cannot be assumed: Obsidian on iOS showed a black band where the blur
+     should have been, and a bar that is wrong on the phone is worse than one
+     that is not frosted on a desktop. */
   --dm-nav-surface: var(--background-primary);
-}
-
-.mod-left-split .dm-section-nav,
-.mod-right-split .dm-section-nav {
-  --dm-nav-surface: var(--background-secondary);
 }
 
 /* The surface is a scrim behind the chips rather than a background on the bar,

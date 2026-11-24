@@ -502,6 +502,20 @@ export class DmControlPanel extends ItemView {
     this.navAbort = new AbortController();
     const { signal } = this.navAbort;
     const nav = container.createDiv("dm-section-nav");
+
+    // The bar paints the surface it sits on, and which token that is depends
+    // on where the panel was opened — the main area, a sidebar, a phone's
+    // drawer. Choosing the token by selector got it wrong on mobile (a black
+    // band over a grey panel), so the colour is read from whatever actually
+    // paints behind the panel. The stylesheet's own default stands in when
+    // nothing up the tree paints anything.
+    for (let el: HTMLElement | null = container; el; el = el.parentElement) {
+      const painted = getComputedStyle(el).backgroundColor;
+      if (painted && painted !== "transparent" && !painted.startsWith("rgba(0, 0, 0, 0)")) {
+        nav.style.setProperty("--dm-nav-surface", painted);
+        break;
+      }
+    }
     const chips = sections.map((section) => {
       const title = section.querySelector("h3")?.textContent ?? "Section";
       const key = section.dataset.sectionKey ?? "";
