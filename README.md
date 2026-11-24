@@ -212,7 +212,7 @@ While a map is showing, the Map Screen section has a **Fog** button (it reads `F
 - **Import Foundry** loads a Foundry VTT module `.zip` (old NeDB or new LevelDB layout), the format Czepeku and other creators ship. Walls and doors are scaled to your map. With several scenes, the one matching your map's shape is picked, and a picker asks when more than one fits.
 - **From Hydrus**: when you set a Hydrus image as the map and your library has a Foundry module zip tagged `type:foundry module` with the same `name:` tag, the plugin asks "Import its walls and grid?". It reads only the few MB of scene data from the zip, not the artwork around it.
 
-**Dynamic vision.** Click **Add Vision** and pick **Circle 30 ft**, **Square 30 ft** or **Lights…**. Drag it onto a token and the fog opens for what it can see. Each vision has a **bright** radius and an optional **dim** ring that stays half-shrouded. **Lights…** fills both from the 5e list (torch 20 ft plus 20 ft dim, lanterns, *light*, *daylight*, darkvision 60 or 120 ft, and more). Name and colour visions to tell them apart; the 🔗 group toggle drags them all together. Walls stop the light; an open door lets it through and a closed one blocks it. **Bake into fog** burns the current vision into the fog for good (for areas already explored) and clears the live layer. **Clear All** removes every vision.
+**Dynamic vision.** Click **Add Vision** and pick **Circle 30 ft**, **Square 30 ft** or **Lights…**. Open its card in the list and drag its dot onto a token, and the fog opens for what it can see — as with AoE templates, only the vision you have open can be moved. Each vision has a **bright** radius and an optional **dim** ring that stays half-shrouded. **Lights…** fills both from the 5e list (torch 20 ft plus 20 ft dim, lanterns, *light*, *daylight*, darkvision 60 or 120 ft, and more). Name and colour visions to tell them apart; the 🔗 group toggle drags them all together. Walls stop the light; an open door lets it through and a closed one blocks it. **Bake into fog** burns the current vision into the fog for good (for areas already explored) and clears the live layer. **Clear All** removes every vision.
 
 ![Dynamic vision on the panel and the TV](docs/screenshots/map-vision.png)
 
@@ -224,7 +224,7 @@ While a map is showing, the Map Screen section has a **Fog** button (it reads `F
 
 *Templates render at grid scale (1 square = 5 ft) on both the DM's view and the TV (bottom-left inset). Shown here from Exploration Mode's AoEs window; the panel section works the same way.*
 
-The **AoE Overlays** section places spell templates on the map. Click **Add AoE** and pick **Circle**, **Square**, **Cone**, **Line** or **Ring**, or **Spells…** to search the 5e spell list and fill in the shape, size and colour. Each template has its own size (and width, for lines and rings), colour, opacity and rotation. Drag the dot on the preview to place it and the diamond to aim it. Templates are combat state: they clear when you stop the map.
+The **AoE Overlays** section places spell templates on the map. Click **Add AoE** and pick **Circle**, **Square**, **Cone**, **Line** or **Ring**, or **Spells…** to search the 5e spell list and fill in the shape, size and colour. Each template has its own size (and width, for lines and rings), colour, opacity and rotation. To move one, open its card in the list first: the map only answers the template you have open, so nothing shifts under a stray click or a resting finger. Its dot then takes a highlight — drag the dot to place it and the diamond to aim it. Click anywhere else on the map, or close the list, and the template is put down where it is. Templates are combat state: they clear when you stop the map.
 
 ### Exploration Mode
 
@@ -401,11 +401,13 @@ Calibration (diagonal, fine-tune, media quality) is per screen, in the window th
 | Map preview | Drag or click the green rectangle | Move the players' view (physical mode) |
 | Map preview | Wheel or slider | Zoom your preview toward the cursor |
 | Map preview | Middle-drag, or left-drag while 🔒 is on | Look around without moving the players' view |
-| Map preview | Drag an AoE's dot or diamond | Move or aim the template |
+| Map preview | Open an AoE's card, then drag its dot or diamond | Move or aim the template |
+| Map preview | Open a vision's card, then drag its dot | Move the vision (or the group, with 🔗) |
 | Walls tab | Click, click… then right-click | Chain wall or door segments, then end the chain |
 | Exploration Mode | Click a door or a room | Open or close the door, reveal or cover the room |
 | Exploration Mode | Hold Shift | Click through markers and the viewport rectangle |
-| Exploration Mode | Right-click an AoE dot | Remove the template |
+| Exploration Mode | Right-click an open AoE's dot | Remove the template |
+| Exploration Mode | Click the map away from the open marker | Put it down and stop moving it |
 | Hydrus explorer | Left-click a tile; right-click or ⋮ | Preview; action menu |
 | Hydrus tag search | ↑ / ↓, Enter, Escape | Pick a suggestion, apply or search, close |
 | COMBAT, manual | Click a name | Conditions menu |
