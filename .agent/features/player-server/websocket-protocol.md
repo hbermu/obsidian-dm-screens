@@ -81,7 +81,6 @@
 - `src/__tests__/main.test.ts` — `plugin.broadcast` records into the cache and persists it debounced while the server is stopped, forwards to a running server, and `onunload` flushes a pending save (requirements 2c, 2d)
 - `src/__tests__/server-vault-allowlist.integration.test.ts` — a server built on a seeded `ReplayCache` serves the cached background and map (requirement 2e)
 - `src/__tests__/server-map-channel.test.ts` — channel tagging, channel-filtered broadcast/replay, channel-scoped `clear`/`map-clear` purges
-- `src/__tests__/server-combat-scale.test.ts` — `combat-scale` round-trip
 - `src/__tests__/server-bootstrap.integration.test.ts` — real `ws` client receives the cached state on connect
 - `src/__tests__/ddb-to-player.integration.test.ts` — D&D Beyond poll cycle → `initiative-update` on the wire
 - `src/__tests__/ddb-fixture-replay.integration.test.ts` — recorded D&D Beyond fixture replays through the server and produces `initiative-update` messages

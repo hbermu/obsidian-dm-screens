@@ -67,10 +67,8 @@ The server is the transport for every DM → player and player → DM message. T
 
 - `src/__tests__/server.test.ts` — basic start / stop / port binding
 - `src/__tests__/server-bootstrap.integration.test.ts` — real `PlayerScreenServer` + real `ws` client connection
-- `src/__tests__/server-broadcast.test.ts` — `broadcast()` filters by `readyState`, populates late-joiner cache
-- `src/__tests__/server-max-clients.test.ts` — `maxClients` enforced with close code `1013`
+- `src/__tests__/server-broadcast.test.ts` — `broadcast()` filters by `readyState`, populates late-joiner cache, and `maxClients` defaults to ten
 - `src/__tests__/server-vault-path.test.ts` — `/vault/` path-traversal guard (see `vault-routing.md`)
-- `src/__tests__/server-combat-scale.test.ts` — `combat-scale` broadcast end-to-end
 - `src/__tests__/auth.test.ts` — token shape and uniqueness, length-independent compare (prefix, extension, empty secret and candidate), join-URL construction and percent-encoding
 - `src/__tests__/server-auth.integration.test.ts` — real `ws` handshakes: no token and wrong token close `1008`, right token opens, cookie-supplied token opens, cross-origin `Origin` closes `1008`, matching `Origin` opens, `/map?k=` still routes to the map channel, a 40-message burst closes `1008`, `disconnectAllClients()` drops every socket
 - `src/__tests__/server-vault-allowlist.integration.test.ts` — `401` before the allowlist and before any disk read, `401` on a wrong token, `401` on the player page, `/health` open, and the `dmScreenKey` cookie set on `/`
