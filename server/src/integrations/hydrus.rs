@@ -1,5 +1,6 @@
+use crate::allowlist::is_sha256;
 use crate::assets::ext_for_content_type;
-use crate::integrations::{http, is_sha256, not_configured, upstream_failed};
+use crate::integrations::{http, not_configured, upstream_failed};
 use crate::state::AppState;
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -87,7 +88,7 @@ pub async fn fetch(State(state): State<Arc<AppState>>, Json(req): Json<HydrusReq
         return StatusCode::NOT_IMPLEMENTED.into_response();
     }
     let hash = req.hash.to_ascii_lowercase();
-    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !is_sha256(&hash) {
         return StatusCode::BAD_REQUEST.into_response();
     }
     if let Some(meta) = state

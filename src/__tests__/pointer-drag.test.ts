@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { blockWebkitGestures, LONG_PRESS_MS, onLongPress, trackPointerDrag } from "../views/pointerDrag";
+import {
+  blockWebkitGestures,
+  LONG_PRESS_MS,
+  onLongPress,
+  TAP_SLOP,
+  trackPointerDrag,
+  trackTapOrDrag,
+} from "../views/pointerDrag";
 
 const down = (pointerId = 1, over: Partial<PointerEventInit> = {}) =>
   new PointerEvent("pointerdown", { pointerId, pointerType: "touch", clientX: 0, clientY: 0, ...over });
@@ -54,6 +61,94 @@ describe("trackPointerDrag", () => {
     doc("pointerup", {});
     expect(onMove).not.toHaveBeenCalled();
     expect(onEnd).not.toHaveBeenCalled();
+  });
+});
+
+describe("trackTapOrDrag", () => {
+  const far = TAP_SLOP + 5;
+
+  it("acts on the press for a mouse, which cannot become a pinch", () => {
+    const act = vi.fn();
+    trackTapOrDrag(down(1, { pointerType: "mouse" }), { act });
+    expect(act).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the lift before a finger's tap acts", () => {
+    const act = vi.fn();
+    trackTapOrDrag(down(), { act });
+    expect(act).not.toHaveBeenCalled();
+
+    doc("pointerup", { clientX: 2, clientY: 2 });
+    expect(act).toHaveBeenCalledTimes(1);
+  });
+
+  // The first finger of a pinch is indistinguishable from a press, so a
+  // "tap" gesture that slides was panning and must paint nothing.
+  it("commits nothing when a tap gesture's finger travels", () => {
+    const act = vi.fn();
+    const onEnd = vi.fn();
+    trackTapOrDrag(down(), { act, onEnd, intent: "tap" });
+
+    doc("pointermove", { clientX: far, clientY: 0 });
+    doc("pointerup", { clientX: far, clientY: 0 });
+
+    expect(act).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it("starts a stroke once the finger passes the slop, at the point it landed on", () => {
+    const act = vi.fn();
+    const onMove = vi.fn();
+    trackTapOrDrag(down(1, { pointerType: "touch", clientX: 7, clientY: 9 }), {
+      act,
+      onMove,
+      intent: "stroke",
+    });
+
+    doc("pointermove", { clientX: 7 + 3, clientY: 9 });
+    expect(act).not.toHaveBeenCalled();
+    expect(onMove).not.toHaveBeenCalled();
+
+    doc("pointermove", { clientX: 7 + far, clientY: 9 });
+    expect(act).toHaveBeenCalledTimes(1);
+    expect(act.mock.calls[0][0].clientX).toBe(7);
+    expect(onMove).toHaveBeenCalledTimes(1);
+  });
+
+  it("acts once however the gesture continues", () => {
+    const act = vi.fn();
+    trackTapOrDrag(down(), { act, intent: "stroke" });
+
+    doc("pointermove", { clientX: far, clientY: 0 });
+    doc("pointermove", { clientX: far * 2, clientY: 0 });
+    doc("pointerup", { clientX: far * 2, clientY: 0 });
+
+    expect(act).toHaveBeenCalledTimes(1);
+  });
+
+  // What a pinch does to the gesture its first finger had started.
+  it("commits nothing when the gesture is disposed before it is unambiguous", () => {
+    const act = vi.fn();
+    const onEnd = vi.fn();
+    trackTapOrDrag(down(), { act, onEnd })();
+
+    doc("pointerup", {});
+    expect(act).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it("honours a slop of its own", () => {
+    const act = vi.fn();
+    trackTapOrDrag(down(), { act, intent: "stroke", slop: 2 });
+    doc("pointermove", { clientX: 4, clientY: 0 });
+    expect(act).toHaveBeenCalledTimes(1);
+  });
+
+  it("drives a gesture whose work is all in onMove", () => {
+    const onMove = vi.fn();
+    trackTapOrDrag(down(), { onMove, intent: "stroke" });
+    doc("pointermove", { clientX: far, clientY: 0 });
+    expect(onMove).toHaveBeenCalledTimes(1);
   });
 });
 

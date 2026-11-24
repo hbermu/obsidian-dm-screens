@@ -1,6 +1,7 @@
+use crate::allowlist::is_sha256;
 use crate::assets::content_type;
 use crate::config::WebhookTarget;
-use crate::integrations::{http, is_sha256, upstream_failed};
+use crate::integrations::{http, upstream_failed};
 use crate::state::AppState;
 use axum::Json;
 use axum::extract::{Path, State};

@@ -5,7 +5,7 @@
 ## Source files
 
 - `server/src/integrations/webhooks.rs` — the configured targets, the multipart post, the per-target rate limit
-- `src/integrations/remote.ts` — `RemoteWebhooks`: names from `control-hello`, send over the route below
+- `src/integrations/remote.ts` — `RemoteGateway.webhooks()`: names from `control-hello`, send over the route below
 - `src/integrations/local.ts` — `LocalWebhooks`: today's `sendWebhookImage`
 - `src/webhooks/client.ts`, `src/webhooks/multipart.ts` — unchanged; the local gateway's implementation
 - `src/views/SendToWebhookModal.ts` — the caller, now through `plugin.gateway.webhooks()`
@@ -31,7 +31,7 @@
 ## Tests covering this
 
 - `server/tests/webhooks.rs` — target parsing and its startup errors, the names in the hello without URLs, a send's multipart shape against a stub target, unknown name, a non-asset body, the caption cap, the rate limit, `502` with nothing of the upstream body
-- `src/__tests__/gateway-remote.test.ts` — `RemoteWebhooks` lists names and sends by name with the asset
+- `src/__tests__/gateway-remote.test.ts` — the remote `WebhooksApi` lists names and sends by name with the asset
 - `src/__tests__/send-to-webhook-modal.test.ts` — the modal lists the gateway's targets and sends through it
 
 ## Non-goals

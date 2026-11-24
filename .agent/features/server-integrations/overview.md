@@ -46,6 +46,7 @@
 12. When the DM changes a preference in remote mode, the plugin shall write it through requirement 11 and apply it immediately, without a restart of the server.
 13. When a preference changes, the server shall send `prefs` to every control socket, so a second device sees the change.
 14. A preference the server has never been given shall take the same default as the plugin's own setting, so a fresh server behaves like a fresh vault.
+15. The key list in `src/integrations/prefs.ts` and the one in `server/src/prefs.rs` shall hold the same keys, because a key only one side knows is a silent `404` that loses the preference.
 
 ### Proxy rules
 
@@ -72,6 +73,7 @@
 - `src/__tests__/gateway-local.test.ts` — the local gateway reproduces today's calls and reports capabilities from the settings
 - `src/__tests__/gateway-remote.test.ts` — the remote gateway's routes, the control token on every call, capabilities from `control-hello`, read-only gating of the mutating routes
 - `src/__tests__/session-prefs.test.ts` — preferences read and written in both modes, defaults for an absent key, a `prefs` message applied live
+- `src/__tests__/cross-language-parity.test.ts` — the plugin's key list and the server's `KNOWN` table hold the same keys, and the two `PROTOCOL_VERSION` constants agree (requirement 15)
 - `server/tests/config_secrets.rs` — a secret from the environment and from a `_FILE` path, both forms set is an error, no secret in any response or log
 - `server/tests/prefs.rs` — the document round trip, unknown key, bad shape, the push to every control socket
 - `test/conformance/integrations.conformance.ts` — remote-only: the capability block, `/api/prefs`, and that the view token opens no integration route

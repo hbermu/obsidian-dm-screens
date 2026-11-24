@@ -7,6 +7,7 @@ import { paginate } from "../hydrus/pagination";
 import { filterTags } from "../hydrus/tagFilter";
 import { parseTagQuery } from "../hydrus/tagInput";
 import { TagSuggester } from "./HydrusTagSuggester";
+import { bytesDataUrl } from "../map/fog";
 import { debug, debugWarn } from "../debug";
 
 interface RemoteTile {
@@ -434,7 +435,7 @@ export class HydrusExplorerModal extends Modal {
       }
       if (tile.kind === "remote" && this.client) {
         const buf = await this.client.getThumbnailBytes(tile.hash);
-        img.src = arrayBufferToDataUrl(buf, "image/jpeg");
+        img.src = bytesDataUrl(new Uint8Array(buf), "image/jpeg");
       }
     } catch (err) {
       debugWarn("Hydrus Explorer: thumbnail load failed for", tile.hash, err);
@@ -802,20 +803,6 @@ export class HydrusExplorerModal extends Modal {
 function entryMatchesTag(entry: CachedEntry, needle: string): boolean {
   const n = needle.toLowerCase();
   return entry.knownTags.some((tag) => tag.toLowerCase().includes(n));
-}
-
-function arrayBufferToDataUrl(buf: ArrayBuffer, mime: string): string {
-  let binary = "";
-  const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return `data:${mime};base64,${btoa(binary)}`;
-}
-
-export function encodeForVaultUrl(vaultPath: string): string {
-  return vaultPath
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
 }
 
 export function layerLabelFromTags(tags: string[], hash: string): string {

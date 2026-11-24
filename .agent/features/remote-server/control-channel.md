@@ -7,7 +7,7 @@
 - `server/src/control.rs` — handshake checks, `hello`, the lease transitions, relay handling, `send_roles`
 - `server/src/state.rs` — `Session.holder` (the lease), `Session::is_active`, `AppState::relay` (processing and mirror fan-out), `Session::send_screens`
 - `server/src/protocol.rs` — `PROTOCOL_VERSION`
-- `src/protocol.ts` — the same message types on the plugin side
+- `src/protocol.ts` — `PROTOCOL_VERSION` on the plugin side
 - `src/transport/remote.ts` — the plugin's client of this channel
 
 ## Settings used
@@ -61,6 +61,7 @@
 ## Tests covering this
 
 - `test/conformance/control.conformance.ts` — over real sockets against the server binary: handshake rejections (token, view token, device id, name, protocol `4001` with its reason, fifth socket `1013`, Origin), the hello contents, lease assignment, same-device reclaim after reconnect, claim hand-over, multi-socket holder, relay to viewers and mirror, read-only refusal, bad messages, cache hand-off, rate limit, oversized frame `1009`, screens push, the map-data API, persistence across a restart
+- `src/__tests__/cross-language-parity.test.ts` — `PROTOCOL_VERSION` in `src/protocol.ts` equals the constant in `server/src/protocol.rs`, which requirement 4's handshake check compares
 
 ## Non-goals
 

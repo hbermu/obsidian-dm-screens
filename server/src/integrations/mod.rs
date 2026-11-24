@@ -35,23 +35,9 @@ pub fn not_configured(op: &str) -> Response {
         .into_response()
 }
 
-pub fn is_sha256(s: &str) -> bool {
-    s.len() == 64
-        && s.bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn accepts_only_a_lowercase_sha256() {
-        assert!(is_sha256(&"a".repeat(64)));
-        assert!(!is_sha256(&"A".repeat(64)));
-        assert!(!is_sha256(&"a".repeat(63)));
-        assert!(!is_sha256("g".repeat(64).as_str()));
-    }
 
     #[test]
     fn an_upstream_failure_says_nothing_of_the_upstream_body() {

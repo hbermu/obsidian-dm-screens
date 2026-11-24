@@ -3,15 +3,19 @@ use std::collections::HashSet;
 
 pub const ASSET_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "gif", "mp4", "webm"];
 
+// Lowercase only: every hash the server mints comes from hex::encode, and a
+// case-insensitive check would let two names address one asset.
+pub fn is_sha256(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 // `/assets/<sha256>.<ext>` → `<sha256>.<ext>`; anything else is not an asset.
 pub fn asset_name(url: &Value) -> Option<String> {
     let name = url.as_str()?.strip_prefix("/assets/")?;
     let (hash, ext) = name.split_once('.')?;
-    let valid = hash.len() == 64
-        && hash
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    (valid && ASSET_EXTENSIONS.contains(&ext)).then(|| name.to_string())
+    (is_sha256(hash) && ASSET_EXTENSIONS.contains(&ext)).then(|| name.to_string())
 }
 
 // The embedded VaultServeAllowlist over /assets/ names, plus the map fog mask,
@@ -73,6 +77,14 @@ mod tests {
 
     fn a(n: u8) -> String {
         format!("/assets/{}.png", hex::encode([n; 32]))
+    }
+
+    #[test]
+    fn accepts_only_a_lowercase_sha256() {
+        assert!(is_sha256(&"a".repeat(64)));
+        assert!(!is_sha256(&"A".repeat(64)));
+        assert!(!is_sha256(&"a".repeat(63)));
+        assert!(!is_sha256("g".repeat(64).as_str()));
     }
 
     #[test]

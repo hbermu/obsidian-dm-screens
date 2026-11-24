@@ -6,7 +6,7 @@
 
 - `src/hydrus/noteRefs.ts` — `parseHydrusRefs` (regex extraction), `resolveHydrusRefs` (cache-first + single remote batch), `ensureLocalCopy` (download-on-demand), `HydrusRef` / `ResolvedHydrusRef` types
 - `src/hydrus/client.ts` — `mediaTypeOf(mime)` used to classify resolved references and to title the explorer menu action
-- `src/views/HydrusExplorerModal.ts` — the `Copy image reference` / `Copy video reference` tile-menu action that produces the string; exports `encodeForVaultUrl`, `uniqueLayerLabel`, `layerLabelFromTags`
+- `src/views/HydrusExplorerModal.ts` — the `Copy image reference` / `Copy video reference` tile-menu action that produces the string; exports `uniqueLayerLabel` and `layerLabelFromTags`
 - `src/views/DmControlPanel.ts` — `collectHydrusRefEntries`, `applyHydrusRef`, and the merge into `showImagePicker` (Add Image) and `showBackgroundPicker` (Add BG)
 
 ## Settings used

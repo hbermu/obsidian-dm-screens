@@ -1,6 +1,6 @@
 import { ItemView, Menu, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import type DmScreenPlugin from "../main";
-import type { TrackerCombatant, ImageLayer } from "../types";
+import type { TrackerCombatant, ImageLayer, LayerGeometry } from "../types";
 import { renderStatblock } from "./StatblockPanel";
 import { DnDBeyondPanel } from "./DnDBeyondPanel";
 import { MapScreenPanel } from "./MapScreenPanel";
@@ -2491,7 +2491,7 @@ export class DmControlPanel extends ItemView {
       this.plugin.broadcast({
         type: "image-layers-geometry",
         payload: {
-          layers: this.imageLayers.map((l) => ({
+          layers: this.imageLayers.map<LayerGeometry>((l) => ({
             id: l.id,
             x: l.x,
             y: l.y,

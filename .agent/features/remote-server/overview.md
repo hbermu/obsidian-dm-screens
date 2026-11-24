@@ -11,7 +11,7 @@
 - `src/transport/remoteApi.ts` — `callApi`: `/api/` and `/assets/` requests through `requestUrl` with a `Bearer` token
 - `src/transport/assetUpload.ts` — `AssetPublisher`: fingerprint lookup, chunked upload, Hydrus by hash, the progress Notice, `rewrite` of outgoing messages
 - `src/transport/remoteMapData.ts` — `RemoteMapData`: the server-backed store for map configs, calibration profiles, fog, walls and asset sources
-- `src/protocol.ts` — `PROTOCOL_VERSION` and the control-channel message types shared with the conformance suite
+- `src/protocol.ts` — `PROTOCOL_VERSION`, which must equal the constant of the same name in `server/src/protocol.rs`
 - `src/main.ts` — `sessionIsLocal`, `sourceLabels`, `reloadLocalSession`, `effectiveServerMode`, `buildTransport`, `setServerMode`, `startSession`, `toggleServer`, the remote hooks (`onRemoteSession`, `onRemoteRole`, `onRemoteMirror`, `applyScreens`), `exploreModals`
 - `src/views/DmControlPanel.ts` — `reloadFromLocal`, `renderRemoteServerSection` (Connect/Disconnect, status), `renderReadonlyBanner`, the inert `.dm-session` wrapper, `reloadFromSession`
 - `src/views/MapScreenPanel.ts` — `resetForSession`; media published through `transport.mediaUrl` in `setVaultMap`

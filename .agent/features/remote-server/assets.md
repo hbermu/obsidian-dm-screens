@@ -6,7 +6,7 @@
 
 - `server/src/assets.rs` — content-addressed store, fingerprint index, chunked uploads, retention sweep, `/assets/` serving with `Range`; the encoders run as `ffmpeg`/`ffprobe` subprocesses (`DM_SCREEN_FFMPEG`, `DM_SCREEN_FFPROBE` override their paths)
 - `server/src/derivatives.rs` — WebP and MP4 derivatives, the on-disk derivative cache
-- `server/src/hydrus.rs` — server-side Hydrus download with hash verification
+- `server/src/integrations/hydrus.rs` — server-side Hydrus download with hash verification
 - `server/src/allowlist.rs` — the display allowlist over `/assets/` URLs
 - `src/transport/assetUpload.ts` — the plugin side: fingerprint, lookup, upload, Hydrus request, URL rewriting, source recording
 - `src/player/safeUrl.ts` — accepts `/assets/<64 hex>.<ext>` URLs

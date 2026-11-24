@@ -5,8 +5,8 @@
 ## Source files
 
 - `server/src/integrations/hydrus.rs` — the named operations, the key attached per request, thumbnail caching
-- `src/integrations/remote.ts` — `RemoteHydrus`: the same method names as `HydrusClient`, over the routes below
-- `src/integrations/local.ts` — `LocalHydrus`: today's `HydrusClient`
+- `src/integrations/remote.ts` — `RemoteGateway.hydrus()`: the same method names as `HydrusClient`, over the routes below
+- `src/integrations/local.ts` — `LocalGateway.hydrus()`: a `HydrusClient` against the configured URL
 - `src/hydrus/client.ts` — unchanged; the local gateway's implementation
 - `src/views/HydrusExplorerModal.ts`, `src/views/HydrusTagSuggester.ts`, `src/hydrus/noteRefs.ts`, `src/hydrus/foundryModules.ts`, `src/hydrus/recoverImage.ts` — callers, now through `plugin.gateway.hydrus()`
 - `src/hydrus/cache.ts` — embedded mode only; remote mode has no local Hydrus cache
@@ -41,7 +41,7 @@
 ## Tests covering this
 
 - `server/tests/hydrus.rs` — each operation against the stub Hydrus: the key attached, hash validation, a full page of hashes answered in batches whose queries stay small, the search and metadata limits, `501` unconfigured, `502` on an upstream error with nothing of the body in the response, thumbnail caching, a forwarded `Range`
-- `src/__tests__/gateway-remote.test.ts` — `RemoteHydrus` maps each method to its route and shape, and `publish` records `hydrus:<hash>` as the published asset's scene source (requirement 9b)
+- `src/__tests__/gateway-remote.test.ts` — the remote `HydrusApi` maps each method to its route and shape, and `publish` records `hydrus:<hash>` as the published asset's scene source (requirement 9b)
 - `src/__tests__/hydrus-explorer-search.test.ts` — the explorer searching through the gateway
 - `test/e2e/specs/remote.e2e.ts` — real Obsidian: the Hydrus bar appears from the server's capability
 

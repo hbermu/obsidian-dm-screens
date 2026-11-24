@@ -1,4 +1,4 @@
-use crate::allowlist::ASSET_EXTENSIONS;
+use crate::allowlist::{ASSET_EXTENSIONS, is_sha256};
 use crate::auth::{Role, api_token, role_for};
 use crate::persist::{load, now_secs, state_dir};
 use crate::state::AppState;
@@ -74,12 +74,6 @@ pub fn ext_for_content_type(mime: &str) -> Option<&'static str> {
         "video/webm" => Some("webm"),
         _ => None,
     }
-}
-
-fn is_sha256(s: &str) -> bool {
-    s.len() == 64
-        && s.bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 pub fn fingerprint_key(path: &str, size: u64, mtime: u64) -> String {

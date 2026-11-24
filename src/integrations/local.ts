@@ -1,4 +1,3 @@
-import { Notice } from "obsidian";
 import type DmScreenPlugin from "../main";
 import { HydrusClient } from "../hydrus/client";
 import { ensureLocalCopy } from "../hydrus/noteRefs";
@@ -137,9 +136,4 @@ export class LocalGateway implements IntegrationGateway {
     this.poller?.stop();
     this.poller = null;
   }
-}
-
-export function noGateway(what: string): never {
-  new Notice(`${what} is not configured.`, 6000);
-  throw new Error(`${what} is not configured`);
 }

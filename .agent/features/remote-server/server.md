@@ -16,7 +16,7 @@
 - `server/src/allowlist.rs` — the display allowlist over `/assets/` URLs
 - `server/src/mapdata.rs` — the map-data store
 - `server/src/control.rs` — the control channel (see `control-channel.md`)
-- `server/src/assets.rs`, `server/src/derivatives.rs`, `server/src/hydrus.rs` — media (see `assets.md`)
+- `server/src/assets.rs`, `server/src/derivatives.rs`, `server/src/integrations/hydrus.rs` — media (see `assets.md`)
 - `src/screenPages.ts`, `scripts/export-screens.mjs` — the page shells and bundles shared with the embedded server, written to `server/assets/` and embedded with `include_str!`
 - `server/Dockerfile` — multi-stage build: the exported screens, the Rust binary, a runtime image with `ffmpeg`; also the `dev` (toolchain) and `conformance` targets
 - `server/docker-compose.yml` — the deployment example (requirement 20)

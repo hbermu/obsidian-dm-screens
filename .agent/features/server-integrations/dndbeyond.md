@@ -5,7 +5,7 @@
 ## Source files
 
 - `server/src/integrations/ddb.rs` — cookie to token refresh, the named operations, the poll loop with its gap and circuit breaker, `ddb-state` pushes
-- `src/integrations/remote.ts` — `RemoteDdb`: the same surfaces over the routes below, plus the control-channel subscription
+- `src/integrations/remote.ts` — `RemoteGateway.ddb()`: the same surfaces over the routes below, plus the control-channel subscription
 - `src/integrations/local.ts` — `LocalDdb`: today's `DdbClient` and `DdbEncounterPoller`
 - `src/dndbeyond/client.ts`, `src/dndbeyond/poller.ts` — unchanged; the local gateway's implementation
 - `src/views/DnDBeyondPanel.ts` — the caller, now through `plugin.gateway.ddb()`
@@ -46,7 +46,7 @@
 ## Tests covering this
 
 - `server/tests/ddb.rs` — against a stub D&D Beyond: the token refresh and its retry on `401`, id validation, avatars stored as assets, `501` unconfigured, `502` upstream, the loop's start, replace and stop, `ddb-state` after a poll and after a failure, the last state replayed to a new socket, the loop stopping with the last socket
-- `src/__tests__/gateway-remote.test.ts` — `RemoteDdb` routes and the `ddb-state` subscription; a track request is held until the one before it has answered (requirement 12a); a pushed state replayed from the real `encounter-kokoro.json` fixture arrives with its name, round and monsters, a poll error passes through, and a fetched encounter is parsed too (requirement 12b)
+- `src/__tests__/gateway-remote.test.ts` — the remote `DdbApi` routes and the `ddb-state` subscription; a track request is held until the one before it has answered (requirement 12a); a pushed state replayed from the real `encounter-kokoro.json` fixture arrives with its name, round and monsters, a poll error passes through, and a fetched encounter is parsed too (requirement 12b)
 - `src/__tests__/ddb-panel-tracking-state.test.ts` — tracking state through `track`, the panel mapping a poll result, no broadcast without the lease, and switching encounters asking only for the new one (requirement 12)
 
 ## Non-goals
