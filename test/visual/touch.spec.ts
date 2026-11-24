@@ -217,10 +217,7 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
       display: style.display,
       position: style.position,
       background: style.backgroundColor,
-      blur: ["::before", "::after"].map((pe) => {
-        const scrim = getComputedStyle(bar, pe);
-        return `${scrim.backdropFilter} ${(scrim as unknown as { webkitBackdropFilter?: string }).webkitBackdropFilter ?? ""}`;
-      }),
+      scrimPaint: getComputedStyle(bar, "::before").backgroundImage,
       barLeft: bar.getBoundingClientRect().left,
       barRight: bar.getBoundingClientRect().right,
       scrimTop: getComputedStyle(bar, "::before").top,
@@ -246,11 +243,13 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
   // area and secondary in a sidebar, so a painted band is the wrong shade half
   // the time. It blurs what passes under it instead.
   expect(nav.background).toBe("rgba(0, 0, 0, 0)");
-  // The blur is in the two scrim layers, not on the bar: a mask on the bar
-  // would fade the chips with it, and one layer can only step from blurred to
-  // sharp where two of different strengths ramp.
-  for (const scrim of nav.blur) expect(scrim).toContain("blur");
-  expect(nav.blur[0]).not.toBe(nav.blur[1]);
+  // The surface is painted by the scrim behind the chips, not by the bar: it
+  // has to reach further than the bar does, and it fades out at the bottom so
+  // content scrolling under it never meets a ruled line. `backdrop-filter`
+  // would have been prettier and is not dependable — Obsidian on iOS showed a
+  // black band where the blur should have been.
+  expect(nav.scrimPaint).toContain("linear-gradient");
+  expect(nav.scrimPaint).toContain("rgba(0, 0, 0, 0)");
   // It reaches the panel's edges and over its top padding: an inset bar leaves
   // a sharp strip down each side and above, which reads as a drawn box.
   expect(nav.barLeft).toBeLessThanOrEqual(nav.panelLeft + 0.5);

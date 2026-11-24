@@ -27,60 +27,44 @@
      around the chips rather than as a surface. */
   margin-inline: calc(-1 * var(--dm-panel-pad));
   padding-inline: var(--dm-panel-pad);
-  /* No colour of its own: the panel sits on `--background-primary` in the main
-     area and on `--background-secondary` in a sidebar, so any token painted
-     here is the wrong one half the time — a black band over a grey panel. It
-     blurs what passes under it instead, which is the theme's own pixels and
-     the same thing Obsidian's mobile bars do. */
   background: transparent;
+  /* The panel sits on `--background-primary` in the main area and on
+     `--background-secondary` in a sidebar, so the bar asks which one it is on
+     instead of painting a token that is the wrong shade half the time. It used
+     to dodge the question with `backdrop-filter`, but that is the one property
+     here whose support cannot be assumed: Obsidian on iOS showed a black band
+     where the blur should have been, and a bar that is wrong on the phone is
+     worse than one that is not frosted on a desktop. */
+  --dm-nav-surface: var(--background-primary);
 }
-/* The blur lives in two scrim layers behind the chips rather than on the bar,
-   because a mask on the bar would fade the chips with it. A single layer can
-   only step from blurred to sharp; a strong short one over a weak long one
-   ramps, so content scrolling under the bar goes gradually out of focus
-   instead of crossing a line. They sit behind the chips (`z-index: -1` inside
-   the bar's own stacking context) and reach up over the panel's top padding,
-   so no sharp strip is left above the bar. */
-.dm-section-nav::before,
-.dm-section-nav::after {
+
+.mod-left-split .dm-section-nav,
+.mod-right-split .dm-section-nav {
+  --dm-nav-surface: var(--background-secondary);
+}
+
+/* The surface is a scrim behind the chips rather than a background on the bar,
+   because it has to reach further than the bar does: up over the panel's top
+   padding, which sticky positioning cannot be pulled into, and down past the
+   bar, where it fades out so content scrolling under it goes gradually out of
+   sight instead of meeting a ruled line. */
+.dm-section-nav::before {
   content: "";
   position: absolute;
-  z-index: -1;
+  z-index: 0;
   left: 0;
   right: 0;
-  /* Sticky cannot be pulled above the scrollport, so the bar stops under the
-     panel's top padding and the scrim reaches over it instead: otherwise a
-     sharp strip of text scrolls past above the bar. */
   top: calc(-1 * var(--dm-panel-pad));
+  bottom: -40px;
   pointer-events: none;
+  background: linear-gradient(to bottom, var(--dm-nav-surface) 0 64%, transparent 100%);
 }
-.dm-section-nav::before {
-  bottom: -18px;
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  mask-image: linear-gradient(to bottom, #000 0 62%, rgba(0, 0, 0, 0.55) 82%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0 62%, rgba(0, 0, 0, 0.55) 82%, transparent 100%);
-}
-.dm-section-nav::after {
-  bottom: -46px;
-  backdrop-filter: blur(5px) saturate(1.15);
-  -webkit-backdrop-filter: blur(5px) saturate(1.15);
-  mask-image: linear-gradient(to bottom, #000 0 55%, rgba(0, 0, 0, 0.5) 78%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0 55%, rgba(0, 0, 0, 0.5) 78%, transparent 100%);
-}
-/* Without backdrop-filter the bar would be a window onto the text scrolling
-   under it, so it falls back to a surface and a rule. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .dm-section-nav {
-    background: var(--background-secondary);
-    border-bottom: 1px solid var(--background-modifier-border);
-  }
-  .dm-section-nav::before,
-  .dm-section-nav::after {
-    content: none;
-  }
-}
+
 .dm-section-nav button.dm-section-chip {
+  /* Above the scrim, which is a child of the bar and would otherwise cover
+     them. No negative z-index on the scrim: that is where engines disagree. */
+  position: relative;
+  z-index: 1;
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
