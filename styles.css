@@ -2271,9 +2271,15 @@
    be moved used to swallow the press meant for the one that can, purely
    because it was drawn later. The live marker and its handle win every
    overlap. */
-.dm-map-marker-selected,
 .dm-map-aoe-rot-handle {
   z-index: 6;
+}
+
+/* The live marker beats its own rotation handle too: wherever the two overlap,
+   the press moves the shape, because that is what nine presses in ten are
+   for. */
+.dm-map-marker-selected {
+  z-index: 7;
 }
 
 .dm-map-marker-selected {

@@ -411,3 +411,18 @@ test("a bar too narrow for four words carries one letter per section", async ({ 
   // Four letters never need a sideways scroll.
   expect(labels.overflow).toBeLessThanOrEqual(0);
 });
+
+// A cone's rotation handle sits at its tip, which on a reduced map lands on
+// top of the anchor dot. The handle is drawn later, so it used to take the
+// press and the DM could only ever rotate.
+test("a press where a marker and its rotation handle overlap moves, not rotates", async ({ page }) => {
+  const hit = await page.evaluate(() => {
+    const dot = document.querySelector(".dm-map-aoe-dot") as HTMLElement;
+    const box = dot.getBoundingClientRect();
+    const el = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) as HTMLElement;
+    return { className: el.className, handleExists: !!document.querySelector(".dm-map-aoe-rot-handle") };
+  });
+
+  expect(hit.handleExists).toBe(true);
+  expect(hit.className).toContain("dm-map-aoe-dot");
+});

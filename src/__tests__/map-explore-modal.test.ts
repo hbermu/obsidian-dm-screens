@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNapiCanvas } from "../../test/canvas/napi-canvas-shim";
 import { MapExploreModal } from "../views/MapExploreModal";
+import { MIN_HANDLE_GAP_PX } from "../views/mapStage";
 import { fogCanvasSize } from "../map/fog";
 import { followView } from "../map/vision";
 import type { ActiveMap } from "../views/MapScreenPanel";
@@ -632,7 +633,11 @@ describe("MapExploreModal — AoE and vision markers", () => {
     modal.onClose();
   });
 
-  it("puts the live AoE down when its list is minimized", () => {
+  // On a stage too narrow for floating windows the list is a sheet over the
+  // map, so a rule that unselected on close would mean the marker can never be
+  // both selected and reachable. Closing a list leaves the selection alone; a
+  // press on the map is what puts a marker down.
+  it("keeps the live AoE when its list is put away", () => {
     const aoe = anAoe();
     const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     const { modal, markers, contentEl } = openModal(panel);
@@ -640,8 +645,22 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
     minimize.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    expect(panel.selectedAoeId).toBeNull();
-    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(false);
+    expect(panel.selectedAoeId).toBe(aoe.id);
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(true);
+    modal.onClose();
+  });
+
+  it("keeps a cone's rotation handle a finger away from its anchor", () => {
+    // 10 ft at 10 px/ft is 100 natural px, which this stage shows at 0.1024 —
+    // about 10 screen px, well inside the dot's own touch target.
+    const aoe: MapAoe = { ...anAoe(), shape: "cone", sizeFt: 10 };
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
+    const { modal, markers } = openModal(panel);
+
+    const handle = markers.querySelector(".dm-map-aoe-rot-handle") as HTMLElement;
+    const gapNatural = (parseFloat(handle.style.left) / 100) * MAP_W - aoe.x;
+    expect(gapNatural * (FOG_W / MAP_W)).toBeGreaterThanOrEqual(MIN_HANDLE_GAP_PX - 0.5);
+
     modal.onClose();
   });
 

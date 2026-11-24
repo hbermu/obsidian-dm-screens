@@ -9,7 +9,7 @@ import { renderAoe } from "../map/aoe";
 import { anchorToView, DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
 import { gridLinePositions, rotatePoint } from "../map/transform";
 import { debug } from "../debug";
-import { fitScale } from "./mapStage";
+import { fitScale, finiteScale, handleDistance } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
 import { FloatingWindow, type WindowState } from "./FloatingWindow";
 import { ExploreSheet, type SheetPanel } from "./ExploreSheet";
@@ -387,9 +387,6 @@ export class MapExploreModal extends Modal {
     const persist = (id: string) => (state: WindowState) => {
       (this.plugin.settings.exploreWindows ??= {})[id] = state;
       void this.plugin.saveSettings();
-      // Minimizing the list closes it, and a closed list leaves nothing on the
-      // map that answers to a press.
-      if (state.minimized && this.panel.clearMarkerSelection()) refresh();
     };
 
     const buildFloating = (): ExplorePanels => {
@@ -431,20 +428,11 @@ export class MapExploreModal extends Modal {
     };
 
     const buildSheet = (): ExplorePanels => {
-      const sheet = new ExploreSheet(
-        stage,
-        [
-          { id: "aoes", title: "AoEs" },
-          { id: "vision", title: "Vision" },
-          { id: "combat", title: "Combat" },
-        ],
-        // Closing the sheet, or moving to another tab, closes the list the
-        // selection belonged to.
-        () => {
-          const cleared = this.panel.clearMarkerSelection();
-          if (cleared && this.panels) refresh();
-        }
-      );
+      const sheet = new ExploreSheet(stage, [
+        { id: "aoes", title: "AoEs" },
+        { id: "vision", title: "Vision" },
+        { id: "combat", title: "Combat" },
+      ]);
       return {
         aoes: sheet.panel("aoes"),
         vision: sheet.panel("vision"),
@@ -457,10 +445,6 @@ export class MapExploreModal extends Modal {
     const buildPanels = () => {
       this.disposeCombatMirror?.();
       this.panels?.destroy();
-      // The sheet reports its first `show(null)` from inside its constructor,
-      // and a callback that found the destroyed panels here would write into
-      // detached elements.
-      this.panels = null;
       this.floating = floatingFits();
       this.panels = this.floating ? buildFloating() : buildSheet();
       this.disposeCombatMirror = this.panel.registerCombatMirror(this.panels.combat);
@@ -483,8 +467,6 @@ export class MapExploreModal extends Modal {
       // panels have to follow it mid-session.
       if (this.panels && this.floating !== floatingFits()) {
         buildPanels();
-        // The new layout starts with its lists closed, so no marker is live.
-        renderMarkers();
         return;
       }
       this.panels?.clamp();
@@ -653,7 +635,7 @@ export class MapExploreModal extends Modal {
   ) {
     const ftToPx = this.panel.state.pxPerSquare / 5;
     for (const aoe of this.panel.aoes) {
-      const live = this.panel.selectedAoeId === aoe.id && (this.panels?.aoes.isOpen() ?? false);
+      const live = this.panel.selectedAoeId === aoe.id;
       const dot = layer.createDiv("dm-map-aoe-dot");
       dot.style.background = aoe.color;
       dot.toggleClass("dm-map-marker-selected", live);
@@ -670,7 +652,11 @@ export class MapExploreModal extends Modal {
         handle.style.background = aoe.color;
         handle.title = "Drag to rotate";
       }
-      const handleDistPx = () => (aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx;
+      const handleDistPx = () =>
+        handleDistance(
+          (aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx,
+          finiteScale(overlayGeom().uw / nw)
+        );
       const position = () => {
         dot.style.left = `${(aoe.x / nw) * 100}%`;
         dot.style.top = `${(aoe.y / nh) * 100}%`;
@@ -766,7 +752,7 @@ export class MapExploreModal extends Modal {
   ) {
     const positions: Array<() => void> = [];
     for (const vision of this.panel.visions) {
-      const live = this.panel.selectedVisionId === vision.id && (this.panels?.vision.isOpen() ?? false);
+      const live = this.panel.selectedVisionId === vision.id;
       const dot = layer.createDiv("dm-map-vision-dot");
       dot.toggleClass("dm-map-marker-selected", live);
       dot.title = live

@@ -53,13 +53,6 @@ export class FloatingWindow {
     this.host.appendChild(this.el);
   }
 
-  // A minimized window is a closed list, and a closed list holds no selection
-  // (`MapExploreModal`): nothing on the map can be moved from a panel the DM
-  // cannot see.
-  isOpen(): boolean {
-    return !this.state.minimized;
-  }
-
   setTitleExtra(el: HTMLElement): void {
     this.titleExtra.empty();
     this.titleExtra.appendChild(el);

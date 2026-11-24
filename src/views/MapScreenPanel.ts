@@ -25,7 +25,7 @@ import { renderAoe } from "../map/aoe";
 import { anchorToView, DEFAULT_VISION_COLOR, eraseVisionWithWalls, followView, moveVisions, normalizeVision, visionDragTargets } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
 import { LightSourceModal } from "./LightSourceModal";
-import { finiteScale, fitScale } from "./mapStage";
+import { finiteScale, fitScale, handleDistance } from "./mapStage";
 import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
@@ -1175,7 +1175,8 @@ export class MapScreenPanel {
       const ftToPx = this.state.pxPerSquare / 5;
       // The handle sits where the shape "points": tip of cone/line, mid-edge
       // of a square.
-      const handleDistPx = () => (aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx;
+      const handleDistPx = () =>
+        handleDistance((aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx, effectiveScale());
       const positionMarkers = () => {
         dot.style.left = `${(aoe.x / nw) * 100}%`;
         dot.style.top = `${(aoe.y / nh) * 100}%`;
