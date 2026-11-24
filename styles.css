@@ -2257,6 +2257,22 @@
   inset: calc(-9px * var(--dm-map-zoom, 1));
 }
 
+/* Only the marker whose card is open in its list answers to a press. It says
+   so: a halo marks the one that moves, and every other dot shows the arrow
+   cursor it deserves for doing nothing. */
+.dm-map-aoe-dot:not(.dm-map-marker-selected),
+.dm-map-vision-dot:not(.dm-map-marker-selected) {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.dm-map-marker-selected {
+  opacity: 1;
+  box-shadow:
+    0 0 0 3px var(--background-primary),
+    0 0 0 5px var(--interactive-accent);
+}
+
 .dm-map-aoe-section {
   margin-top: 8px;
 }

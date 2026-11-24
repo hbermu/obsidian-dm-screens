@@ -90,6 +90,8 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     await addShape("Cone");
     await rec.waitFor("map-aoe-sync", { skip: seenAdd, where: (m) => aoes(m).length === 1 });
 
+    // The rotation handle exists only while the AoE's card is open.
+    await browser.$(".dm-control-panel .dm-control-card .dm-control-card-header").click();
     const handle = browser.$(".dm-control-panel .dm-map-aoe-rot-handle");
     await handle.waitForExist();
     await handle.scrollIntoView({ block: "center" });

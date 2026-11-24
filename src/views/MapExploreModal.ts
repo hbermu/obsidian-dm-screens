@@ -387,6 +387,9 @@ export class MapExploreModal extends Modal {
     const persist = (id: string) => (state: WindowState) => {
       (this.plugin.settings.exploreWindows ??= {})[id] = state;
       void this.plugin.saveSettings();
+      // Minimizing the list closes it, and a closed list leaves nothing on the
+      // map that answers to a press.
+      if (state.minimized && this.panel.clearMarkerSelection()) refresh();
     };
 
     const buildFloating = (): ExplorePanels => {
@@ -428,11 +431,20 @@ export class MapExploreModal extends Modal {
     };
 
     const buildSheet = (): ExplorePanels => {
-      const sheet = new ExploreSheet(stage, [
-        { id: "aoes", title: "AoEs" },
-        { id: "vision", title: "Vision" },
-        { id: "combat", title: "Combat" },
-      ]);
+      const sheet = new ExploreSheet(
+        stage,
+        [
+          { id: "aoes", title: "AoEs" },
+          { id: "vision", title: "Vision" },
+          { id: "combat", title: "Combat" },
+        ],
+        // Closing the sheet, or moving to another tab, closes the list the
+        // selection belonged to.
+        () => {
+          const cleared = this.panel.clearMarkerSelection();
+          if (cleared && this.panels) refresh();
+        }
+      );
       return {
         aoes: sheet.panel("aoes"),
         vision: sheet.panel("vision"),
@@ -445,6 +457,10 @@ export class MapExploreModal extends Modal {
     const buildPanels = () => {
       this.disposeCombatMirror?.();
       this.panels?.destroy();
+      // The sheet reports its first `show(null)` from inside its constructor,
+      // and a callback that found the destroyed panels here would write into
+      // detached elements.
+      this.panels = null;
       this.floating = floatingFits();
       this.panels = this.floating ? buildFloating() : buildSheet();
       this.disposeCombatMirror = this.panel.registerCombatMirror(this.panels.combat);
@@ -467,6 +483,8 @@ export class MapExploreModal extends Modal {
       // panels have to follow it mid-session.
       if (this.panels && this.floating !== floatingFits()) {
         buildPanels();
+        // The new layout starts with its lists closed, so no marker is live.
+        renderMarkers();
         return;
       }
       this.panels?.clamp();
@@ -573,6 +591,9 @@ export class MapExploreModal extends Modal {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
+      // A press anywhere but on the live marker puts it down where it is. The
+      // press still explores: deselecting is not a mode the DM has to leave.
+      if (this.panel.clearMarkerSelection()) refresh();
       abortTap();
       cancelTap = trackTapOrDrag(e, { act: (p) => explore(p.clientX, p.clientY) });
     };
@@ -632,11 +653,19 @@ export class MapExploreModal extends Modal {
   ) {
     const ftToPx = this.panel.state.pxPerSquare / 5;
     for (const aoe of this.panel.aoes) {
+      const live = this.panel.selectedAoeId === aoe.id && (this.panels?.aoes.isOpen() ?? false);
       const dot = layer.createDiv("dm-map-aoe-dot");
       dot.style.background = aoe.color;
-      dot.title = `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move, right-click to remove`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move, right-click to remove`
+        : `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — open it in the AoEs list to move it`;
+      // The rotation handle is a second target beside the dot; it exists only
+      // while the AoE is the live one, so an idle map carries no stray handles.
       const handle =
-        aoe.shape === "circle" || aoe.shape === "ring" ? null : layer.createDiv("dm-map-aoe-rot-handle");
+        !live || aoe.shape === "circle" || aoe.shape === "ring"
+          ? null
+          : layer.createDiv("dm-map-aoe-rot-handle");
       if (handle) {
         handle.style.background = aoe.color;
         handle.title = "Drag to rotate";
@@ -660,6 +689,17 @@ export class MapExploreModal extends Modal {
         this.renderMarkers?.();
         redraw();
       };
+      // An AoE that is not the live one swallows the press and does nothing:
+      // it neither moves, nor is removed, nor lets the press through to
+      // explore the room it is sitting on.
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+      });
+      if (!live) continue;
+
       dot.addEventListener("contextmenu", (ev: MouseEvent) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -726,8 +766,12 @@ export class MapExploreModal extends Modal {
   ) {
     const positions: Array<() => void> = [];
     for (const vision of this.panel.visions) {
+      const live = this.panel.selectedVisionId === vision.id && (this.panels?.vision.isOpen() ?? false);
       const dot = layer.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`
+        : `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — open it in the Vision list to move it`;
       dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const position = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
@@ -736,6 +780,11 @@ export class MapExploreModal extends Modal {
       position();
       positions.push(position);
       dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();

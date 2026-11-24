@@ -91,6 +91,24 @@ export class MapScreenPanel {
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
 
+  // The open card in the list is the one the map lets you move. Every marker
+  // used to answer to any press that landed on it, which on a finger-sized hit
+  // area meant a map that rearranged itself while the DM was reading it.
+  get selectedAoeId(): string | null {
+    return this.expandedAoeId;
+  }
+
+  get selectedVisionId(): string | null {
+    return this.expandedVisionId;
+  }
+
+  clearMarkerSelection(): boolean {
+    const had = this.expandedAoeId !== null || this.expandedVisionId !== null;
+    this.expandedAoeId = null;
+    this.expandedVisionId = null;
+    return had;
+  }
+
   // A session reload starts from nothing, so a map the server no longer
   // shows does not linger on a read-only device.
   resetForSession() {
@@ -1138,12 +1156,18 @@ export class MapScreenPanel {
     const repositionMarkers: Array<() => void> = [];
 
     for (const aoe of this.aoes) {
+      const live = this.expandedAoeId === aoe.id;
       const dot = stage.createDiv("dm-map-aoe-dot");
       dot.style.background = aoe.color;
-      dot.title = `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move`
+        : `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — open it in the AoEs list to move it`;
       // Circle and ring are rotationally symmetric — no rotation handle.
       const handle =
-        aoe.shape === "circle" || aoe.shape === "ring" ? null : stage.createDiv("dm-map-aoe-rot-handle");
+        !live || aoe.shape === "circle" || aoe.shape === "ring"
+          ? null
+          : stage.createDiv("dm-map-aoe-rot-handle");
       if (handle) {
         handle.style.background = aoe.color;
         handle.title = "Drag to rotate";
@@ -1167,6 +1191,11 @@ export class MapScreenPanel {
       repositionMarkers.push(positionMarkers);
 
       dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -1219,8 +1248,12 @@ export class MapScreenPanel {
     // repaints the canvas outline, not these dots).
     const repositionVisionDots: Array<() => void> = [];
     for (const vision of this.visions) {
+      const live = this.expandedVisionId === vision.id;
       const dot = stage.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`
+        : `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — open it in the Vision list to move it`;
       dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const positionVisionDot = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
@@ -1230,6 +1263,11 @@ export class MapScreenPanel {
       repositionVisionDots.push(positionVisionDot);
       repositionMarkers.push(positionVisionDot);
       dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();

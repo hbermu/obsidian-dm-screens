@@ -19,6 +19,7 @@ export interface SheetTab {
 export interface SheetPanel extends CombatMirror {
   body: HTMLElement;
   setTitleExtra(el: HTMLElement): void;
+  isOpen(): boolean;
 }
 
 export class ExploreSheet {
@@ -30,7 +31,11 @@ export class ExploreSheet {
   private tabs = new Map<string, { button: HTMLButtonElement; body: HTMLElement; title: string; extra: HTMLElement }>();
   private open: string | null = null;
 
-  constructor(host: HTMLElement, tabs: SheetTab[]) {
+  constructor(
+    host: HTMLElement,
+    tabs: SheetTab[],
+    private onShow?: (id: string | null) => void
+  ) {
     this.el = host.createDiv("dm-explore-sheet-host");
 
     this.sheet = this.el.createDiv("dm-explore-sheet");
@@ -63,6 +68,7 @@ export class ExploreSheet {
         tab.extra.appendChild(el);
         if (this.open === id) this.syncExtra();
       },
+      isOpen: () => this.open === id,
     };
   }
 
@@ -76,6 +82,7 @@ export class ExploreSheet {
     this.el.toggleClass("dm-explore-sheet-open", id !== null);
     this.titleEl.textContent = id ? this.tabs.get(id)!.title : "";
     this.syncExtra();
+    this.onShow?.(id);
   }
 
   // Nothing to keep inside the stage: the sheet is pinned to it.

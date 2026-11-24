@@ -65,7 +65,7 @@ button:not(.clickable-icon) { background: #3a3a3a; color: #dadada; }
 <div class="dm-explore-content"><div class="dm-explore-body"><div class="dm-explore-stage">
   <div class="dm-explore-inner">
     <canvas class="dm-explore-overlay" width="600" height="400"></canvas>
-    <div class="dm-explore-markers"><div class="dm-map-aoe-dot" style="left: 25%; top: 25%; background: #ff4400;"></div></div>
+    <div class="dm-explore-markers"><div class="dm-map-aoe-dot dm-map-marker-selected" style="left: 25%; top: 25%; background: #ff4400;"></div></div>
   </div>
   <div class="dm-floating-window">
     <div class="dm-floating-window-header"><div class="dm-floating-window-title">AoEs</div></div>

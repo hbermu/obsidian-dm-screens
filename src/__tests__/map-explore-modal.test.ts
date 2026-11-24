@@ -69,6 +69,8 @@ function makePanelStub(
     mode?: "physical" | "fit";
     rotation?: 0 | 90 | 180 | 270;
     showGrid?: boolean;
+    selectedAoeId?: string;
+    selectedVisionId?: string;
   } = {}
 ) {
   const aoes = opts.aoes ?? [];
@@ -97,6 +99,14 @@ function makePanelStub(
     }),
     renderAoeSection: vi.fn(),
     renderVisionSection: vi.fn(),
+    selectedAoeId: opts.selectedAoeId ?? null,
+    selectedVisionId: opts.selectedVisionId ?? null,
+    clearMarkerSelection: vi.fn(() => {
+      const had = stub.selectedAoeId !== null || stub.selectedVisionId !== null;
+      stub.selectedAoeId = null;
+      stub.selectedVisionId = null;
+      return had;
+    }),
     disposeCombatMirror: vi.fn(),
     registerCombatMirror: vi.fn((_mirror: { body: HTMLElement; setTitleExtra(el: HTMLElement): void }) => stub.disposeCombatMirror),
     toggleScaleMode: vi.fn(() => {
@@ -472,7 +482,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
   it("dragging an AoE dot moves it and broadcasts (throttled + immediate on release)", () => {
     const aoe = anAoe();
-    const panel = makePanelStub([], { aoes: [aoe] });
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
 
@@ -489,7 +499,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
   it("leaves an AoE where it was when the overlay cannot be measured", () => {
     const aoe = anAoe();
-    const panel = makePanelStub([], { aoes: [aoe] });
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     // A collapsed or torn-down overlay reports a zero-width rect. Dividing by it
     // used to yield Infinity, which the map-bounds clamp turned into "snap to
     // the map edge" and then broadcast.
@@ -511,7 +521,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
   it("leaves a vision where it was when the overlay cannot be measured", () => {
     const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
-    const panel = makePanelStub([], { visions: [vision] });
+    const panel = makePanelStub([], { visions: [vision], selectedVisionId: vision.id });
     const { modal, markers } = openModal(panel, { width: 0, height: 0 });
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
 
@@ -528,7 +538,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
   it("re-places the rotation handle when a registered overlay repaint fires", () => {
     const aoe: MapAoe = { ...anAoe(), shape: "cone" };
-    const panel = makePanelStub([], { aoes: [aoe] });
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     const { modal, markers } = openModal(panel);
     const before = (markers.querySelector(".dm-map-aoe-rot-handle") as HTMLElement).style.left;
 
@@ -553,8 +563,8 @@ describe("MapExploreModal — AoE and vision markers", () => {
     expect(dispose).toHaveBeenCalled();
   });
 
-  it("right-clicking an AoE dot removes it via panel.removeAoe", () => {
-    const panel = makePanelStub([], { aoes: [anAoe()] });
+  it("right-clicking the live AoE dot removes it via panel.removeAoe", () => {
+    const panel = makePanelStub([], { aoes: [anAoe()], selectedAoeId: "aoe-1" });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
 
@@ -564,9 +574,80 @@ describe("MapExploreModal — AoE and vision markers", () => {
     modal.onClose();
   });
 
-  it("dragging a vision dot moves it and broadcasts", () => {
+  // Every marker used to answer any press that landed on it. On a finger-sized
+  // hit area that meant a map that rearranged itself while it was being read,
+  // so now the map only moves what the DM has opened in its list.
+  it("ignores a drag on an AoE whose card is not open", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe] });
+    const { modal, markers } = openModal(panel);
+    const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
+    expect(dot.classList.contains("dm-map-marker-selected")).toBe(false);
+
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 102.4, 0);
+    fireDocPointer("pointerup", 102.4, 0);
+
+    expect(aoe.x).toBe(MAP_W / 2);
+    expect(panel.broadcastAoes).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("ignores a drag on a vision whose card is not open", () => {
     const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
     const panel = makePanelStub([], { visions: [vision] });
+    const { modal, markers } = openModal(panel);
+    const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
+
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 0, 102.4);
+    fireDocPointer("pointerup", 0, 102.4);
+
+    expect(vision.y).toBe(MAP_H / 2);
+    expect(panel.broadcastVisions).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("keeps a closed AoE inert: no removal and no rotation handle", () => {
+    const panel = makePanelStub([], { aoes: [{ ...anAoe(), shape: "cone" }] });
+    const { modal, markers } = openModal(panel);
+    expect(markers.querySelector(".dm-map-aoe-rot-handle")).toBeNull();
+
+    const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
+    dot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(panel.removeAoe).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("marks the live AoE and puts it down again on a press outside it", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
+    const { modal, markers, overlay } = openModal(panel);
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(true);
+
+    firePointerdown(overlay, 10, 10);
+
+    expect(panel.clearMarkerSelection).toHaveBeenCalled();
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(false);
+    modal.onClose();
+  });
+
+  it("puts the live AoE down when its list is minimized", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
+    const { modal, markers, contentEl } = openModal(panel);
+    const minimize = contentEl.querySelector(".dm-floating-window-minimize") as HTMLElement;
+
+    minimize.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(panel.selectedAoeId).toBeNull();
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(false);
+    modal.onClose();
+  });
+
+  it("dragging a vision dot moves it and broadcasts", () => {
+    const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
+    const panel = makePanelStub([], { visions: [vision], selectedVisionId: vision.id });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
 
@@ -706,7 +787,7 @@ describe("MapExploreModal — view-bound vision", () => {
       id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5,
       followsView: true, viewOffsetX: 0, viewOffsetY: 0,
     };
-    const panel = makePanelStub([], { mode: "physical", visions: [vision] });
+    const panel = makePanelStub([], { mode: "physical", visions: [vision], selectedVisionId: vision.id });
     const { modal, markers } = openModal(panel);
 
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
