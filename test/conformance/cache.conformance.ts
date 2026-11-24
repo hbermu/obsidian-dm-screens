@@ -90,6 +90,10 @@ describe("budget", () => {
     expect((await replayed("player")).map((m) => m.type)).toEqual(["combat-scale", "waiting-screen", "viewport-update"]);
   });
 
+  // Embedded only, and not a gap: the remote server keeps the same rule (see
+  // `evicts_the_largest_entry_but_never_the_last` in `server/src/replay.rs`),
+  // but reaching the state needs one entry over the whole budget, and a
+  // controller cannot send one — the control channel caps a frame at 1 MiB.
   it.runIf(onlyOn("embedded"))("never evicts the last entry", async () => {
     await t.broadcast(msg("waiting-screen", { title: "y".repeat(3 * 1024 * 1024), subtitle: "" }));
     expect((await replayed("player")).map((m) => m.type)).toEqual(["waiting-screen"]);
