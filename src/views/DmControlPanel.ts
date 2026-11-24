@@ -505,10 +505,12 @@ export class DmControlPanel extends ItemView {
     const chips = sections.map((section) => {
       const title = section.querySelector("h3")?.textContent ?? "Section";
       const key = section.dataset.sectionKey ?? "";
-      const chip = nav.createEl("button", {
-        text: DmControlPanel.NAV_LABELS[key] ?? title,
-        cls: "dm-section-chip",
-      });
+      const label = DmControlPanel.NAV_LABELS[key] ?? title;
+      const chip = nav.createEl("button", { cls: "dm-section-chip" });
+      // Both labels are in the DOM and the stylesheet picks one: a panel too
+      // narrow for four words shows four letters instead of four fragments.
+      chip.createSpan({ text: label, cls: "dm-section-chip-full" });
+      chip.createSpan({ text: label.slice(0, 1), cls: "dm-section-chip-initial" });
       chip.setAttribute("aria-label", title);
       chip.addEventListener("click", () => {
         // A folded section cannot be read, so jumping to it unfolds it.

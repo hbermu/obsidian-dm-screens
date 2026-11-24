@@ -217,7 +217,15 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
       display: style.display,
       position: style.position,
       background: style.backgroundColor,
-      blur: `${style.backdropFilter} ${(style as unknown as { webkitBackdropFilter?: string }).webkitBackdropFilter ?? ""}`,
+      blur: ["::before", "::after"].map((pe) => {
+        const scrim = getComputedStyle(bar, pe);
+        return `${scrim.backdropFilter} ${(scrim as unknown as { webkitBackdropFilter?: string }).webkitBackdropFilter ?? ""}`;
+      }),
+      barLeft: bar.getBoundingClientRect().left,
+      barRight: bar.getBoundingClientRect().right,
+      scrimTop: getComputedStyle(bar, "::before").top,
+      panelLeft: panelBox.left,
+      panelPadTop: getComputedStyle(panel).paddingTop,
       before,
       after,
       scrolled: panel.scrollTop,
@@ -238,7 +246,18 @@ test("the section bar stays put while the panel scrolls, with finger-sized chips
   // area and secondary in a sidebar, so a painted band is the wrong shade half
   // the time. It blurs what passes under it instead.
   expect(nav.background).toBe("rgba(0, 0, 0, 0)");
-  expect(nav.blur).toContain("blur");
+  // The blur is in the two scrim layers, not on the bar: a mask on the bar
+  // would fade the chips with it, and one layer can only step from blurred to
+  // sharp where two of different strengths ramp.
+  for (const scrim of nav.blur) expect(scrim).toContain("blur");
+  expect(nav.blur[0]).not.toBe(nav.blur[1]);
+  // It reaches the panel's edges and over its top padding: an inset bar leaves
+  // a sharp strip down each side and above, which reads as a drawn box.
+  expect(nav.barLeft).toBeLessThanOrEqual(nav.panelLeft + 0.5);
+  expect(nav.barRight).toBeGreaterThanOrEqual(nav.panelRight - 0.5);
+  // Sticky cannot be pulled above the scrollport, so it is the scrim that
+  // reaches up over the panel's top padding.
+  expect(parseFloat(nav.scrimTop)).toBeCloseTo(-parseFloat(nav.panelPadTop), 1);
   // It does not travel with the content it is there to navigate.
   expect(nav.after).toBeCloseTo(nav.before, 0);
   expect(nav.chips.length).toBeGreaterThanOrEqual(3);
@@ -365,4 +384,30 @@ test.describe("injected touch", () => {
 
     expect((await probe(page)).view).toEqual({ zoom: 1, offsetX: 0, offsetY: 0 });
   });
+});
+
+test("a bar too narrow for four words carries one letter per section", async ({ page }) => {
+  const labels = await page.evaluate(() => {
+    const panel = document.querySelector(".dm-control-panel") as HTMLElement;
+    const chips = Array.from(panel.querySelectorAll(".dm-section-chip")) as HTMLElement[];
+    const read = () =>
+      chips.map((chip) =>
+        (Array.from(chip.children) as HTMLElement[])
+          .filter((span) => getComputedStyle(span).display !== "none")
+          .map((span) => span.textContent)
+          .join("")
+      );
+    panel.style.width = "400px";
+    const wide = read();
+    panel.style.width = "260px";
+    const narrow = read();
+    const overflow = panel.scrollWidth - panel.clientWidth;
+    panel.style.width = "";
+    return { wide, narrow, overflow };
+  });
+
+  expect(labels.wide).toEqual(["Server", "Player", "Map", "Combat"]);
+  expect(labels.narrow).toEqual(["S", "P", "M", "C"]);
+  // Four letters never need a sideways scroll.
+  expect(labels.overflow).toBeLessThanOrEqual(0);
 });

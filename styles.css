@@ -5,7 +5,8 @@
 .dm-control-panel {
   --dm-radius: 8px;
   --dm-radius-lg: 12px;
-  padding: 12px;
+  --dm-panel-pad: 12px;
+  padding: var(--dm-panel-pad);
   /* Drive responsive rules off the panel's own width, not the window's.
      Side panels in Obsidian can be narrow even when the window is wide. */
   container-type: inline-size;
@@ -21,29 +22,51 @@
   z-index: 30;
   gap: 6px;
   padding: 6px 0 8px;
+  /* Out through the panel's own side padding: a bar inset from the edges
+     leaves a sharp strip of text down each side, which reads as a box drawn
+     around the chips rather than as a surface. */
+  margin-inline: calc(-1 * var(--dm-panel-pad));
+  padding-inline: var(--dm-panel-pad);
   /* No colour of its own: the panel sits on `--background-primary` in the main
      area and on `--background-secondary` in a sidebar, so any token painted
      here is the wrong one half the time — a black band over a grey panel. It
      blurs what passes under it instead, which is the theme's own pixels and
      the same thing Obsidian's mobile bars do. */
   background: transparent;
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
-/* The blur fades out below the bar rather than ending on a ruled line, so
-   content slides under it instead of being cut off. */
+/* The blur lives in two scrim layers behind the chips rather than on the bar,
+   because a mask on the bar would fade the chips with it. A single layer can
+   only step from blurred to sharp; a strong short one over a weak long one
+   ramps, so content scrolling under the bar goes gradually out of focus
+   instead of crossing a line. They sit behind the chips (`z-index: -1` inside
+   the bar's own stacking context) and reach up over the panel's top padding,
+   so no sharp strip is left above the bar. */
+.dm-section-nav::before,
 .dm-section-nav::after {
   content: "";
   position: absolute;
+  z-index: -1;
   left: 0;
   right: 0;
-  top: 100%;
-  height: 14px;
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  mask-image: linear-gradient(to bottom, #000, transparent);
-  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  /* Sticky cannot be pulled above the scrollport, so the bar stops under the
+     panel's top padding and the scrim reaches over it instead: otherwise a
+     sharp strip of text scrolls past above the bar. */
+  top: calc(-1 * var(--dm-panel-pad));
   pointer-events: none;
+}
+.dm-section-nav::before {
+  bottom: -18px;
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  mask-image: linear-gradient(to bottom, #000 0 62%, rgba(0, 0, 0, 0.55) 82%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0 62%, rgba(0, 0, 0, 0.55) 82%, transparent 100%);
+}
+.dm-section-nav::after {
+  bottom: -46px;
+  backdrop-filter: blur(5px) saturate(1.15);
+  -webkit-backdrop-filter: blur(5px) saturate(1.15);
+  mask-image: linear-gradient(to bottom, #000 0 55%, rgba(0, 0, 0, 0.5) 78%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0 55%, rgba(0, 0, 0, 0.5) 78%, transparent 100%);
 }
 /* Without backdrop-filter the bar would be a window onto the text scrolling
    under it, so it falls back to a surface and a rule. */
@@ -52,6 +75,7 @@
     background: var(--background-secondary);
     border-bottom: 1px solid var(--background-modifier-border);
   }
+  .dm-section-nav::before,
   .dm-section-nav::after {
     content: none;
   }
@@ -78,6 +102,10 @@
 .dm-section-nav button.dm-section-chip-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
+}
+
+.dm-section-chip-initial {
+  display: none;
 }
 
 .dm-section {
@@ -1871,9 +1899,11 @@
     padding-bottom: 12px;
   }
 
-  /* The last control has to clear the home indicator. */
-  .dm-control-panel {
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  /* The last control has to clear the home indicator. An element is never its
+     own query container, so this has to be asked of the last section rather
+     than of the panel. */
+  .dm-section:last-of-type {
+    margin-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 
   /* A layer is one line plus its opacity until it is opened: ten buttons and
@@ -1932,6 +1962,19 @@
   }
   .dm-ddb-preview .init-condition {
     min-width: 50px;
+  }
+}
+
+/* Four whole words need about 300 px between them. Below that they were each
+   clipped to a few letters, and a bar of fragments navigates nothing: one
+   letter per section is read at a glance and the full title stays in the
+   chip's `aria-label`. */
+@container dm-panel (max-width: 300px) {
+  .dm-section-chip-full {
+    display: none;
+  }
+  .dm-section-chip-initial {
+    display: inline;
   }
 }
 

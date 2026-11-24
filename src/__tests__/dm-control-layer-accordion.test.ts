@@ -162,9 +162,12 @@ describe("section jump bar", () => {
 
   const chips = (el: HTMLElement) => Array.from(el.querySelectorAll(".dm-section-chip")) as HTMLElement[];
 
-  it("puts one chip per section, first in the panel, labelled in one word", () => {
+  it("puts one chip per section, first in the panel, labelled in one word and in one letter", () => {
     const { contentEl } = panelWithSections();
-    expect(chips(contentEl).map((c) => c.textContent)).toEqual(["Player", "Combat"]);
+    const label = (c: HTMLElement, cls: string) => c.querySelector(cls)!.textContent;
+    expect(chips(contentEl).map((c) => label(c, ".dm-section-chip-full"))).toEqual(["Player", "Combat"]);
+    // The stylesheet shows this one instead once four words stop fitting.
+    expect(chips(contentEl).map((c) => label(c, ".dm-section-chip-initial"))).toEqual(["P", "C"]);
     expect(contentEl.firstElementChild!.classList.contains("dm-section-nav")).toBe(true);
     // The full title is still what a screen reader announces.
     expect(chips(contentEl)[0].getAttribute("aria-label")).toBe("Player Screen");

@@ -55,7 +55,7 @@ html, body { margin: 0; height: 100%; background: var(--background-primary); col
    lone class. The page carries it so the plugin's own rules are tested
    against the pressure they meet in the app. */
 button:not(.clickable-icon) { background: #3a3a3a; color: #dadada; }
-.dm-control-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: #262626; padding: 8px; overflow-y: auto; }
+.dm-control-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: #262626; overflow-y: auto; }
 .dm-control-panel .dm-section:last-of-type { margin-bottom: 600px; }
 .dm-layer-preview { position: relative; height: 120px; }
 .dm-layer-rect { left: 20%; top: 20%; width: 80px; height: 60px; }
@@ -85,10 +85,10 @@ button:not(.clickable-icon) { background: #3a3a3a; color: #dadada; }
 </div></div></div>
 <div class="dm-control-panel">
   <div class="dm-section-nav">
-    <button class="dm-section-chip dm-section-chip-active">Server</button>
-    <button class="dm-section-chip">Player</button>
-    <button class="dm-section-chip">Map</button>
-    <button class="dm-section-chip">Combat</button>
+    <button class="dm-section-chip dm-section-chip-active"><span class="dm-section-chip-full">Server</span><span class="dm-section-chip-initial">S</span></button>
+    <button class="dm-section-chip"><span class="dm-section-chip-full">Player</span><span class="dm-section-chip-initial">P</span></button>
+    <button class="dm-section-chip"><span class="dm-section-chip-full">Map</span><span class="dm-section-chip-initial">M</span></button>
+    <button class="dm-section-chip"><span class="dm-section-chip-full">Combat</span><span class="dm-section-chip-initial">C</span></button>
   </div>
   <div class="dm-section">
     <div class="dm-section-header">
