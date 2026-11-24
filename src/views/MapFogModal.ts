@@ -44,11 +44,13 @@ export class MapFogModal extends Modal {
   // rect wall tool: natural-coord corner of in-progress drag
   private rectAnchor: { x: number; y: number } | null = null;
   // select tool: the walls under the DM's hand, by identity, so an edit that
-  // rebuilds them re-registers the replacements
-  private selection = new Set<MapWall>();
+  // rebuilds them re-registers the replacements. Not `selection`: Obsidian's
+  // own Modal keeps the document selection it restores on close under that
+  // name, and the field would be a Selection by the time anything read it.
+  private wallSelection = new Set<MapWall>();
   // select tool: natural-coord corner of the marquee, and the live move offset
   private marqueeAnchor: { x: number; y: number } | null = null;
-  private selectionDrag: { dx: number; dy: number } | null = null;
+  private wallSelectionDrag: { dx: number; dy: number } | null = null;
   private syncSelectionUi: (() => void) | null = null;
   // The raw parse of the last import, kept so its orientation can be changed
   // without picking the file again.
@@ -308,7 +310,7 @@ export class MapFogModal extends Modal {
       });
 
       this.syncSelectionUi = () => {
-        const count = this.selection.size;
+        const count = this.wallSelection.size;
         selRow.toggleClass("dm-fog-has-selection", count > 0);
         for (const { el, needsSelection } of selBtns) {
           el.disabled = needsSelection ? count === 0 : this.panel.wallClipboard.length === 0;
@@ -384,9 +386,9 @@ export class MapFogModal extends Modal {
     ctx.drawImage(this.fogCanvas, 0, 0);
     ctx.globalAlpha = 1;
 
-    const drag = this.selectionDrag;
+    const drag = this.wallSelectionDrag;
     for (const w of this.walls) {
-      const selected = this.selection.has(w);
+      const selected = this.wallSelection.has(w);
       const off = selected && drag ? drag : { dx: 0, dy: 0 };
       ctx.save();
       ctx.lineWidth = selected ? 5 : 3;
@@ -436,36 +438,36 @@ export class MapFogModal extends Modal {
   }
 
   private clearSelection() {
-    this.selection.clear();
+    this.wallSelection.clear();
     this.marqueeAnchor = null;
-    this.selectionDrag = null;
+    this.wallSelectionDrag = null;
     this.syncSelectionUi?.();
   }
 
   // Every group edit rebuilds the wall objects, so the selection is rebuilt
   // from the replacements the mapper returns.
   private editSelection(edit: (w: MapWall) => MapWall) {
-    if (this.selection.size === 0) return;
+    if (this.wallSelection.size === 0) return;
     const next = new Set<MapWall>();
     this.walls = this.walls.map((w) => {
-      if (!this.selection.has(w)) return w;
+      if (!this.wallSelection.has(w)) return w;
       const replacement = edit(w);
       next.add(replacement);
       return replacement;
     });
-    this.selection = next;
+    this.wallSelection = next;
     void this.panel.commitWalls([...this.walls]);
     this.syncSelectionUi?.();
     this.redrawOverlay?.();
   }
 
-  private selectionBox(): { x: number; y: number; w: number; h: number } | null {
-    if (this.selection.size === 0) return null;
+  private wallSelectionBox(): { x: number; y: number; w: number; h: number } | null {
+    if (this.wallSelection.size === 0) return null;
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
-    for (const w of this.selection) {
+    for (const w of this.wallSelection) {
       minX = Math.min(minX, w.x1, w.x2);
       minY = Math.min(minY, w.y1, w.y2);
       maxX = Math.max(maxX, w.x1, w.x2);
@@ -477,7 +479,7 @@ export class MapFogModal extends Modal {
   // 90° steps around the selection's own centre: the box swaps sides, so the
   // rotated set is re-placed from the centre rather than from the old corner.
   private rotateSelection(rotation: MapRotation) {
-    const box = this.selectionBox();
+    const box = this.wallSelectionBox();
     if (!box) return;
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
@@ -485,7 +487,7 @@ export class MapFogModal extends Modal {
     const originX = cx - (sideways ? box.h : box.w) / 2;
     const originY = cy - (sideways ? box.w : box.h) / 2;
     const rotated = new Map<MapWall, MapWall>();
-    const source = [...this.selection];
+    const source = [...this.wallSelection];
     const local = source.map((w) => ({
       ...w,
       x1: w.x1 - box.x,
@@ -507,16 +509,16 @@ export class MapFogModal extends Modal {
   }
 
   private deleteSelection() {
-    if (this.selection.size === 0) return;
-    this.walls = this.walls.filter((w) => !this.selection.has(w));
+    if (this.wallSelection.size === 0) return;
+    this.walls = this.walls.filter((w) => !this.wallSelection.has(w));
     void this.panel.commitWalls([...this.walls]);
     this.clearSelection();
     this.redrawOverlay?.();
   }
 
   private copySelection() {
-    if (this.selection.size === 0) return;
-    this.panel.wallClipboard = [...this.selection].map((w) => ({ ...w }));
+    if (this.wallSelection.size === 0) return;
+    this.panel.wallClipboard = [...this.wallSelection].map((w) => ({ ...w }));
     new Notice(`Copied ${this.panel.wallClipboard.length} walls`);
     this.syncSelectionUi?.();
   }
@@ -536,7 +538,7 @@ export class MapFogModal extends Modal {
     }));
     this.walls = [...this.walls, ...pasted];
     void this.panel.commitWalls([...this.walls]);
-    this.selection = new Set(pasted);
+    this.wallSelection = new Set(pasted);
     this.panel.wallClipboard = pasted.map((w) => ({ ...w }));
     this.syncSelectionUi?.();
     this.redrawOverlay?.();
@@ -833,28 +835,28 @@ export class MapFogModal extends Modal {
     }
 
     if (hit && e.shiftKey) {
-      if (this.selection.has(hit)) this.selection.delete(hit);
-      else this.selection.add(hit);
+      if (this.wallSelection.has(hit)) this.wallSelection.delete(hit);
+      else this.wallSelection.add(hit);
       this.syncSelectionUi?.();
       redraw();
       return;
     }
 
     if (hit) {
-      if (!this.selection.has(hit)) {
-        this.selection = new Set([hit]);
+      if (!this.wallSelection.has(hit)) {
+        this.wallSelection = new Set([hit]);
         this.syncSelectionUi?.();
       }
       const stop = trackTapOrDrag(e, {
         onMove: (m) => {
           const now = this.toNatural(overlay, m.clientX, m.clientY);
-          this.selectionDrag = this.snapDelta(now.x - start.x, now.y - start.y);
+          this.wallSelectionDrag = this.snapDelta(now.x - start.x, now.y - start.y);
           redraw();
         },
         onEnd: () => {
           this.cleanupDrag = null;
-          const drag = this.selectionDrag;
-          this.selectionDrag = null;
+          const drag = this.wallSelectionDrag;
+          this.wallSelectionDrag = null;
           if (!drag || (drag.dx === 0 && drag.dy === 0)) {
             redraw();
             return;
@@ -871,7 +873,7 @@ export class MapFogModal extends Modal {
       });
       this.cleanupDrag = () => {
         stop();
-        this.selectionDrag = null;
+        this.wallSelectionDrag = null;
       };
       return;
     }
@@ -899,9 +901,9 @@ export class MapFogModal extends Modal {
           redraw();
           return;
         }
-        if (!e.shiftKey) this.selection.clear();
+        if (!e.shiftKey) this.wallSelection.clear();
         for (const w of this.walls) {
-          if (segmentCrossesBox(w, box)) this.selection.add(w);
+          if (segmentCrossesBox(w, box)) this.wallSelection.add(w);
         }
         this.syncSelectionUi?.();
         redraw();
@@ -1040,9 +1042,9 @@ export class MapFogModal extends Modal {
     this.cancelChainLongPress = null;
     this.cancelWallKeys?.();
     this.cancelWallKeys = null;
-    this.selection.clear();
+    this.wallSelection.clear();
     this.marqueeAnchor = null;
-    this.selectionDrag = null;
+    this.wallSelectionDrag = null;
     this.syncSelectionUi = null;
     this.lastImport = null;
     this.stageView = { ...IDENTITY_VIEW };
