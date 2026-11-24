@@ -69,7 +69,7 @@
 
 ### Conformance
 
-21. `make test-conformance` shall run the suite in `test/conformance/` against the embedded server (a real `PlayerScreenServer` driven in-process) and against the server container (driven through the control channel), and both runs shall pass in CI.
+21. `make test-conformance` shall run the suite in `test/conformance/` against the embedded server (a real `PlayerScreenServer` driven in-process) and against the server container (driven through the control channel). Both runs are required checks on `main` (`conformance (embedded)` and `conformance (remote)`): they are where the two servers' shared contract is stated, so neither may land unproven.
 22. The suite shall cover: routes and content types, `/health` shape, token and cookie handling, `Origin`, client limit, channel routing, every cache rule of requirement 9, late-joiner replay order, frame and rate limits, and the display allowlist. Cases that only one server implements (`/vault/` traversal on the embedded server; `Range`, the `map-fog` allowlist entry and the control channel on the remote one) shall be marked as such and skipped on the other. Derivatives are left to each server's own tests, because the embedded encoder needs Electron's WebCodecs.
 
 ## Tests covering this

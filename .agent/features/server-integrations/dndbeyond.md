@@ -6,7 +6,7 @@
 
 - `server/src/integrations/ddb.rs` — cookie to token refresh, the named operations, the poll loop with its gap and circuit breaker, `ddb-state` pushes
 - `src/integrations/remote.ts` — `RemoteGateway.ddb()`: the same surfaces over the routes below, plus the control-channel subscription
-- `src/integrations/local.ts` — `LocalDdb`: today's `DdbClient` and `DdbEncounterPoller`
+- `src/integrations/local.ts` — `LocalGateway.ddb()`: today's `DdbClient` and `DdbEncounterPoller`
 - `src/dndbeyond/client.ts`, `src/dndbeyond/poller.ts` — unchanged; the local gateway's implementation
 - `src/views/DnDBeyondPanel.ts` — the caller, now through `plugin.gateway.ddb()`
 - `src/dndbeyond/imageCache.ts` — embedded mode only; in remote mode avatars are assets

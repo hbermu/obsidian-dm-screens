@@ -6,7 +6,7 @@
 
 - `server/src/integrations/webhooks.rs` — the configured targets, the multipart post, the per-target rate limit
 - `src/integrations/remote.ts` — `RemoteGateway.webhooks()`: names from `control-hello`, send over the route below
-- `src/integrations/local.ts` — `LocalWebhooks`: today's `sendWebhookImage`
+- `src/integrations/local.ts` — `LocalGateway.webhooks()`: today's `sendWebhookImage`
 - `src/webhooks/client.ts`, `src/webhooks/multipart.ts` — unchanged; the local gateway's implementation
 - `src/views/SendToWebhookModal.ts` — the caller, now through `plugin.gateway.webhooks()`
 
