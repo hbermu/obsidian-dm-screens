@@ -1,6 +1,6 @@
 # Hydrus Integration
 
-> The DM can browse a self-hosted Hydrus Network library by tag, preview any file at full resolution (left click), and push any image as a player-screen layer or any image / video as a player-screen background or map — from the preview lightbox or the tile's right-click / ⋮ context menu. Hydrus is contacted through its Client API; downloaded files are cached in the vault so subsequent uses do not re-download. Hydrus is an optional integration — when disabled the Media from Hydrus button is hidden and no network calls are made.
+> The DM can browse a self-hosted Hydrus Network library by tag, preview any file at full resolution (left click), and push any image as a player-screen layer or any image / video as a player-screen background or map — from the preview lightbox or the tile's right-click / ⋮ context menu. Hydrus is contacted through its Client API; downloaded files are cached in the vault so subsequent uses do not re-download. Hydrus is an optional integration — when disabled the Media from Hydrus button is hidden and no network calls are made. This spec describes embedded mode; in remote mode the same surfaces are reached through the server, which holds the credentials and the files (`../server-integrations/hydrus.md`).
 
 ## Source files
 

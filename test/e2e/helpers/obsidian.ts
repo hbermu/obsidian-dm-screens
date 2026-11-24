@@ -83,7 +83,10 @@ export async function waitForNoticesToClear(): Promise<void> {
 
 export async function addMap(): Promise<void> {
   await (await panelButton("Add Map")).click();
-  await panelButton("Stop Map").waitForExist();
+  // Longer than the suite's default 10s: the picker awaits the note's Hydrus
+  // references, and in the first spec of a run the vault is still being
+  // indexed, which is where this timed out on a CI runner.
+  await panelButton("Stop Map").waitForExist({ timeout: 30_000 });
 }
 
 // Obsidian up to 1.12 renders a modal's close control as .modal-close-button;

@@ -4,6 +4,8 @@ import { MapScreenPanel } from "../views/MapScreenPanel";
 import { fogSidecarPath, loadFogSidecar } from "../map/fog";
 import { loadWallsSidecar } from "../map/walls";
 import type { MapVision, MapWall } from "../map/types";
+import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 const PNG_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -40,6 +42,11 @@ function makeServer() {
     app: { vault: { getAbstractFileByPath: () => null, readBinary: async () => new ArrayBuffer(0), adapter: {} } },
     settings: { serverPort: 3000 },
   } as any;
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
+  (plugin as any).hydrusApi = () => null;
   return new PlayerScreenServer(plugin);
 }
 
@@ -47,6 +54,10 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
   const adapter = makeAdapter(files);
   const broadcasts: Array<{ type: string; payload: Record<string, unknown> }> = [];
   const plugin = {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return (this as any).labels ??= {};
+    },
     settings: {
       mapConfigs: {} as Record<string, unknown>,
       mapDefaultPxPerSquare: 140,
@@ -67,6 +78,9 @@ function makePanel(server: PlayerScreenServer, files: Record<string, Uint8Array>
     broadcastMapCalibration: () => {},
     app: { vault: { adapter } },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).hydrusApi = () => null;
   const host = { render: () => {} };
   const panel = new MapScreenPanel(plugin as any, host as any);
   return { panel, broadcasts, files, adapter };

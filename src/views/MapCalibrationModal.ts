@@ -18,7 +18,7 @@ export class MapCalibrationModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     const key = profileKey(this.client.width, this.client.height, this.client.devicePixelRatio);
-    const existing = this.plugin.settings.mapScreenProfiles[key];
+    const existing = this.plugin.transport.mapData.profiles()[key];
     const profile: ScreenProfile = existing ? { ...existing } : { diagonalInches: 0, fineTune: 1 };
 
     contentEl.createEl("h3", { text: `Calibrate ${this.client.width}×${this.client.height} screen` });
@@ -41,12 +41,8 @@ export class MapCalibrationModal extends Modal {
     refreshPpi();
 
     const apply = () => {
-      if (profile.diagonalInches > 0 || profile.quality === "original") {
-        this.plugin.settings.mapScreenProfiles[key] = { ...profile };
-      } else {
-        delete this.plugin.settings.mapScreenProfiles[key];
-      }
-      void this.plugin.saveSettings();
+      const keep = profile.diagonalInches > 0 || profile.quality === "original";
+      this.plugin.transport.mapData.setProfile(key, keep ? profile : null);
       this.plugin.broadcastMapCalibration();
       refreshPpi();
     };
@@ -98,14 +94,14 @@ export class MapCalibrationModal extends Modal {
       .addToggle((toggle) =>
         toggle.setValue(false).onChange((value) => {
           this.overlayShown = value;
-          this.plugin.server?.broadcast({ type: "map-calibration-overlay", payload: { show: value } });
+          this.plugin.transport.sendLive({ type: "map-calibration-overlay", payload: { show: value } });
         })
       );
   }
 
   onClose() {
     if (this.overlayShown) {
-      this.plugin.server?.broadcast({ type: "map-calibration-overlay", payload: { show: false } });
+      this.plugin.transport.sendLive({ type: "map-calibration-overlay", payload: { show: false } });
     }
     this.contentEl.empty();
     this.onDone?.();

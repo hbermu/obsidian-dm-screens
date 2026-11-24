@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MapScreenPanel } from "../views/MapScreenPanel";
 import type { MapAoe, MapVision } from "../map/types";
 import { anchorToView } from "../map/vision";
+import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 interface Broadcast {
   type: string;
@@ -28,6 +30,11 @@ function makePanel() {
     broadcastMapCalibration: () => {},
     app: { vault: { adapter: { exists: () => Promise.resolve(false) } } },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
+  (plugin as any).hydrusApi = () => null;
   const releases: Array<ReturnType<typeof vi.fn>> = [];
   const host = {
     render: vi.fn(),
@@ -69,49 +76,53 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// Every drag now starts from a pointer event, so one stands in for the press.
+const press = (pointerId = 1) => new PointerEvent("pointerdown", { pointerId, clientX: 0, clientY: 0 });
+const release = (pointerId = 1) => document.dispatchEvent(new PointerEvent("pointerup", { pointerId }));
+
 describe("MapScreenPanel drag tracking", () => {
-  it("releases the panel's drag lock on mouseup", () => {
+  it("releases the panel's drag lock when the pointer is released", () => {
     const { panel, releases } = makePanel();
-    panel.trackDrag(() => {});
+    panel.trackDrag(press(), () => {});
     expect(releases[0]).not.toHaveBeenCalled();
 
-    document.dispatchEvent(new MouseEvent("mouseup"));
+    release();
     expect(releases[0]).toHaveBeenCalledTimes(1);
   });
 
-  it("tears down a prior drag whose mouseup was missed", () => {
+  it("tears down a prior drag whose release was missed", () => {
     const { panel, releases } = makePanel();
-    panel.trackDrag(() => {});
-    panel.trackDrag(() => {});
+    panel.trackDrag(press(), () => {});
+    panel.trackDrag(press(), () => {});
 
     // Without this the lock would leak and the panel would stop accepting
     // background renders for the rest of its life.
     expect(releases[0]).toHaveBeenCalledTimes(1);
     expect(releases[1]).not.toHaveBeenCalled();
 
-    document.dispatchEvent(new MouseEvent("mouseup"));
+    release();
     expect(releases[1]).toHaveBeenCalledTimes(1);
   });
 
   it("does not run the drag's onEnd when it is torn down by a newer drag", () => {
     const { panel } = makePanel();
     const onEnd = vi.fn();
-    panel.trackDrag(() => {}, onEnd);
-    panel.trackDrag(() => {});
+    panel.trackDrag(press(), () => {}, onEnd);
+    panel.trackDrag(press(), () => {});
 
     expect(onEnd).not.toHaveBeenCalled();
-    document.dispatchEvent(new MouseEvent("mouseup"));
+    release();
   });
 
   it("stops moving a torn-down drag", () => {
     const { panel } = makePanel();
     const firstMove = vi.fn();
-    panel.trackDrag(firstMove);
-    panel.trackDrag(() => {});
+    panel.trackDrag(press(), firstMove);
+    panel.trackDrag(press(), () => {});
 
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 50, clientY: 50 }));
+    document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 50, clientY: 50 }));
     expect(firstMove).not.toHaveBeenCalled();
-    document.dispatchEvent(new MouseEvent("mouseup"));
+    release();
   });
 });
 

@@ -8,6 +8,7 @@
 - `src/main.ts` — wires `startServer` / `stopServer` / `toggleServer`, applies `maxClients`, forwards client-info callbacks to the DM panel
 - `src/views/DmControlPanel.ts` — renders the server status row, Start/Stop button, and connected-client badges; the player LAN URL + Copy row lives at the top of the Player Screen section (mirroring the Map Screen section's URL row)
 - `src/player/player.ts` — client side of the WebSocket connection, handles reconnect, reads the access token from `?k=` or the `dmScreenKey` cookie
+- `src/protocol.ts` — `PROTOCOL_VERSION`, reported by `/health`
 - `src/auth.ts` — `generateAccessToken()`, `tokenMatches()` (length-independent compare), `buildJoinUrl()`
 - `src/views/MapScreenPanel.ts` — the map join link, built with the same `buildJoinUrl`
 - `docs/THREAT-MODEL.md` — trust boundary, what the token covers, and why TLS is not shipped
@@ -30,7 +31,7 @@
 3. The server shall serve `GET /player.js` with the bundled player script.
 4. The server shall serve `GET /player.css` with the inline CSS.
 4b. The server shall serve `GET /map` (inline HTML from `buildMapHtml()`), `GET /map.js` (bundled map script), and `GET /map.css` (inline map CSS).
-5. The server shall serve `GET /health` with JSON `{ status: "ok", clients: <count> }`.
+5. The server shall serve `GET /health` with JSON `{ status: "ok", clients: <count>, protocol: <PROTOCOL_VERSION>, version: <plugin version> }`, where `PROTOCOL_VERSION` comes from `src/protocol.ts` and the version is `manifest.version` (`"dev"` when absent). The remote server answers the same shape (`../remote-server/server.md` requirement 5).
 6. The server shall serve `GET /vault/<path>` via the vault-routing rules defined in `vault-routing.md`.
 7. The server shall return HTTP 404 for any other path.
 8. When a WebSocket client connects, the server shall reject it with close code `1013` and reason `"Max clients reached"` if `clientCount >= maxClients`.
@@ -42,7 +43,7 @@
 14. When the DM calls `broadcast(message)` with any type other than `clear`/`map-clear`, the server shall store the serialised message in the late-joiner cache, keyed by `message.type`, overwriting any previous entry of that type.
 15. When the server stops, the server shall close every active WebSocket connection, clear its client set, close the HTTP listener, and destroy any lingering HTTP connections (via `httpServer.closeAllConnections()`) so idle keep-alive sockets do not hold the port bound on older runtimes.
 16. If `autoStartServer` is true, then on plugin load the server shall start.
-17. If the workspace contains an open DM Control Panel, when the connected-client count changes the server shall trigger that panel to re-render (debounced) so it can reflect the new count and resolutions. This background re-render shall be deferred while an `INPUT`/`TEXTAREA` inside the panel is focused, and flushed when that field loses focus, so a client connecting mid-typing does not move the caret out from under the DM. The flush shall be skipped when the `focusout` hands focus to another element inside the panel: pressing a button blurs the focused field before the button's own handler runs, so a render let through there reflows the panel mid-click and the click lands where the control used to be. The deferred render then waits for a `focusout` that leaves the panel. Independently of the deferral, whatever the DM has typed shall survive a render in its own right — see `combat-tracker/manual-mode.md` requirement 2 for the add-combatant form.
+17. If the workspace contains an open DM Control Panel, when the connected-client count changes the server shall trigger that panel to re-render (debounced) so it can reflect the new count and resolutions. This background re-render shall be deferred while an `INPUT`/`TEXTAREA` inside the panel is focused, and flushed when that field loses focus, so a client connecting mid-typing does not move the caret out from under the DM. The flush shall be skipped when the `focusout` hands focus to another element inside the panel: pressing a button blurs the focused field before the button's own handler runs, so a render let through there reflows the panel mid-click and the click lands where the control used to be. The deferred render then waits for a `focusout` that leaves the panel. Independently of the deferral, whatever the DM has typed shall survive a render in its own right — see `../combat-tracker/manual-mode.md` requirement 2 for the add-combatant form.
 18. The server shall expose a `clientCount` accessor and a `getConnectedClients()` accessor returning the array of `ClientInfo` payloads.
 19. `buildPlayerHtml()` shall inline the current `waitingTitle` and `waitingSubtitle` into the `#waiting-screen` markup, HTML-escaping the values. Empty values shall cause the corresponding `<h1>` or `<p>` to be omitted entirely.
 20. After `startServer()` succeeds, the plugin shall call `broadcastWaitingScreen()` to seed the late-joiner cache with the current waiting-screen text.
@@ -65,18 +66,15 @@ The server is the transport for every DM → player and player → DM message. T
 ## Tests covering this
 
 - `src/__tests__/server.test.ts` — basic start / stop / port binding
-- `src/__tests__/server-bootstrap.integration.test.ts` — real `PlayerScreenServer` + real `ws` client connection
-- `src/__tests__/server-broadcast.test.ts` — `broadcast()` filters by `readyState`, populates late-joiner cache
-- `src/__tests__/server-max-clients.test.ts` — `maxClients` enforced with close code `1013`
+- `src/__tests__/server-broadcast.test.ts` — `broadcast()` filters by `readyState`, populates late-joiner cache, and `maxClients` defaults to ten
 - `src/__tests__/server-vault-path.test.ts` — `/vault/` path-traversal guard (see `vault-routing.md`)
-- `src/__tests__/server-combat-scale.test.ts` — `combat-scale` broadcast end-to-end
 - `src/__tests__/auth.test.ts` — token shape and uniqueness, length-independent compare (prefix, extension, empty secret and candidate), join-URL construction and percent-encoding
-- `src/__tests__/server-auth.integration.test.ts` — real `ws` handshakes: no token and wrong token close `1008`, right token opens, cookie-supplied token opens, cross-origin `Origin` closes `1008`, matching `Origin` opens, `/map?k=` still routes to the map channel, a 40-message burst closes `1008`, `disconnectAllClients()` drops every socket
-- `src/__tests__/server-vault-allowlist.integration.test.ts` — `401` before the allowlist and before any disk read, `401` on a wrong token, `401` on the player page, `/health` open, and the `dmScreenKey` cookie set on `/`
+- `src/__tests__/server-vault-allowlist.integration.test.ts` — the two things a black-box suite cannot see: a denied path answers `404` without a single call reaching the vault adapter, and the player page sets the `dmScreenKey` cookie so a reload without `?k=` still renders
 - `src/__tests__/main.test.ts` — `loadSettings` mints and persists a token when none is stored and keeps an existing one
 - `src/__tests__/smoke.test.ts` — module loads, exports present
-- `src/__tests__/server-stop-keepalive.integration.test.ts` — `stop()` destroys idle keep-alive sockets so the port rebinds immediately (req 15)
+- `src/__tests__/server-stop-keepalive.integration.test.ts` — `stop()` destroys idle keep-alive sockets so the port rebinds immediately (req 15); `disconnectAllClients()` closes every viewer socket with `1008`
 - `src/__tests__/dm-control-render-guard.test.ts` — a background re-render is deferred while a panel input is focused, kept deferred when focus moves to another control in the panel, and flushed once focus leaves it (req 17)
+- `test/conformance/*.conformance.ts` — the black-box viewer contract shared with the remote server (`make test-conformance`), and the merge gate for it on both targets: routes and content types, `/health` shape, token and cookie, `Origin`, client limit, channel routing, cache rules and replay order, frame and rate limits, display allowlist
 - `src/__tests__/bundle-smoke.integration.test.ts` — production `main.js` builds and contains the server class
 - `test/visual/*.spec.ts` — Playwright visual regression suite. Boots a real `PlayerScreenServer` against the production player bundle (via `scripts/build-player.mjs` + a CJS-bundled `server-entry.ts` built in `test/visual/harness/build-host.mjs`) and asserts pixel-stable screenshots of waiting screen, background image, image-layers-sync, fog overlays (full / circle / rect / freehand), and the initiative tracker. Baselines must be generated inside the official Microsoft Playwright container so local and CI render identically.
 - `test/e2e/specs/smoke.e2e.ts` — real Obsidian: plugin loads and enables, both commands registered, ribbon icon present, DM Control Panel opens with its sections

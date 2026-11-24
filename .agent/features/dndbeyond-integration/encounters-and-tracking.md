@@ -5,6 +5,7 @@
 ## Source files
 
 - `src/dndbeyond/client.ts` — `getEncounters`, `getEncounter`, `parseEncounter` (parser strips hidden players and the abstract player type)
+- `src/dndbeyond/parse.ts` — `unwrapData`, `parseEncounter`, `parseCharacter`: D&D Beyond's bodies turned into the shapes the panel works with, shared by the client and by the remote gateway's pushed states
 - `src/views/DnDBeyondPanel.ts` — `initialize`, `selectEncounter`, `startTracking`, `stopTracking`, `onPollUpdate`, `broadcastToPlayerScreen`, `buildParticipants`, `renderPreview`, `openMonsterMenu`, `openRenameModal`, `openConditionsModal`, `applyMonsterName`, `resetMonsterName`, `applyMonsterStatuses`, `getActiveEncounterStatus`, `isTracking`, the Show PC HP / Show full turn order toggles
 - `src/views/DnDBeyondEncounterModal.ts` — modal launched by the `Choose Encounter` button; fetches the encounter list on each open and invokes a callback when a row is clicked
 - `src/views/RenameMonsterModal.ts` — text-input modal for an ephemeral monster display-name override, opened from the row's right-click `Rename…`
@@ -41,7 +42,7 @@
 
 ### Tracking lifecycle
 
-11. `startTracking(encounterId)` shall instantiate a `DdbEncounterPoller` with `onUpdate = onPollUpdate` and `onError = onPollError`, and call its `start`.
+11. `startTracking(encounterId)` shall ask the gateway to track that encounter (`../server-integrations/dndbeyond.md` requirement 12) with `onUpdate = onPollUpdate` and `onError = onPollError`. Selecting an encounter shall go straight to it without stopping the previous one first: the call replaces what was being tracked, and asking for a stop and a start together raced over the network in remote mode, leaving the server tracking nothing.
 12. `stopTracking` shall stop the poller, clear `selectedEncounterId` and `polledState`, send an empty `initiative-update`, re-render, and call `onTrackingChange`. The tab itself does not expose a dedicated "stop" button; stopping is driven from `DmControlPanel.stopAllCombatBroadcast` (the `● Live` button in the COMBAT section header) and from `DnDBeyondPanel.destroy()`.
 13. `isTracking` shall return true when both `poller` and `selectedEncounterId` are set.
 14. `getActiveEncounterStatus` shall return `{ id, name, roundNum }` while tracking, else `null`.
@@ -75,7 +76,7 @@
 ## Tests covering this
 
 - `src/__tests__/ddb-client.test.ts` — `parseEncounter` (hidden filter, abstract filter, id coercion)
-- `src/__tests__/ddb-panel-tracking-state.test.ts` — broadcast shape, sort, active-turn calc, reveal rule, PC HP toggle, `showFullTurnOrder` defaults and user-override stickiness, `getActiveEncounterStatus` id
+- `src/__tests__/ddb-panel-tracking-state.test.ts` — switching encounters asks for the new one and never a stop in the same breath, while an explicit stop still sends `null` (requirement 11); broadcast shape, sort, active-turn calc, reveal rule, PC HP toggle, `showFullTurnOrder` defaults and user-override stickiness, `getActiveEncounterStatus` id
 - `src/__tests__/ddb-encounter-modal.test.ts` — modal renders rows from fetch, click invokes `onSelect` + closes, stale fetch is discarded
 - `src/__tests__/ddb-to-player.integration.test.ts` — end-to-end poll → broadcast → `ws` client
 - `src/__tests__/ddb-fixture-replay.integration.test.ts` — fixture replay: happy path, encounter not in progress, `manualEntries` parse alongside players and monsters

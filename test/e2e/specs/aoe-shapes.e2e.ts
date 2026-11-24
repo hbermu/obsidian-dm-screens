@@ -15,6 +15,12 @@ async function addShape(name: string): Promise<void> {
   await browser.$(`.menu-item-title=${name}`).click();
 }
 
+// Resolved at the moment of use, never held: adding a shape re-renders the
+// panel after the broadcast the test waits for, and a node captured before
+// that render is already gone when the driver reaches for it.
+const cardHeader = () => browser.$(".dm-control-panel .dm-control-card .dm-control-card-header");
+const cardBody = () => browser.$(".dm-control-panel .dm-control-card .dm-control-card-body");
+
 describe("aoe shapes, rotation, clear, and the spell catalog", function () {
   let rec: WsRecorder;
 
@@ -48,12 +54,12 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     const sync = await rec.waitFor("map-aoe-sync", { skip: seen, where: (m) => aoes(m).length === 1 });
     expect(aoes(sync)[0].shape).toBe("cone");
 
+    // The rotation handle belongs to the live AoE, so open its card first.
+    await cardHeader().click();
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).toExist();
     // Cone has no width/thickness field — neither label is rendered even when expanded.
-    const card = browser.$(".dm-control-panel .dm-control-card");
-    await card.$(".dm-control-card-header").click();
-    await expect(card.$(".dm-control-card-body").$("span*=Width")).not.toExist();
-    await expect(card.$(".dm-control-card-body").$("span*=Thickness")).not.toExist();
+    await expect(cardBody().$("span*=Width")).not.toExist();
+    await expect(cardBody().$("span*=Thickness")).not.toExist();
   });
 
   it("Line adds a width field and a rotation handle", async function () {
@@ -63,9 +69,8 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     expect(aoes(sync)[0].shape).toBe("line");
     expect(typeof aoes(sync)[0].widthFt).toBe("number");
 
-    const card = browser.$(".dm-control-panel .dm-control-card");
-    await card.$(".dm-control-card-header").click();
-    await expect(card.$(".dm-control-card-body").$("span*=Width")).toExist();
+    await cardHeader().click();
+    await expect(cardBody().$("span*=Width")).toExist();
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).toExist();
   });
 
@@ -75,9 +80,8 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     const sync = await rec.waitFor("map-aoe-sync", { skip: seen, where: (m) => aoes(m).length === 1 });
     expect(aoes(sync)[0].shape).toBe("ring");
 
-    const card = browser.$(".dm-control-panel .dm-control-card");
-    await card.$(".dm-control-card-header").click();
-    await expect(card.$(".dm-control-card-body").$("span*=Thickness")).toExist();
+    await cardHeader().click();
+    await expect(cardBody().$("span*=Thickness")).toExist();
     // Ring is rotationally symmetric — no rotation handle in the preview.
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).not.toExist();
   });
@@ -87,6 +91,8 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     await addShape("Cone");
     await rec.waitFor("map-aoe-sync", { skip: seenAdd, where: (m) => aoes(m).length === 1 });
 
+    // The rotation handle exists only while the AoE's card is open.
+    await browser.$(".dm-control-panel .dm-control-card .dm-control-card-header").click();
     const handle = browser.$(".dm-control-panel .dm-map-aoe-rot-handle");
     await handle.waitForExist();
     await handle.scrollIntoView({ block: "center" });

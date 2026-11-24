@@ -1,13 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
 import { SendToWebhookModal } from "../views/SendToWebhookModal";
-import { sendWebhookImage } from "../webhooks/client";
 import type { ImageLayer } from "../types";
 import type { WebhookConfig } from "../webhooks/types";
 
-vi.mock("../webhooks/client", () => ({
-  sendWebhookImage: vi.fn(async () => undefined),
-}));
 
 beforeAll(() => {
   if (!HTMLElement.prototype.addClass) {
@@ -89,8 +85,16 @@ function makeLayer(overrides: Partial<ImageLayer> = {}): ImageLayer {
   };
 }
 
-function makePlugin(webhooks: WebhookConfig[]): unknown {
-  return { settings: { webhooks } };
+function makePlugin(webhooks: WebhookConfig[]): any {
+  const send = vi.fn(async () => {});
+  return {
+    settings: { webhooks },
+    transport: { mode: "embedded", publishMedia: async (url: string) => url },
+    gateway: {
+      webhooks: () => ({ targets: () => webhooks.map((w) => ({ id: w.id, name: w.name })), send }),
+    },
+    sentWith: send,
+  };
 }
 
 afterEach(() => {
@@ -128,7 +132,7 @@ describe("SendToWebhookModal", () => {
     expect(ta.value).toBe("Tavern map");
   });
 
-  it("calls sendWebhookImage with the selected webhook, layer dataUrl, and current caption", async () => {
+  it("sends through the gateway with the selected target, the layer's image and the current caption", async () => {
     const wh1: WebhookConfig = {
       id: "wh1",
       name: "Telegram",
@@ -145,11 +149,8 @@ describe("SendToWebhookModal", () => {
       captionField: "content",
       extraFields: [],
     };
-    const modal = new SendToWebhookModal(
-      {} as App,
-      makePlugin([wh1, wh2]) as never,
-      makeLayer(),
-    );
+    const plugin = makePlugin([wh1, wh2]);
+    const modal = new SendToWebhookModal({} as App, plugin as never, makeLayer());
     modal.onOpen();
 
     const select = modal.contentEl.querySelector("select") as HTMLSelectElement;
@@ -167,12 +168,8 @@ describe("SendToWebhookModal", () => {
 
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(sendWebhookImage).toHaveBeenCalledTimes(1);
-    expect(sendWebhookImage).toHaveBeenCalledWith(
-      wh2,
-      expect.stringContaining("base64"),
-      "Custom caption",
-    );
+    expect(plugin.sentWith).toHaveBeenCalledTimes(1);
+    expect(plugin.sentWith).toHaveBeenCalledWith("wh2", expect.stringContaining("base64"), "Custom caption");
   });
 
   it("shows a configure-first message when no webhooks are configured", () => {

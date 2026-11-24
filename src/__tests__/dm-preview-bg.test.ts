@@ -1,40 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  isVideoBackgroundUrl,
-  resolveBackgroundPreviewUrl,
-} from "../views/DmControlPanel";
-
-describe("resolveBackgroundPreviewUrl", () => {
-  it("returns null when activeUrl is null", () => {
-    expect(resolveBackgroundPreviewUrl(null, { getResourcePath: () => "x" })).toBeNull();
-  });
-
-  it("returns the URL unchanged when it does not start with /vault/", () => {
-    const adapter = { getResourcePath: vi.fn(() => "x") };
-    expect(resolveBackgroundPreviewUrl("https://cdn.example/foo.png", adapter)).toBe(
-      "https://cdn.example/foo.png"
-    );
-    expect(adapter.getResourcePath).not.toHaveBeenCalled();
-  });
-
-  it("decodes the /vault/ prefix and delegates to adapter.getResourcePath", () => {
-    const adapter = { getResourcePath: vi.fn((p: string) => `app://resource/${p}`) };
-    const out = resolveBackgroundPreviewUrl("/vault/foo%20bar.png", adapter);
-    expect(adapter.getResourcePath).toHaveBeenCalledWith("foo bar.png");
-    expect(out).toBe("app://resource/foo bar.png");
-  });
-
-  it("handles dotfolder Hydrus cache paths", () => {
-    const adapter = { getResourcePath: vi.fn((p: string) => `app://res/${p}`) };
-    const out = resolveBackgroundPreviewUrl("/vault/.dm-screen/hydrus/abc.webm", adapter);
-    expect(adapter.getResourcePath).toHaveBeenCalledWith(".dm-screen/hydrus/abc.webm");
-    expect(out).toBe("app://res/.dm-screen/hydrus/abc.webm");
-  });
-
-  it("returns null when adapter has no getResourcePath implementation", () => {
-    expect(resolveBackgroundPreviewUrl("/vault/foo.png", {})).toBeNull();
-  });
-});
+import { describe, expect, it } from "vitest";
+import { isVideoBackgroundUrl } from "../views/DmControlPanel";
 
 describe("isVideoBackgroundUrl", () => {
   it("recognises common video extensions", () => {

@@ -119,6 +119,10 @@ export interface ImageLayer {
   fogEnabled: boolean;
   fogDataUrl: string; // data URL of the fog canvas (black = fogged, transparent = revealed)
   bordered: boolean;
+  // Where the image came from, as a scene source reference (`vault:<path>` or
+  // `hydrus:<sha256>`). DM-side only: never sent to screens, so vault paths do
+  // not leak to player devices. Absent on layers created before it existed.
+  source?: string;
 }
 
 // Window API augmentations

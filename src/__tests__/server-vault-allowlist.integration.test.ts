@@ -69,6 +69,12 @@ function fetch(port: number, path: string, token: string | null = TEST_TOKEN): P
   });
 }
 
+// What survives here is what the conformance suite cannot state: that a denied
+// path never reaches the vault adapter at all, and that the player page hands
+// the browser the token so a reload without ?k= still renders. The serving,
+// revocation and token rules themselves are asserted against both servers in
+// test/conformance/ (assets, auth, http), and the allowlist's own bookkeeping
+// in server-vault-allowlist.test.ts.
 describe("PlayerScreenServer /vault/ display allowlist", () => {
   let server: PlayerScreenServer;
   let port: number;
@@ -96,159 +102,11 @@ describe("PlayerScreenServer /vault/ display allowlist", () => {
     expect(spies.readBinary).not.toHaveBeenCalled();
   });
 
-  it("refuses to read an undisplayed note (404, no disk read)", async () => {
-    const res = await fetch(port, "/vault/notes/secret.md");
-    expect(res.status).toBe(404);
-    expect(spies.getAbstractFileByPath).not.toHaveBeenCalled();
-    expect(spies.exists).not.toHaveBeenCalled();
-    expect(spies.readBinary).not.toHaveBeenCalled();
-  });
-
-  it("serves a vault background after show-background-media", async () => {
-    server.broadcast({
-      type: "show-background-media",
-      payload: { url: "/vault/bg.webm", mediaType: "video" },
-    });
-    const res = await fetch(port, "/vault/bg.webm");
-    expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toBe("video/webm");
-    expect(res.body.toString()).toBe("BACKGROUND-VIDEO");
-  });
-
-  it("revokes the background on hide-background-media (404, no disk read)", async () => {
-    server.broadcast({
-      type: "show-background-media",
-      payload: { url: "/vault/bg.webm", mediaType: "video" },
-    });
-    server.broadcast({ type: "hide-background-media", payload: {} });
-    spies.readBinary.mockClear();
-    spies.getAbstractFileByPath.mockClear();
-    spies.exists.mockClear();
-
-    const res = await fetch(port, "/vault/bg.webm");
-    expect(res.status).toBe(404);
-    expect(spies.readBinary).not.toHaveBeenCalled();
-    expect(spies.getAbstractFileByPath).not.toHaveBeenCalled();
-    expect(spies.exists).not.toHaveBeenCalled();
-  });
-
-  it("revokes everything on clear", async () => {
-    server.broadcast({
-      type: "show-background-media",
-      payload: { url: "/vault/bg.webm", mediaType: "video" },
-    });
-    server.broadcast({ type: "clear", payload: {} });
-    spies.readBinary.mockClear();
-
-    const res = await fetch(port, "/vault/bg.webm");
-    expect(res.status).toBe(404);
-    expect(spies.readBinary).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unauthenticated vault request before the allowlist or any disk read", async () => {
-    server.broadcast({ type: "show-background-media", payload: { url: "/vault/bg.webm" } });
-    const res = await fetch(port, "/vault/bg.webm", null);
-    expect(res.status).toBe(401);
-    expect(spies.getAbstractFileByPath).not.toHaveBeenCalled();
-    expect(spies.exists).not.toHaveBeenCalled();
-    expect(spies.readBinary).not.toHaveBeenCalled();
-  });
-
-  it("rejects a wrong token on an allowlisted path", async () => {
-    server.broadcast({ type: "show-background-media", payload: { url: "/vault/bg.webm" } });
-    const res = await fetch(port, "/vault/bg.webm", "0123456789abcdef0123456789abcdee");
-    expect(res.status).toBe(401);
-    expect(spies.readBinary).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unauthenticated request for the player page", async () => {
-    const res = await fetch(port, "/", null);
-    expect(res.status).toBe(401);
-  });
-
-  it("leaves /health open so the DM panel keeps polling after a token change", async () => {
-    const res = await fetch(port, "/health", null);
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body.toString()).status).toBe("ok");
-  });
-
   it("sets the token cookie on the player page so a reload without ?k= still works", async () => {
     const res = await fetch(port, "/");
     expect(res.status).toBe(200);
     expect(String(res.headers["set-cookie"])).toContain(`dmScreenKey=${TEST_TOKEN}`);
     expect(String(res.headers["set-cookie"])).toContain("SameSite=Strict");
-  });
-
-  it("still returns 400 for traversal attempts before consulting the allowlist", async () => {
-    const res = await fetch(port, "/vault/..%2F..%2Fetc%2Fpasswd");
-    expect(res.status).toBe(400);
-    expect(spies.readBinary).not.toHaveBeenCalled();
-    expect(spies.getAbstractFileByPath).not.toHaveBeenCalled();
-  });
-
-  it("admits vault-backed layer paths from image-layers-sync", async () => {
-    server.broadcast({
-      type: "image-layers-sync",
-      payload: {
-        layers: [
-          {
-            id: "layer-1",
-            label: "Dungeon Map",
-            dataUrl: "/vault/maps/dungeon.png",
-            fogDataUrl: "data:image/png;base64,AAAA",
-            x: 0,
-            y: 0,
-            width: 100,
-            height: 100,
-            zIndex: 0,
-            rotation: 0,
-            visible: true,
-            fogEnabled: true,
-            bordered: false,
-          },
-        ],
-      },
-    });
-    const res = await fetch(port, "/vault/maps/dungeon.png");
-    expect(res.status).toBe(200);
-  });
-
-  it("serves background and layer paths as a union (hiding background leaves layers)", async () => {
-    server.broadcast({
-      type: "show-background-media",
-      payload: { url: "/vault/bg.webm", mediaType: "video" },
-    });
-    server.broadcast({
-      type: "image-layers-sync",
-      payload: {
-        layers: [
-          {
-            id: "layer-1",
-            label: "Map",
-            dataUrl: "/vault/maps/a.png",
-            fogDataUrl: "data:",
-            x: 0,
-            y: 0,
-            width: 100,
-            height: 100,
-            zIndex: 0,
-            rotation: 0,
-            visible: true,
-            fogEnabled: false,
-            bordered: false,
-          },
-        ],
-      },
-    });
-    server.broadcast({ type: "hide-background-media", payload: {} });
-
-    const layer = await fetch(port, "/vault/maps/a.png");
-    expect(layer.status).toBe(200);
-
-    spies.readBinary.mockClear();
-    const bg = await fetch(port, "/vault/bg.webm");
-    expect(bg.status).toBe(404);
-    expect(spies.readBinary).not.toHaveBeenCalled();
   });
 });
 

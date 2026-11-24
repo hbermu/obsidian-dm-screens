@@ -1,21 +1,22 @@
 import { ItemView, Menu, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import type DmScreenPlugin from "../main";
-import type { TrackerCombatant, ImageLayer } from "../types";
+import type { TrackerCombatant, ImageLayer, LayerGeometry } from "../types";
 import { renderStatblock } from "./StatblockPanel";
 import { DnDBeyondPanel } from "./DnDBeyondPanel";
 import { MapScreenPanel } from "./MapScreenPanel";
 import type { ClientInfo } from "../server";
 import { vaultPathFromUrl } from "../server";
 import { SendToWebhookModal } from "./SendToWebhookModal";
+import { TakeControlModal } from "./TakeControlModal";
 import { buildLayerContextMenu } from "./layerContextMenu";
 import { parseHydrusRefs, resolveHydrusRefs, ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { recoverVaultImage } from "../hydrus/recoverImage";
 import { sortByInitiative, clampTrackerScale, advanceTurn, applyRound1Reveal } from "../combat/tracker";
-import { encodeForVaultUrl, uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
+import { uniqueLayerLabel, layerLabelFromTags } from "./HydrusExplorerModal";
 import { resolveSourceLabel, type SourceLabel } from "../sourceLabel";
 import { debug, debugWarn, debugError } from "../debug";
 import { CONDITIONS, decodeStatus, encodeExhaustion } from "../conditions";
-import { buildJoinUrl } from "../auth";
+import { onLongPress, trackPointerDrag, trackTapOrDrag } from "./pointerDrag";
 
 export const DM_CONTROL_VIEW_TYPE = "dm-control-panel";
 
@@ -69,6 +70,9 @@ export class DmControlPanel extends ItemView {
 
   // Per-layer fog drawing state
   private fogEditLayerId: string | null = null;
+  // The layer whose controls are open while the panel is narrow enough to
+  // show them one at a time.
+  private expandedLayerId: string | null = null;
   private fogTool: "reveal-circle" | "reveal-rect" | "reveal-eraser" | "fog-circle" | "fog-rect" | "fog-pen" = "reveal-rect";
   private fogCanvases = new Map<string, HTMLCanvasElement>(); // layer id → offscreen fog canvas
   private static FOG_RESOLUTION = 1024; // fog canvas width (height scales with aspect)
@@ -123,7 +127,7 @@ export class DmControlPanel extends ItemView {
   private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
   private layerGeometryTimer: ReturnType<typeof setTimeout> | null = null;
   private panZoomAbort: AbortController | null = null;
-  private restored: Promise<void> | null = null;
+  restored: Promise<void> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DmScreenPlugin) {
     super(leaf);
@@ -144,13 +148,11 @@ export class DmControlPanel extends ItemView {
   }
 
   setBackgroundLabel(label: SourceLabel | null) {
-    if (!this.plugin.settings.lastSourceLabels) {
-      this.plugin.settings.lastSourceLabels = {};
-    }
+    const labels = this.plugin.sourceLabels();
     if (label) {
-      this.plugin.settings.lastSourceLabels.background = label;
+      labels.background = label;
     } else {
-      delete this.plugin.settings.lastSourceLabels.background;
+      delete labels.background;
     }
     void this.plugin.saveSettings();
   }
@@ -223,6 +225,12 @@ export class DmControlPanel extends ItemView {
       this.connectedClients = [{ width: s.lastPlayerScreenWidth, height: s.lastPlayerScreenHeight, devicePixelRatio: 1 }];
       this.playerConnected = true;
     }
+    if (!this.plugin.sessionIsLocal()) {
+      // The server's hello rebuilds this panel; data.json holds the last
+      // embedded session and must not be shown over the remote one.
+      debug("DmControlPanel: restoreState skipped — the server owns the session");
+      return;
+    }
     try {
       const layers = JSON.parse(s.lastImageLayers);
       if (Array.isArray(layers) && layers.length > 0) {
@@ -247,7 +255,7 @@ export class DmControlPanel extends ItemView {
       "cache entries:", Object.keys(s.lastBroadcastCache ?? {}).length,
       "bg:", this.activeBackgroundUrl ?? "(none)"
     );
-    if (this.plugin.server && this.imageLayers.length > 0) {
+    if (this.plugin.transport.isLive() && this.imageLayers.length > 0) {
       this.broadcastImageLayers();
     }
   }
@@ -265,7 +273,7 @@ export class DmControlPanel extends ItemView {
       return;
     }
 
-    const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+    const savedLabel = this.plugin.sourceLabels().background;
     const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin }).label;
     new Notice(`Background "${label}" is no longer available`);
     this.activeBackgroundUrl = null;
@@ -277,7 +285,7 @@ export class DmControlPanel extends ItemView {
   }
 
   async republishToServer() {
-    if (!this.plugin.server) return;
+    if (!this.plugin.transport.isLive()) return;
     if (this.restored) await this.restored;
     if (this.imageLayers.length > 0) {
       debug("DmControlPanel: republishToServer — layers:", this.imageLayers.length);
@@ -308,7 +316,7 @@ export class DmControlPanel extends ItemView {
     }
     const map = this.mapPanel.mapClients[0];
     if (map) s.lastMapScreenClient = { width: map.width, height: map.height, devicePixelRatio: map.devicePixelRatio };
-    s.lastImageLayers = JSON.stringify(this.imageLayers);
+    if (this.plugin.sessionIsLocal()) s.lastImageLayers = JSON.stringify(this.imageLayers);
     this.plugin.saveSettings();
   }
 
@@ -446,13 +454,22 @@ export class DmControlPanel extends ItemView {
     const scrollTop = container.scrollTop;
     container.empty();
     container.addClass("dm-control-panel");
+    const readonly = !this.plugin.canEditSession();
+    container.classList.toggle("dm-readonly", readonly);
 
     this.renderServerSection(container);
-    this.renderHydrusBar(container);
-    this.renderPlayerScreenSection(container);
-    this.mapPanel.renderSection(container);
-    this.renderInitiativeSection(container);
+    if (readonly) this.renderReadonlyBanner(container);
+    // Inert while read-only: nothing below can broadcast or persist, and it
+    // cannot take focus either, so the keyboard cannot reach it.
+    const session = container.createDiv("dm-session");
+    session.inert = readonly;
+    this.renderHydrusBar(session);
+    this.renderPlayerScreenSection(session);
+    this.mapPanel.renderSection(session);
+    this.renderInitiativeSection(session);
     for (const mirror of this.combatMirrors) this.renderCombatMirror(mirror);
+
+    this.renderSectionNav(container);
 
     this.broadcastInitialScale();
     container.scrollTop = scrollTop;
@@ -461,6 +478,113 @@ export class DmControlPanel extends ItemView {
     requestAnimationFrame(() => {
       container.scrollTop = scrollTop;
     });
+  }
+
+  private navAbort: AbortController | null = null;
+  // One word per chip: "Player Screen Server" and "Player Screen" are the same
+  // word until the third, and a bar of truncated titles navigates nothing.
+  private static readonly NAV_LABELS: Record<string, string> = {
+    server: "Server",
+    "player-screen": "Player",
+    "map-screen": "Map",
+    combat: "Combat",
+  };
+
+  // A phone shows one section at a time and the panel is a long column, so it
+  // gets what a long column needs: a fixed way to jump. The bar is outside the
+  // session wrapper, so it still works while the session is read-only — it
+  // navigates, it does not edit.
+  private renderSectionNav(container: HTMLElement) {
+    this.navAbort?.abort();
+    const sections = Array.from(container.querySelectorAll<HTMLElement>(".dm-section"));
+    if (sections.length < 2) return;
+
+    this.navAbort = new AbortController();
+    const { signal } = this.navAbort;
+    const nav = container.createDiv("dm-section-nav");
+
+    // The bar paints the surface it sits on, and which token that is depends
+    // on where the panel was opened — the main area, a sidebar, a phone's
+    // drawer. Choosing the token by selector got it wrong on mobile (a black
+    // band over a grey panel), so the colour is read from whatever actually
+    // paints behind the panel. The stylesheet's own default stands in when
+    // nothing up the tree paints anything.
+    for (let el: HTMLElement | null = container; el; el = el.parentElement) {
+      const painted = getComputedStyle(el).backgroundColor;
+      if (painted && painted !== "transparent" && !painted.startsWith("rgba(0, 0, 0, 0)")) {
+        nav.style.setProperty("--dm-nav-surface", painted);
+        break;
+      }
+    }
+    const chips = sections.map((section) => {
+      const title = section.querySelector("h3")?.textContent ?? "Section";
+      const key = section.dataset.sectionKey ?? "";
+      const label = DmControlPanel.NAV_LABELS[key] ?? title;
+      const chip = nav.createEl("button", { cls: "dm-section-chip" });
+      // Both labels are in the DOM and the stylesheet picks one: a panel too
+      // narrow for four words shows four letters instead of four fragments.
+      chip.createSpan({ text: label, cls: "dm-section-chip-full" });
+      chip.createSpan({ text: label.slice(0, 1), cls: "dm-section-chip-initial" });
+      chip.setAttribute("aria-label", title);
+      chip.addEventListener("click", () => {
+        // A folded section cannot be read, so jumping to it unfolds it.
+        if (this.collapsedSections.delete(key)) section.classList.remove("dm-section-collapsed");
+        section.scrollIntoView({ block: "start" });
+        markActive(section);
+      });
+      return { section, chip };
+    });
+    container.insertBefore(nav, container.firstChild);
+
+    const markActive = (active: HTMLElement) => {
+      for (const { section, chip } of chips) chip.toggleClass("dm-section-chip-active", section === active);
+    };
+
+    // Read straight from the scroll event rather than through
+    // `requestAnimationFrame`: Electron does not run animation frames for a
+    // window that is not on screen, and a queued one that never arrived left
+    // the bar stuck on whatever it last marked. Four rect reads per scroll
+    // cost nothing.
+    // Whichever ancestor actually scrolls — the panel on a desktop, something
+    // Obsidian owns on mobile.
+    const scroller = () => {
+      let el: HTMLElement | null = container;
+      while (el) {
+        if (el.scrollHeight - el.clientHeight > 2) return el;
+        el = el.parentElement;
+      }
+      return null;
+    };
+
+    const sync = () => {
+      // Nothing to track while the bar is hidden (a panel wide enough to show
+      // every section at once).
+      if (nav.offsetParent === null) return;
+      // The last sections may never reach the top of a panel that runs out of
+      // scroll before them, and pressing Combat only to watch Server stay lit
+      // says the bar is broken. At the end of the scroll, the end is where
+      // you are.
+      const sc = scroller();
+      if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight <= 2) {
+        markActive(chips[chips.length - 1].section);
+        return;
+      }
+      // Measured, not computed from scrollTop and offsetTop: on mobile the
+      // element that scrolls is not always the panel, and neither is the
+      // sections' offset parent, which left every chip unmarked.
+      const line = nav.getBoundingClientRect().bottom;
+      let active = chips[0].section;
+      for (const { section } of chips) {
+        if (section.getBoundingClientRect().top <= line + 8) active = section;
+      }
+      markActive(active);
+    };
+    // Captured on the document: a scroll event does not bubble, and the
+    // scrolling element here is whichever ancestor Obsidian gave the view.
+    document.addEventListener("scroll", sync, { signal, passive: true, capture: true });
+    // The panel opens at the top, so the first section is the one being read
+    // until a scroll says otherwise.
+    markActive(chips[0].section);
   }
 
   private hasBroadcastInitialScale = false;
@@ -476,8 +600,23 @@ export class DmControlPanel extends ItemView {
 
   private collapsedSections = new Set<string>();
 
+  // Save and Load sit in the section header, beside the collapsible title, so
+  // they work while the section is folded and never toggle it.
+  renderSceneButtons(header: HTMLElement, kind: "player" | "map", hasContent: boolean): HTMLElement {
+    const actions = header.createDiv("dm-section-actions");
+    const editable = this.plugin.canEditSession();
+    const save = actions.createEl("button", { text: "Save scene", cls: "dm-scene-save-btn" });
+    save.disabled = !editable || !hasContent;
+    save.addEventListener("click", () => void this.plugin.saveScene(kind));
+    const load = actions.createEl("button", { text: "Load scene", cls: "dm-scene-load-btn" });
+    load.disabled = !editable;
+    load.addEventListener("click", () => void this.plugin.pickScene(kind));
+    return actions;
+  }
+
   makeCollapsible(section: HTMLElement, title: HTMLElement, key: string) {
     title.classList.add("dm-section-toggle");
+    section.dataset.sectionKey = key;
     if (this.collapsedSections.has(key)) section.classList.add("dm-section-collapsed");
     title.addEventListener("click", () => {
       const collapsed = !this.collapsedSections.delete(key);
@@ -488,10 +627,107 @@ export class DmControlPanel extends ItemView {
 
   // ─── Server Section ─────────────────────────────────────────────────
 
+  private renderReadonlyBanner(container: HTMLElement) {
+    const remote = this.plugin.remote;
+    if (!remote) return;
+    const banner = container.createDiv("dm-readonly-banner");
+    if (remote.status === "readonly") {
+      const holder = remote.holder?.name ?? "another device";
+      banner.createSpan({ text: `Read-only — ${holder} has control` });
+      const take = banner.createEl("button", { text: "Take control", cls: "dm-take-control-btn mod-cta" });
+      take.addEventListener("click", () => new TakeControlModal(this.app, holder, () => remote.claim()).open());
+    } else {
+      banner.createSpan({ text: remote.status === "connecting" ? "Reconnecting…" : "Disconnected — press Connect to control the session" });
+    }
+  }
+
+  private renderRemoteServerSection(section: HTMLElement) {
+    const remote = this.plugin.remote!;
+    const statusEl = section.createDiv("dm-server-status");
+    const label: Record<string, string> = {
+      active: "Connected — this device has control",
+      readonly: "Connected — read-only",
+      connecting: "Connecting…",
+      disconnected: "Disconnected",
+    };
+    const on = remote.status === "active" || remote.status === "readonly";
+    statusEl.createSpan({ text: label[remote.status], cls: on ? "dm-status-on" : "dm-status-off" });
+    statusEl.createSpan({ text: ` · ${this.plugin.settings.remoteServerUrl || "no server URL set"}`, cls: "dm-status-detail" });
+    const btn = section.createEl("button", { text: remote.status === "disconnected" ? "Connect" : "Disconnect", cls: "mod-cta" });
+    btn.addEventListener("click", () => {
+      this.plugin.toggleServer();
+      this.render();
+    });
+  }
+
+  // Remote mode: rebuild every section from the session cache the server
+  // handed over. Layer images and fog come back as data URLs, as in embedded
+  // mode, so the editing tools and webhooks keep working on them.
+  // The mirror of reloadFromSession for the local session: used when the DM
+  // leaves remote mode, so nothing of the server's scene lingers.
+  async reloadFromLocal(): Promise<void> {
+    this.imageLayers = [];
+    this.activeBackgroundUrl = null;
+    this.activeVideoPath = null;
+    this.mapPanel.resetForSession();
+    this.restored = this.restoreState();
+    await this.restored;
+    this.render();
+  }
+
+  async reloadFromSession(): Promise<void> {
+    const remote = this.plugin.remote;
+    if (!remote) return;
+    const cache = this.plugin.replayCache.toRecord();
+    const payload = (type: string): any => {
+      try {
+        return cache[type] ? JSON.parse(cache[type]).payload : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    try {
+      const geometry = new Map<string, Record<string, unknown>>(
+        ((payload("image-layers-geometry")?.layers ?? []) as Array<Record<string, unknown>>).map((g) => [String(g.id), g])
+      );
+      const raw = (payload("image-layers-sync")?.layers ?? []) as ImageLayer[];
+      this.imageLayers = await Promise.all(
+        raw.map(async (l) => ({
+          ...l,
+          ...(geometry.get(l.id) ?? {}),
+          source: remote.sourceOf(l.dataUrl) ?? undefined,
+          dataUrl: await remote.fetchDataUrl(l.dataUrl),
+          fogDataUrl: l.fogDataUrl ? await remote.fetchDataUrl(l.fogDataUrl) : "",
+        }))
+      );
+    } catch (e) {
+      new Notice(`Could not load the session's layers: ${(e as Error).message}`, 8000);
+      this.imageLayers = [];
+    }
+    if (this.imageLayers.length > 0) this.nextZIndex = Math.max(...this.imageLayers.map((l) => l.zIndex)) + 1;
+    this.activeBackgroundUrl = payload("show-background-media")?.url ?? null;
+    this.activeVideoPath = null;
+    this.mapPanel.resetForSession();
+    await this.mapPanel.restoreFromCache(cache);
+    if (this.mapPanel.fogDataUrl?.startsWith("/assets/")) {
+      try {
+        this.mapPanel.fogDataUrl = await remote.fetchDataUrl(this.mapPanel.fogDataUrl);
+      } catch {
+        this.mapPanel.fogDataUrl = null;
+      }
+    }
+    debug("DmControlPanel: reloadFromSession — layers:", this.imageLayers.length, "bg:", this.activeBackgroundUrl ?? "(none)");
+    this.render();
+  }
+
   private renderServerSection(container: HTMLElement) {
     const section = container.createDiv("dm-section");
-    const title = section.createEl("h3", { text: "Player Screen Server" });
+    const title = section.createEl("h3", { text: this.plugin.remote ? "Remote Server" : "Player Screen Server" });
     this.makeCollapsible(section, title, "server");
+    if (this.plugin.remote) {
+      this.renderRemoteServerSection(section);
+      return;
+    }
 
     const isRunning = !!this.plugin.server;
     const statusEl = section.createDiv("dm-server-status");
@@ -517,24 +753,11 @@ export class DmControlPanel extends ItemView {
     });
   }
 
-  getLanIp(): string | null {
-    try {
-      const os = require("os");
-      const interfaces = os.networkInterfaces();
-      for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-          if (iface.family === "IPv4" && !iface.internal) {
-            return iface.address;
-          }
-        }
-      }
-    } catch { /* ignore */ }
-    return null;
-  }
-
   // Standalone bar between sections: always visible, never collapsible.
   private renderHydrusBar(container: HTMLElement) {
-    if (!this.plugin.settings.hydrusEnabled || !this.plugin.settings.hydrusApiUrl) return;
+    // Whoever provides Hydrus decides: this device's settings in embedded
+    // mode, the server's in remote mode.
+    if (!this.plugin.gateway.capabilities().hydrus) return;
     const bar = container.createDiv("dm-hydrus-bar");
     const hydrusBtn = bar.createEl("button", { text: "Media from Hydrus" });
     hydrusBtn.addEventListener("click", async () => {
@@ -551,24 +774,17 @@ export class DmControlPanel extends ItemView {
 
   private renderPlayerScreenSection(container: HTMLElement) {
     const section = container.createDiv("dm-section");
-    const title = section.createEl("h3", { text: "Player Screen" });
+    const header = section.createDiv("dm-section-header");
+    const title = header.createEl("h3", { text: "Player Screen" });
     this.makeCollapsible(section, title, "player-screen");
+    this.renderSceneButtons(header, "player", !!this.activeBackgroundUrl || this.imageLayers.length > 0);
 
-    if (this.plugin.server) {
-      const port = this.plugin.settings.serverPort;
-      const lanIp = this.getLanIp();
-      const playerUrl = `http://${lanIp ?? "localhost"}:${port}`;
-      // The link and the clipboard carry the token; the visible text does not,
-      // so the DM panel stays readable and a screenshot of it is harmless.
-      const joinUrl = buildJoinUrl(
-        lanIp ?? "localhost",
-        port,
-        this.plugin.settings.accessToken,
-        "/",
-      );
+    const join = this.plugin.transport.joinLink("/");
+    if (join) {
+      const joinUrl = join.href;
       const urlRow = section.createDiv("dm-server-url");
       const link = urlRow.createEl("a", {
-        text: `Player: ${playerUrl}`,
+        text: `Player: ${join.text}`,
         href: joinUrl,
         cls: "dm-server-url-link",
       });
@@ -653,10 +869,7 @@ export class DmControlPanel extends ItemView {
       ? effForBg
       : this.connectedClients.find(c => c.width === effForBg.width && c.height === effForBg.height);
     if (this.activeBackgroundUrl && activeClient && activeClient.width > 0 && activeClient.height > 0) {
-      const bgUrl = resolveBackgroundPreviewUrl(
-        this.activeBackgroundUrl,
-        this.plugin.app.vault.adapter as { getResourcePath?: (path: string) => string }
-      );
+      const bgUrl = this.plugin.transport.displayUrl(this.activeBackgroundUrl);
       if (bgUrl) {
         const browserAspect = activeClient.width / activeClient.height;
         const previewAspect = tvW / tvH;
@@ -699,7 +912,7 @@ export class DmControlPanel extends ItemView {
           });
         }
 
-        const savedLabel = this.plugin.settings.lastSourceLabels?.background;
+        const savedLabel = this.plugin.sourceLabels().background;
         const sourceLabel = savedLabel || resolveSourceLabel({ url: this.activeBackgroundUrl, plugin: this.plugin });
         const labelChip = bgWrap.createDiv("dm-source-label");
         labelChip.textContent = sourceLabel.label;
@@ -804,7 +1017,7 @@ export class DmControlPanel extends ItemView {
 
     // Zoom controls inside the preview (overlay, top-right — mirrors the map panel)
     const zoomControls = previewArea.createDiv("dm-preview-zoom-controls");
-    zoomControls.addEventListener("mousedown", (e: MouseEvent) => e.stopPropagation());
+    zoomControls.addEventListener("pointerdown", (e: PointerEvent) => e.stopPropagation());
 
     const zoomSlider = zoomControls.createEl("input", { type: "range", cls: "dm-zoom-slider" });
     zoomSlider.min = "67";
@@ -830,11 +1043,19 @@ export class DmControlPanel extends ItemView {
         const color = DmControlPanel.LAYER_COLORS[colorIdx];
         const row = list.createDiv("dm-layer-row");
         if (!layer.visible) row.addClass("dm-layer-hidden");
+        // A narrow panel shows one line per layer and reveals its controls on
+        // demand (the stylesheet decides; a wide panel shows everything, as
+        // before). One layer is open at a time, so the list stays scannable.
+        if (this.expandedLayerId === layer.id) row.addClass("dm-layer-expanded");
 
         row.addEventListener("contextmenu", (evt: MouseEvent) => {
           evt.preventDefault();
           this.openLayerContextMenu(evt, layer);
         });
+        // The same menu for a finger, which has no second button. A
+        // `PointerEvent` is a `MouseEvent`, so Obsidian places the menu at the
+        // press like it does for a right-click.
+        onLongPress(row, (evt) => this.openLayerContextMenu(evt, layer));
 
         // Left column: eye on top (full width), fog + border side-by-side below
         const leftCol = row.createDiv("dm-layer-left-col");
@@ -887,6 +1108,19 @@ export class DmControlPanel extends ItemView {
         const swatch = nameRow.createDiv("dm-layer-swatch");
         swatch.style.backgroundColor = color;
         nameRow.createSpan({ text: layer.label, cls: "dm-layer-label" });
+        const expanded = this.expandedLayerId === layer.id;
+        const expandBtn = nameRow.createEl("button", {
+          text: expanded ? "\u2304" : "\u203A",
+          cls: "dm-layer-expand",
+        });
+        expandBtn.setAttribute("aria-expanded", String(expanded));
+        expandBtn.title = expanded ? "Hide this layer's controls" : "Show this layer's controls";
+        // The whole name row is the target: a chevron alone is a small one for
+        // a finger, and the row carries nothing else to press.
+        nameRow.addEventListener("click", () => {
+          this.expandedLayerId = expanded ? null : layer.id;
+          this.render();
+        });
 
         const sliderRow = midCol.createDiv("dm-layer-slider-row");
         const scaleLabel = sliderRow.createSpan({ text: `${Math.round(layer.width)}%`, cls: "dm-layer-scale-label" });
@@ -1142,7 +1376,7 @@ export class DmControlPanel extends ItemView {
 
   private renderCombatBody(section: HTMLElement, ownsDdbPanel: boolean) {
     // Tabs: Local Track + (optionally) D&D Beyond, full-width
-    const ddbActive = this.plugin.settings.ddbEnabled && this.plugin.settings.ddbCobaltSession;
+    const ddbActive = this.plugin.gateway.capabilities().ddb;
     const tabBar = section.createDiv("dm-combat-tabs");
 
     const initTab = tabBar.createEl("button", {
@@ -1477,7 +1711,7 @@ export class DmControlPanel extends ItemView {
     }
   }
 
-  addImageLayer(label: string, dataUrl: string, noteType?: string, visible = true) {
+  addImageLayer(label: string, dataUrl: string, noteType?: string, visible = true, source?: string) {
     const exists = this.imageLayers.some(
       (l) => l.label.toLowerCase() === label.toLowerCase()
     );
@@ -1524,6 +1758,7 @@ export class DmControlPanel extends ItemView {
         fogEnabled: false,
         fogDataUrl: "",
         bordered: true,
+        ...(source ? { source } : {}),
       };
 
       this.imageLayers.push(layer);
@@ -1662,7 +1897,7 @@ export class DmControlPanel extends ItemView {
     const fogCanvas = this.getFogCanvas(layer);
     const fogCtx = fogCanvas.getContext("2d")!;
 
-    const toFogCoord = (e: MouseEvent) => {
+    const toFogCoord = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * fogCanvas.width;
       const y = ((e.clientY - r.top) / r.height) * fogCanvas.height;
@@ -1708,26 +1943,35 @@ export class DmControlPanel extends ItemView {
       ctx.globalAlpha = 1.0;
     };
 
-    canvas.addEventListener("mousedown", (e) => {
+    canvas.addEventListener("pointerdown", (e: PointerEvent) => {
       e.stopPropagation();
-      drawing = true;
+      e.preventDefault();
       const { x, y } = toFogCoord(e);
       startX = x;
       startY = y;
       debug(
-        "fog: mousedown layer", layer.id,
+        "fog: press layer", layer.id,
         "tool=", this.fogTool,
         "start=", x.toFixed(0), ",", y.toFixed(0)
       );
-      if (isFreehand()) {
-        applyFreehand(x, y);
-        refreshOverlay();
-      }
+      // A finger's stroke starts once the gesture is unambiguous, so the first
+      // finger of a pinch paints nothing (`pointerDrag.ts`).
+      trackTapOrDrag(e, {
+        intent: "stroke",
+        act: () => {
+          drawing = true;
+          if (isFreehand()) {
+            applyFreehand(startX, startY);
+            refreshOverlay();
+          }
+        },
+        onMove: drawMove,
+        onEnd: finishDraw,
+      });
     });
 
-    canvas.addEventListener("mousemove", (e) => {
+    const drawMove = (e: PointerEvent) => {
       if (!drawing) return;
-      e.stopPropagation();
       const { x, y } = toFogCoord(e);
       if (isFreehand()) {
         applyFreehand(x, y);
@@ -1758,9 +2002,9 @@ export class DmControlPanel extends ItemView {
         }
         ctx.setLineDash([]);
       }
-    });
+    };
 
-    const finishDraw = (e: MouseEvent) => {
+    const finishDraw = (e: PointerEvent) => {
       if (!drawing) return;
       drawing = false;
       let endX = startX;
@@ -1774,7 +2018,7 @@ export class DmControlPanel extends ItemView {
         }
       }
       debug(
-        "fog: mouseup layer", layer.id,
+        "fog: release layer", layer.id,
         "tool=", this.fogTool,
         "end=", endX.toFixed(0), ",", endY.toFixed(0),
         "shiftHeld=", e.shiftKey,
@@ -1798,17 +2042,16 @@ export class DmControlPanel extends ItemView {
       }
     };
 
-    canvas.addEventListener("mouseup", finishDraw);
-    canvas.addEventListener("mouseleave", (e) => {
+    canvas.addEventListener("pointerleave", (e: PointerEvent) => {
       if (drawing && isFreehand()) finishDraw(e);
     });
   }
 
   private setupPreviewPanZoom(previewArea: HTMLElement, previewInner: HTMLElement) {
-    // render() runs frequently and re-binds these listeners. Without an abort
-    // signal, the document-level mousemove/mouseup handlers accumulate every
-    // render and leak. The previewArea-bound listeners are GC'd with the old
-    // DOM, but we route them through the same controller for symmetry.
+    // render() runs frequently and re-binds this listener. The previewArea it
+    // sits on is GC'd with the old DOM, but the abort controller makes that
+    // explicit — and a gesture in flight keeps its own document listeners only
+    // until the pointer is released.
     this.panZoomAbort?.abort();
     this.panZoomAbort = new AbortController();
     const { signal } = this.panZoomAbort;
@@ -1817,37 +2060,23 @@ export class DmControlPanel extends ItemView {
     // whenever the cursor was over the preview. Zoom is driven exclusively
     // by the `.dm-zoom-slider` + reset button rendered above the preview.
 
-    let panning = false;
-    let panStartX = 0;
-    let panStartY = 0;
-    let panStartPanX = 0;
-    let panStartPanY = 0;
-
-    previewArea.addEventListener("mousedown", (e) => {
-      if (e.button === 1) {
-        e.preventDefault();
-        panning = true;
-        panStartX = e.clientX;
-        panStartY = e.clientY;
-        panStartPanX = this.dmPanX;
-        panStartPanY = this.dmPanY;
-      }
-    }, { signal });
-
-    document.addEventListener("mousemove", (e) => {
-      if (!panning) return;
-      const bounds = previewArea.getBoundingClientRect();
-      const dx = ((e.clientX - panStartX) / bounds.width) * 100;
-      const dy = ((e.clientY - panStartY) / bounds.height) * 100;
-      this.dmPanX = panStartPanX + dx;
-      this.dmPanY = panStartPanY + dy;
-      previewInner.style.transform = `translate(${this.dmPanX}%, ${this.dmPanY}%) scale(${this.dmZoom})`;
-    }, { signal });
-
-    document.addEventListener("mouseup", (e) => {
-      if (panning && e.button === 1) {
-        panning = false;
-      }
+    // Middle button only, for a cursor. A finger has no middle button, and
+    // claiming its drags here would cost the panel its scrolling — the preview
+    // is a tall area in a long column, and look-around only matters while
+    // zoomed out. The layer rectangles keep their own touch drags.
+    previewArea.addEventListener("pointerdown", (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      const startPanX = this.dmPanX;
+      const startPanY = this.dmPanY;
+      trackPointerDrag(e, {
+        onMove: (m) => {
+          const bounds = previewArea.getBoundingClientRect();
+          this.dmPanX = startPanX + ((m.clientX - e.clientX) / bounds.width) * 100;
+          this.dmPanY = startPanY + ((m.clientY - e.clientY) / bounds.height) * 100;
+          previewInner.style.transform = `translate(${this.dmPanX}%, ${this.dmPanY}%) scale(${this.dmZoom})`;
+        },
+      });
     }, { signal });
   }
 
@@ -1870,195 +2099,29 @@ export class DmControlPanel extends ItemView {
     });
   }
 
-  private initFogDrawCanvas(drawCanvas: HTMLCanvasElement, layer: ImageLayer) {
-    // Load source image to get aspect ratio for the draw canvas
-    const img = new Image();
-    img.onload = () => {
-      const wrapper = drawCanvas.parentElement!;
-      const wrapperWidth = wrapper.clientWidth || 300;
-      const aspect = img.naturalHeight / img.naturalWidth;
-      const canvasW = wrapperWidth;
-      const canvasH = Math.round(canvasW * aspect);
-      drawCanvas.width = canvasW;
-      drawCanvas.height = canvasH;
-      drawCanvas.style.width = `${canvasW}px`;
-      drawCanvas.style.height = `${canvasH}px`;
-
-      this.drawFogPreviewOnCanvas(drawCanvas, layer);
-      this.setupFogDrawInteraction(drawCanvas, layer);
-    };
-    img.src = layer.dataUrl;
-  }
-
-  private drawFogPreviewOnCanvas(drawCanvas: HTMLCanvasElement, layer: ImageLayer) {
-    const ctx = drawCanvas.getContext("2d")!;
-    const cw = drawCanvas.width;
-    const ch = drawCanvas.height;
-
-    // Draw the image first (as background reference)
-    ctx.clearRect(0, 0, cw, ch);
-    const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, cw, ch);
-      // Draw fog overlay on top
-      const fogCanvas = this.getFogCanvas(layer);
-      ctx.globalAlpha = 0.7;
-      ctx.drawImage(fogCanvas, 0, 0, cw, ch);
-      ctx.globalAlpha = 1.0;
-    };
-    img.src = layer.dataUrl;
-  }
-
-  private setupFogDrawInteraction(drawCanvas: HTMLCanvasElement, layer: ImageLayer) {
-    let drawing = false;
-    let startX = 0;
-    let startY = 0;
-    const fogCanvas = this.getFogCanvas(layer);
-    const fogCtx = fogCanvas.getContext("2d")!;
-
-    const toFogCoord = (canvasX: number, canvasY: number) => {
-      const rect = drawCanvas.getBoundingClientRect();
-      const x = ((canvasX - rect.left) / rect.width) * fogCanvas.width;
-      const y = ((canvasY - rect.top) / rect.height) * fogCanvas.height;
-      return { x, y };
-    };
-
-    const isReveal = () => this.fogTool.startsWith("reveal");
-    const isFreehand = () => this.fogTool === "reveal-eraser" || this.fogTool === "fog-pen";
-    const brushSize = fogCanvas.width * 0.05; // 5% of fog width
-
-    const applyFreehand = (cx: number, cy: number) => {
-      fogCtx.globalCompositeOperation = isReveal() ? "destination-out" : "source-over";
-      fogCtx.fillStyle = isReveal() ? "rgba(0,0,0,1)" : "black";
-      fogCtx.beginPath();
-      fogCtx.arc(cx, cy, brushSize, 0, Math.PI * 2);
-      fogCtx.fill();
-      fogCtx.globalCompositeOperation = "source-over";
-    };
-
-    const applyShape = (x1: number, y1: number, x2: number, y2: number) => {
-      fogCtx.globalCompositeOperation = isReveal() ? "destination-out" : "source-over";
-      fogCtx.fillStyle = isReveal() ? "rgba(0,0,0,1)" : "black";
-
-      const isCircle = this.fogTool === "reveal-circle" || this.fogTool === "fog-circle";
-      if (isCircle) {
-        const cx = (x1 + x2) / 2;
-        const cy = (y1 + y2) / 2;
-        const rx = Math.abs(x2 - x1) / 2;
-        const ry = Math.abs(y2 - y1) / 2;
-        fogCtx.beginPath();
-        fogCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        fogCtx.fill();
-      } else {
-        const sx = Math.min(x1, x2);
-        const sy = Math.min(y1, y2);
-        const sw = Math.abs(x2 - x1);
-        const sh = Math.abs(y2 - y1);
-        fogCtx.fillRect(sx, sy, sw, sh);
-      }
-      fogCtx.globalCompositeOperation = "source-over";
-    };
-
-    const refreshPreview = () => {
-      this.drawFogPreviewOnCanvas(drawCanvas, layer);
-    };
-
-    const onMouseDown = (e: MouseEvent) => {
-      drawing = true;
-      const { x, y } = toFogCoord(e.clientX, e.clientY);
-      startX = x;
-      startY = y;
-      if (isFreehand()) {
-        applyFreehand(x, y);
-        refreshPreview();
-      }
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!drawing) return;
-      const { x, y } = toFogCoord(e.clientX, e.clientY);
-      if (isFreehand()) {
-        applyFreehand(x, y);
-        refreshPreview();
-      } else {
-        // Show preview of shape being drawn
-        refreshPreview();
-        const ctx = drawCanvas.getContext("2d")!;
-        const cw = drawCanvas.width;
-        const ch = drawCanvas.height;
-        const sx1 = (startX / fogCanvas.width) * cw;
-        const sy1 = (startY / fogCanvas.height) * ch;
-        const sx2 = (x / fogCanvas.width) * cw;
-        const sy2 = (y / fogCanvas.height) * ch;
-
-        ctx.strokeStyle = isReveal() ? "rgba(0, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.8)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 3]);
-
-        const isCircle = this.fogTool === "reveal-circle" || this.fogTool === "fog-circle";
-        if (isCircle) {
-          const cx = (sx1 + sx2) / 2;
-          const cy = (sy1 + sy2) / 2;
-          const rx = Math.abs(sx2 - sx1) / 2;
-          const ry = Math.abs(sy2 - sy1) / 2;
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
-        }
-        ctx.setLineDash([]);
-      }
-    };
-
-    const onMouseUp = (e: MouseEvent) => {
-      if (!drawing) return;
-      drawing = false;
-      if (!isFreehand()) {
-        const { x, y } = toFogCoord(e.clientX, e.clientY);
-        // Skip tiny drags
-        if (Math.abs(x - startX) > 3 || Math.abs(y - startY) > 3) {
-          applyShape(startX, startY, x, y);
-        }
-      }
-      this.syncFogToLayer(layer);
-      refreshPreview();
-    };
-
-    drawCanvas.addEventListener("mousedown", onMouseDown);
-    drawCanvas.addEventListener("mousemove", onMouseMove);
-    drawCanvas.addEventListener("mouseup", onMouseUp);
-    drawCanvas.addEventListener("mouseleave", () => {
-      if (drawing && isFreehand()) {
-        drawing = false;
-        this.syncFogToLayer(layer);
-        refreshPreview();
-      }
-    });
-  }
-
   async collectHydrusRefEntries(file: TFile): Promise<ResolvedHydrusRef[]> {
-    if (!this.plugin.hydrusCache) return [];
+    if (!this.plugin.hydrusApi()) return [];
     const body = await this.plugin.app.vault.cachedRead(file);
     const refs = parseHydrusRefs(body);
     if (refs.length === 0) return [];
-    const client = this.plugin.buildHydrusClient();
-    return resolveHydrusRefs(refs, this.plugin.hydrusCache, client);
+    return resolveHydrusRefs(refs, this.plugin.hydrusCache, this.plugin.hydrusApi());
   }
 
   private async applyHydrusRef(ref: ResolvedHydrusRef, asBackground: boolean): Promise<void> {
     try {
-      const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
+      const api = this.plugin.hydrusApi();
+      if (!api) throw new Error("Hydrus is not configured");
+      const file = await api.publish(ref.hash);
       if (asBackground) {
-        const url = `/vault/${encodeForVaultUrl(entry.vaultPath)}`;
-        debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), ref.mediaType);
+        const url = file.url;
+        debug("DmControlPanel: applyHydrusRef background", ref.hash.slice(0, 12), file.mediaType);
         this.activeBackgroundUrl = url;
-        this.activeVideoPath = ref.mediaType === "video" ? entry.vaultPath : null;
+        this.activeVideoPath = null;
 
         const sourceLabel = resolveSourceLabel({
           url,
           hydrusHash: ref.hash,
-          knownTags: entry.knownTags,
+          knownTags: file.knownTags,
           plugin: this.plugin,
         });
         this.setBackgroundLabel(sourceLabel);
@@ -2067,19 +2130,19 @@ export class DmControlPanel extends ItemView {
           type: "show-background-media",
           payload: {
             url,
-            mediaType: ref.mediaType ?? "image",
-            loop: this.plugin.settings.hydrusDefaultLoop,
-            muted: this.plugin.settings.hydrusDefaultMuted,
+            mediaType: file.mediaType,
+            loop: this.plugin.prefs.get("hydrusDefaultLoop"),
+            muted: this.plugin.prefs.get("hydrusDefaultMuted"),
           },
         });
         this.render();
       } else {
-        const dataUrl = await this.plugin.imageToDataUrl(entry.vaultPath);
+        const dataUrl = await this.plugin.dataUrlFor(file.url);
         if (dataUrl) {
-          this.addImageLayer(uniqueLayerLabel(this.imageLayers, ref.label), dataUrl, "hydrus", false);
+          this.addImageLayer(uniqueLayerLabel(this.imageLayers, ref.label), dataUrl, "hydrus", false, `hydrus:${ref.hash}`);
         }
       }
-      await this.plugin.hydrusCache!.markUsed(ref.hash);
+      await api.markUsed(ref.hash);
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
     }
@@ -2145,7 +2208,7 @@ export class DmControlPanel extends ItemView {
         const img = images[0];
         const dataUrl = await this.plugin.imageToDataUrl(img.path);
         if (dataUrl) {
-          this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false);
+          this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false, `vault:${img.path}`);
           new Notice(`Added: ${img.label} (hidden)`);
         }
       } else {
@@ -2162,7 +2225,7 @@ export class DmControlPanel extends ItemView {
         item.onClick(async () => {
           const dataUrl = await this.plugin.imageToDataUrl(img.path);
           if (dataUrl) {
-            this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false);
+            this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false, `vault:${img.path}`);
             new Notice(`Added: ${img.label} (hidden)`);
           }
         });
@@ -2193,7 +2256,7 @@ export class DmControlPanel extends ItemView {
           dataUrls.forEach((dataUrl, i) => {
             if (dataUrl) {
               const img = images[i];
-              this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false);
+              this.addImageLayer(`${activeFile.basename} (${img.source})`, dataUrl, noteType, false, `vault:${img.path}`);
               added++;
             }
           });
@@ -2226,7 +2289,7 @@ export class DmControlPanel extends ItemView {
 
     if (images.length + hydrusActionable.length === 1 && disabled.length === 0) {
       if (images.length === 1) {
-        this.setImageAsBackground(images[0]);
+        void this.setImageAsBackground(images[0]);
       } else {
         void this.applyHydrusRef(hydrusActionable[0], true);
       }
@@ -2237,7 +2300,7 @@ export class DmControlPanel extends ItemView {
     for (const img of images) {
       menu.addItem((item: any) => {
         item.setTitle(img.label);
-        item.onClick(() => this.setImageAsBackground(img));
+        item.onClick(() => void this.setImageAsBackground(img));
       });
     }
     for (const ref of hydrus) {
@@ -2253,8 +2316,14 @@ export class DmControlPanel extends ItemView {
     menu.showAtMouseEvent(evt);
   }
 
-  private setImageAsBackground(img: { path: string; label: string }): void {
-    const url = `/vault/${encodeURIComponent(img.path)}`;
+  private async setImageAsBackground(img: { path: string; label: string }): Promise<void> {
+    let url: string;
+    try {
+      url = await this.plugin.transport.mediaUrl(img.path);
+    } catch (e) {
+      new Notice(`Could not publish the background: ${(e as Error).message}`, 8000);
+      return;
+    }
     debug("DmControlPanel: setImageAsBackground", img.path);
     this.activeBackgroundUrl = url;
     this.activeVideoPath = null;
@@ -2272,6 +2341,42 @@ export class DmControlPanel extends ItemView {
       payload: { url, mediaType: "image" },
     });
     this.render();
+  }
+
+  // The scene loader's entry point: replaces the background and every layer
+  // in one step, through the same broadcasts the DM's own actions use.
+  async applyPlayerScene(
+    background: { vaultPath: string; mediaType: "image" | "video"; loop: boolean; muted: boolean; hydrusHash?: string } | null,
+    layers: ImageLayer[]
+  ): Promise<void> {
+    this.imageLayers = layers;
+    if (layers.length > 0) {
+      this.nextZIndex = Math.max(this.nextZIndex, ...layers.map((l) => l.zIndex + 1));
+    }
+    let url: string | null = null;
+    if (background) {
+      try {
+        url = await this.plugin.transport.mediaUrl(background.vaultPath);
+      } catch (e) {
+        new Notice(`Could not publish the background: ${(e as Error).message}`, 8000);
+      }
+    }
+    if (background && url) {
+      this.activeBackgroundUrl = url;
+      this.activeVideoPath = background.mediaType === "video" ? background.vaultPath : null;
+      this.setBackgroundLabel(resolveSourceLabel({ url, hydrusHash: background.hydrusHash, plugin: this.plugin }));
+      this.plugin.broadcast({
+        type: "show-background-media",
+        payload: { url, mediaType: background.mediaType, loop: background.loop, muted: background.muted },
+      });
+    } else if (this.activeBackgroundUrl) {
+      this.activeBackgroundUrl = null;
+      this.activeVideoPath = null;
+      this.setBackgroundLabel(null);
+      this.plugin.broadcast({ type: "hide-background-media", payload: {} });
+    }
+    debug("DmControlPanel: applyPlayerScene — layers:", layers.length, "background:", background ? background.vaultPath : "(none)");
+    this.broadcastAndRender();
   }
 
   getImagesFromNote(file: TFile): Array<{ path: string; label: string }> {
@@ -2312,64 +2417,49 @@ export class DmControlPanel extends ItemView {
   }
 
   private makeDraggable(rect: HTMLElement, layer: ImageLayer, preview: HTMLElement) {
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
-    // Cached at mousedown so a mid-drag re-render that detaches `preview`
-    // can't poison the math: a detached element returns width/height = 0,
-    // which would otherwise produce Infinity for dx/dy and corrupt layer.x/y.
-    let startBounds: DOMRect | null = null;
-
-    const onMouseDown = (e: MouseEvent) => {
+    rect.addEventListener("pointerdown", (e: PointerEvent) => {
       e.preventDefault();
+      // Stops the preview's own look-around pan from starting under the finger
+      // that is moving this layer.
       e.stopPropagation();
-      startX = e.clientX;
-      startY = e.clientY;
-      startLeft = layer.x;
-      startTop = layer.y;
-      startBounds = preview.getBoundingClientRect();
+      const startLeft = layer.x;
+      const startTop = layer.y;
+      // Cached at the press so a mid-drag re-render that detaches `preview`
+      // can't poison the math: a detached element returns width/height = 0,
+      // which would otherwise produce Infinity for dx/dy and corrupt layer.x/y.
+      const startBounds = preview.getBoundingClientRect();
       debug(
-        "makeDraggable: mousedown layer", layer.id,
+        "makeDraggable: press layer", layer.id,
         "startLeft=", startLeft.toFixed(2),
         "startTop=", startTop.toFixed(2),
         "bounds=", startBounds.width.toFixed(0), "x", startBounds.height.toFixed(0)
       );
       if (!Number.isFinite(startLeft) || !Number.isFinite(startTop)) {
-        debugWarn("makeDraggable: layer has non-finite coords at mousedown — drag will be a no-op until reset");
+        debugWarn("makeDraggable: layer has non-finite coords at press — drag will be a no-op until reset");
       }
       if (startBounds.width === 0 || startBounds.height === 0) {
-        debugWarn("makeDraggable: preview has zero-size bounds at mousedown — drag will be a no-op");
+        debugWarn("makeDraggable: preview has zero-size bounds at press — drag will be a no-op");
+        return;
       }
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!startBounds || startBounds.width === 0 || startBounds.height === 0) return;
-      const dx = ((e.clientX - startX) / startBounds.width) * 100;
-      const dy = ((e.clientY - startY) / startBounds.height) * 100;
-      layer.x = startLeft + dx;
-      layer.y = startTop + dy;
-      rect.style.left = `${layer.x}%`;
-      rect.style.top = `${layer.y}%`;
-      this.broadcastLayerGeometry();
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-      debug(
-        "makeDraggable: mouseup layer", layer.id,
-        "x=", layer.x.toFixed(2),
-        "y=", layer.y.toFixed(2),
-        "finite=", Number.isFinite(layer.x) && Number.isFinite(layer.y)
-      );
-      startBounds = null;
-      this.broadcastImageLayers();
-    };
-
-    rect.addEventListener("mousedown", onMouseDown);
+      trackPointerDrag(e, {
+        onMove: (m) => {
+          layer.x = startLeft + ((m.clientX - e.clientX) / startBounds.width) * 100;
+          layer.y = startTop + ((m.clientY - e.clientY) / startBounds.height) * 100;
+          rect.style.left = `${layer.x}%`;
+          rect.style.top = `${layer.y}%`;
+          this.broadcastLayerGeometry();
+        },
+        onEnd: () => {
+          debug(
+            "makeDraggable: release layer", layer.id,
+            "x=", layer.x.toFixed(2),
+            "y=", layer.y.toFixed(2),
+            "finite=", Number.isFinite(layer.x) && Number.isFinite(layer.y)
+          );
+          this.broadcastImageLayers();
+        },
+      });
+    });
   }
 
   private moveLayerUp(layer: ImageLayer) {
@@ -2417,7 +2507,7 @@ export class DmControlPanel extends ItemView {
       this.plugin.broadcast({
         type: "image-layers-geometry",
         payload: {
-          layers: this.imageLayers.map((l) => ({
+          layers: this.imageLayers.map<LayerGeometry>((l) => ({
             id: l.id,
             x: l.x,
             y: l.y,
@@ -2565,17 +2655,6 @@ export class DmControlPanel extends ItemView {
     setting.open();
     setting.openTabById("dm-screen");
   }
-}
-
-export function resolveBackgroundPreviewUrl(
-  activeUrl: string | null,
-  adapter: { getResourcePath?: (path: string) => string }
-): string | null {
-  if (!activeUrl) return null;
-  if (!activeUrl.startsWith("/vault/")) return activeUrl;
-  if (typeof adapter.getResourcePath !== "function") return null;
-  const vaultPath = decodeURIComponent(activeUrl.slice("/vault/".length));
-  return adapter.getResourcePath(vaultPath);
 }
 
 export function isVideoBackgroundUrl(url: string): boolean {

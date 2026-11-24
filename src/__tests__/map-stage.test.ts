@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finiteScale, fitScale } from "../views/mapStage";
+import { finiteScale, fitScale, handleDistance, MIN_HANDLE_GAP_PX } from "../views/mapStage";
 
 describe("fitScale", () => {
   it("letterboxes against whichever axis runs out first", () => {
@@ -33,5 +33,22 @@ describe("finiteScale", () => {
     expect(finiteScale(-1)).toBeNull();
     expect(finiteScale(Number.NaN)).toBeNull();
     expect(finiteScale(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe("handleDistance", () => {
+  // A 15 ft cone on a map shrunk to a phone puts its tip a few screen pixels
+  // from the anchor dot, inside the same touch target.
+  it("pushes the handle out to a finger's distance on a reduced map", () => {
+    expect(handleDistance(30, 0.2)).toBe(MIN_HANDLE_GAP_PX / 0.2);
+  });
+
+  it("leaves a shape that is already far enough alone", () => {
+    expect(handleDistance(600, 0.2)).toBe(600);
+  });
+
+  it("keeps the shape's own distance when the stage cannot be measured", () => {
+    expect(handleDistance(30, null)).toBe(30);
+    expect(handleDistance(30, 0)).toBe(30);
   });
 });

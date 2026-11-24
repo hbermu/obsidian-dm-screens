@@ -3,6 +3,10 @@ import { DmControlPanel } from "../views/DmControlPanel";
 
 function makePlugin() {
   return {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return (this.settings.lastSourceLabels ??= {});
+    },
     settings: { lastSourceLabels: {} },
     saveSettings: vi.fn(async () => {}),
     app: {

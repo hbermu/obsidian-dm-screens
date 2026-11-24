@@ -3,16 +3,18 @@ import type DmScreenPlugin from "../main";
 import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize } from "../map/fog";
 import { buildBlockedMask, floodRegion, regionToCanvas } from "../map/walls";
-import { vaultPathFromUrl } from "../server";
 import { resolveSourceLabel } from "../sourceLabel";
 import type { MapRotation, MapWall } from "../map/types";
 import { renderAoe } from "../map/aoe";
 import { anchorToView, DEFAULT_VISION_COLOR, moveVisions, visionDragTargets } from "../map/vision";
 import { gridLinePositions, rotatePoint } from "../map/transform";
 import { debug } from "../debug";
-import { fitScale } from "./mapStage";
+import { fitScale, finiteScale, handleDistance } from "./mapStage";
 import { createRepaintScheduler } from "../map/canvas";
 import { FloatingWindow, type WindowState } from "./FloatingWindow";
+import { ExploreSheet, type SheetPanel } from "./ExploreSheet";
+import { blockWebkitGestures, onLongPress, trackPointerDrag, trackTapOrDrag } from "./pointerDrag";
+import { attachStageZoom, IDENTITY_VIEW, type StageView } from "./pinchZoom";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's
@@ -21,20 +23,40 @@ import { FloatingWindow, type WindowState } from "./FloatingWindow";
 // the panel. Doors are ALWAYS room boundaries here (regardless of open/closed),
 // so a room stays discrete even with an open door; open/closed only affects LoS
 // on the player screen via the map-walls broadcast.
+// Two 260 px windows, a 320 px one and margins need about this much stage to
+// be placed without overlapping.
+const COMPACT_STAGE_WIDTH = 700;
+
+// What the modal needs of its three panels, whichever layout provides them.
+interface ExplorePanels {
+  aoes: SheetPanel;
+  vision: SheetPanel;
+  combat: SheetPanel;
+  clamp(): void;
+  destroy(): void;
+}
+
 export class MapExploreModal extends Modal {
   private fogCanvas: HTMLCanvasElement;
   private redrawOverlay: (() => void) | null = null;
   private renderMarkers: (() => void) | null = null;
   private cleanupListeners: (() => void) | null = null;
+  // Long-press handlers on markers, torn down with each re-render.
+  private markerCleanups: Array<() => void> = [];
+  private cancelWebkitGestures: (() => void) | null = null;
+  private cancelStageZoom: Array<() => void> = [];
+  // Pinch/wheel zoom over the stage, applied as a CSS transform on the inner
+  // box; every client↔fog conversion reads a live rect, so it needs no maths
+  // of its own.
+  private stageView: StageView = { ...IDENTITY_VIEW };
   // Force-detaches an in-progress document drag if the modal closes mid-gesture.
   private activeDrag: (() => void) | null = null;
   private walls: MapWall[] = [];
   private hoverCell: { x: number; y: number } | null = null;
   private blockedCache: { walls: MapWall[]; fogScale: number; mask: Uint8Array } | null = null;
   private hoverRegion: { cellX: number; cellY: number; region: Uint8Array | null } | null = null;
-  private aoesWindow: FloatingWindow | null = null;
-  private visionWindow: FloatingWindow | null = null;
-  private combatWindow: FloatingWindow | null = null;
+  private panels: ExplorePanels | null = null;
+  private floating = true;
   private disposeCombatMirror: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -73,9 +95,21 @@ export class MapExploreModal extends Modal {
     void this.panel.commitFog(this.fogCanvas.toDataURL("image/png"));
   }
 
+  // Read-only (a remote device without the lease): nothing in the modal may
+  // broadcast or persist, so its content goes inert until control returns.
+  applyEditable() {
+    const readonly = !this.plugin.canEditSession();
+    this.contentEl.inert = readonly;
+    this.modalEl.classList.toggle("dm-explore-readonly", readonly);
+  }
+
   onOpen() {
+    this.plugin.exploreModals.add(this);
+    this.applyEditable();
     this.walls = [...this.panel.walls];
     this.modalEl.addClass("dm-explore-modal");
+    // Safari would pinch-zoom the whole app on top of the map's own gestures.
+    this.cancelWebkitGestures = blockWebkitGestures(this.modalEl);
     const { contentEl } = this;
     contentEl.addClass("dm-explore-content");
 
@@ -88,7 +122,7 @@ export class MapExploreModal extends Modal {
     const doorRadius = Math.max(10, this.panel.state.pxPerSquare * fogScale * 0.35);
 
     const bar = contentEl.createDiv("dm-explore-bar");
-    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const savedLabel = this.plugin.sourceLabels().map;
     const sourceLabel = savedLabel || resolveSourceLabel({ url: this.map.url, plugin: this.plugin });
     const labelEl = bar.createEl("span", { cls: "dm-source-label dm-explore-title" });
     labelEl.textContent = sourceLabel.label;
@@ -109,6 +143,7 @@ export class MapExploreModal extends Modal {
       syncLockIcon();
       this.renderMarkers?.();
     });
+    const zoomBtn = bar.createEl("button", { cls: "dm-explore-zoom-btn" });
     const scaleBtn = bar.createEl("button");
     const gridBtn = bar.createEl("button");
     const syncToggleLabels = () => {
@@ -127,9 +162,7 @@ export class MapExploreModal extends Modal {
     // and layout-free in tests where the rect is stubbed).
     const inner = stage.createDiv("dm-explore-inner");
 
-    const vaultPath = vaultPathFromUrl(this.map.url);
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = vaultPath ? adapter.getResourcePath?.(vaultPath) : null;
+    const resourceUrl = this.plugin.transport.displayUrl(this.map.url);
     if (resourceUrl) {
       if (this.map.mediaType === "video") {
         const v = inner.createEl("video");
@@ -156,14 +189,21 @@ export class MapExploreModal extends Modal {
     // the dots and the viewport rect (pointer-events: auto) capture drags.
     const markers = inner.createDiv("dm-explore-markers");
 
+    const renderStageView = ({ zoom, offsetX, offsetY }: StageView) => {
+      inner.style.transform =
+        `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${zoom}) rotate(${rotation}deg)`;
+      // The marker dots counter-scale off this, so a finger target stays the
+      // same size however far the map is zoomed in.
+      inner.style.setProperty("--dm-map-zoom", String(zoom));
+    };
     const layout = () => {
       const rotW = sideways ? nh : nw;
       const rotH = sideways ? nw : nh;
+      renderStageView(this.stageView);
       const s = fitScale(stage.clientWidth, stage.clientHeight, rotW, rotH);
       if (s === null) return;
       inner.style.width = `${nw * s}px`;
       inner.style.height = `${nh * s}px`;
-      inner.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
     };
     layout();
     requestAnimationFrame(layout);
@@ -312,6 +352,7 @@ export class MapExploreModal extends Modal {
     };
 
     const renderMarkers = () => {
+      for (const cleanup of this.markerCleanups.splice(0)) cleanup();
       markers.empty();
       this.buildAoeMarkers(markers, nw, nh, rotation, overlayGeom, deltaToMap, redraw);
       this.buildVisionMarkers(markers, nw, nh, deltaToMap, redraw);
@@ -329,67 +370,106 @@ export class MapExploreModal extends Modal {
       redraw();
     };
 
-    const defaultAoesState: WindowState = this.plugin.settings.exploreWindows?.["aoes"] || {
-      x: 1 - (260 + 260 + 12 + 12) / stage.clientWidth,
-      y: 12 / stage.clientHeight,
-      minimized: false,
+    // Floating windows need a stage wide enough to put two of them side by
+    // side; below that they stack on top of each other and bury the map, so
+    // the three panels become a tabbed sheet along the bottom instead. The
+    // choice follows the stage's width rather than the device, so a tablet
+    // turned to landscape gets the windows and a narrow desktop pane does not.
+    // A stage that has not been measured yet reports 0; the windows are the
+    // historical layout, so it starts there and the observer below switches
+    // once a real width arrives, rather than flashing the compact layout.
+    const floatingFits = () => stage.clientWidth === 0 || stage.clientWidth >= COMPACT_STAGE_WIDTH;
+
+    const windowState = (id: string, fallback: WindowState): WindowState => {
+      const saved = this.plugin.settings.exploreWindows?.[id];
+      return saved ?? fallback;
     };
-    const defaultVisionState: WindowState = this.plugin.settings.exploreWindows?.["vision"] || {
-      x: 1 - (260 + 12) / stage.clientWidth,
-      y: 12 / stage.clientHeight,
-      minimized: false,
+    const persist = (id: string) => (state: WindowState) => {
+      (this.plugin.settings.exploreWindows ??= {})[id] = state;
+      void this.plugin.saveSettings();
     };
 
-    this.aoesWindow = new FloatingWindow(stage, {
-      id: "aoes",
-      title: "AoEs",
-      initial: defaultAoesState,
-      onChange: (state) => {
-        this.plugin.settings.exploreWindows["aoes"] = state;
-        void this.plugin.saveSettings();
-      },
-    });
+    const buildFloating = (): ExplorePanels => {
+      const margin = 12 / stage.clientWidth;
+      const aoes = new FloatingWindow(stage, {
+        id: "aoes",
+        title: "AoEs",
+        initial: windowState("aoes", { x: 1 - (260 + 260 + 12 + 12) / stage.clientWidth, y: 12 / stage.clientHeight, minimized: false }),
+        onChange: persist("aoes"),
+      });
+      const vision = new FloatingWindow(stage, {
+        id: "vision",
+        title: "Vision",
+        initial: windowState("vision", { x: 1 - (260 + 12) / stage.clientWidth, y: 12 / stage.clientHeight, minimized: false }),
+        onChange: persist("vision"),
+      });
+      const combat = new FloatingWindow(stage, {
+        id: "combat",
+        title: "Combat",
+        width: 320,
+        initial: windowState("combat", { x: margin, y: 12 / stage.clientHeight, minimized: false }),
+        onChange: persist("combat"),
+      });
+      // A window saved on a wider stage, or a default measured against one,
+      // can start outside this one; nothing would bring it back until it was
+      // dragged, and it cannot be dragged while it is off the stage.
+      for (const w of [aoes, vision, combat]) w.clamp();
+      return {
+        aoes,
+        vision,
+        combat,
+        clamp: () => {
+          for (const w of [aoes, vision, combat]) w.clamp();
+        },
+        destroy: () => {
+          for (const w of [aoes, vision, combat]) w.destroy();
+        },
+      };
+    };
 
-    this.visionWindow = new FloatingWindow(stage, {
-      id: "vision",
-      title: "Vision",
-      initial: defaultVisionState,
-      onChange: (state) => {
-        this.plugin.settings.exploreWindows["vision"] = state;
-        void this.plugin.saveSettings();
-      },
-    });
+    const buildSheet = (): ExplorePanels => {
+      const sheet = new ExploreSheet(stage, [
+        { id: "aoes", title: "AoEs" },
+        { id: "vision", title: "Vision" },
+        { id: "combat", title: "Combat" },
+      ]);
+      return {
+        aoes: sheet.panel("aoes"),
+        vision: sheet.panel("vision"),
+        combat: sheet.panel("combat"),
+        clamp: () => sheet.clamp(),
+        destroy: () => sheet.destroy(),
+      };
+    };
 
-    this.combatWindow = new FloatingWindow(stage, {
-      id: "combat",
-      title: "Combat",
-      width: 320,
-      initial: this.plugin.settings.exploreWindows?.["combat"] || {
-        x: 12 / stage.clientWidth,
-        y: 12 / stage.clientHeight,
-        minimized: false,
-      },
-      onChange: (state) => {
-        this.plugin.settings.exploreWindows["combat"] = state;
-        void this.plugin.saveSettings();
-      },
-    });
-    this.disposeCombatMirror = this.panel.registerCombatMirror(this.combatWindow);
+    const buildPanels = () => {
+      this.disposeCombatMirror?.();
+      this.panels?.destroy();
+      this.floating = floatingFits();
+      this.panels = this.floating ? buildFloating() : buildSheet();
+      this.disposeCombatMirror = this.panel.registerCombatMirror(this.panels.combat);
+      renderWindows();
+    };
 
     const renderWindows = () => {
-      this.aoesWindow!.body.empty();
-      this.visionWindow!.body.empty();
-      this.panel.renderAoeSection(this.aoesWindow!.body, this.map, refresh);
-      this.panel.renderVisionSection(this.visionWindow!.body, this.map, refresh);
+      const panels = this.panels!;
+      panels.aoes.body.empty();
+      panels.vision.body.empty();
+      this.panel.renderAoeSection(panels.aoes.body, this.map, refresh);
+      this.panel.renderVisionSection(panels.vision.body, this.map, refresh);
     };
 
-    renderWindows();
+    buildPanels();
     renderMarkers();
 
     this.resizeObserver = new ResizeObserver(() => {
-      this.aoesWindow?.clamp();
-      this.visionWindow?.clamp();
-      this.combatWindow?.clamp();
+      // A rotation or a split-view resize can cross the threshold, and the
+      // panels have to follow it mid-session.
+      if (this.panels && this.floating !== floatingFits()) {
+        buildPanels();
+        return;
+      }
+      this.panels?.clamp();
     });
     this.resizeObserver.observe(stage);
 
@@ -406,6 +486,28 @@ export class MapExploreModal extends Modal {
       redraw();
       this.commitFog();
     });
+    // Set while a finger is down over the overlay, so a pinch can take the
+    // gesture away from the exploration tap it started as.
+    let cancelTap: (() => void) | null = null;
+    const abortTap = () => {
+      const cancel = cancelTap;
+      cancelTap = null;
+      cancel?.();
+    };
+
+    const zoom = attachStageZoom({
+      stage,
+      zoomBtn,
+      size: () => ({ width: inner.clientWidth, height: inner.clientHeight }),
+      view: () => this.stageView,
+      store: (view) => {
+        this.stageView = view;
+      },
+      render: renderStageView,
+      onGestureStart: () => abortTap(),
+    });
+    zoom.apply();
+    this.cancelStageZoom.push(zoom.cancel);
     scaleBtn.addEventListener("click", () => {
       this.panel.toggleScaleMode();
       syncToggleLabels();
@@ -437,10 +539,8 @@ export class MapExploreModal extends Modal {
       return nearest;
     };
 
-    const onDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      const { x: fx, y: fy } = toFog(e.clientX, e.clientY);
+    const explore = (clientX: number, clientY: number) => {
+      const { x: fx, y: fy } = toFog(clientX, clientY);
 
       const door = nearestDoor(fx, fy);
       if (door) {
@@ -467,7 +567,20 @@ export class MapExploreModal extends Modal {
       this.commitFog();
     };
 
-    const onMove = (e: MouseEvent) => {
+    // A finger explores on the lift, not the press: a pinch starts with one
+    // finger down, and a map that toggled a door before the second finger
+    // landed would be unusable on a tablet. A mouse keeps acting at once.
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      // A press anywhere but on the live marker puts it down where it is. The
+      // press still explores: deselecting is not a mode the DM has to leave.
+      if (this.panel.clearMarkerSelection()) refresh();
+      abortTap();
+      cancelTap = trackTapOrDrag(e, { act: (p) => explore(p.clientX, p.clientY) });
+    };
+
+    const onMove = (e: PointerEvent) => {
       const { x: fx, y: fy } = toFog(e.clientX, e.clientY);
       const cx = Math.floor(fx);
       const cy = Math.floor(fy);
@@ -483,9 +596,9 @@ export class MapExploreModal extends Modal {
       redraw();
     };
 
-    overlay.addEventListener("mousedown", onDown);
-    overlay.addEventListener("mousemove", onMove);
-    overlay.addEventListener("mouseleave", onLeave);
+    overlay.addEventListener("pointerdown", onDown);
+    overlay.addEventListener("pointermove", onMove);
+    overlay.addEventListener("pointerleave", onLeave);
 
     // Hold Shift to focus exploration: the markers layer goes pointer-transparent
     // so clicks fall straight through to the overlay's door/room gestures — even
@@ -500,9 +613,9 @@ export class MapExploreModal extends Modal {
     window.addEventListener("blur", onBlur);
 
     this.cleanupListeners = () => {
-      overlay.removeEventListener("mousedown", onDown);
-      overlay.removeEventListener("mousemove", onMove);
-      overlay.removeEventListener("mouseleave", onLeave);
+      overlay.removeEventListener("pointerdown", onDown);
+      overlay.removeEventListener("pointermove", onMove);
+      overlay.removeEventListener("pointerleave", onLeave);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
@@ -522,16 +635,28 @@ export class MapExploreModal extends Modal {
   ) {
     const ftToPx = this.panel.state.pxPerSquare / 5;
     for (const aoe of this.panel.aoes) {
+      const live = this.panel.selectedAoeId === aoe.id;
       const dot = layer.createDiv("dm-map-aoe-dot");
       dot.style.background = aoe.color;
-      dot.title = `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move, right-click to remove`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move, right-click to remove`
+        : `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — open it in the AoEs list to move it`;
+      // The rotation handle is a second target beside the dot; it exists only
+      // while the AoE is the live one, so an idle map carries no stray handles.
       const handle =
-        aoe.shape === "circle" || aoe.shape === "ring" ? null : layer.createDiv("dm-map-aoe-rot-handle");
+        !live || aoe.shape === "circle" || aoe.shape === "ring"
+          ? null
+          : layer.createDiv("dm-map-aoe-rot-handle");
       if (handle) {
         handle.style.background = aoe.color;
         handle.title = "Drag to rotate";
       }
-      const handleDistPx = () => (aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx;
+      const handleDistPx = () =>
+        handleDistance(
+          (aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx,
+          finiteScale(overlayGeom().uw / nw)
+        );
       const position = () => {
         dot.style.left = `${(aoe.x / nw) * 100}%`;
         dot.style.top = `${(aoe.y / nh) * 100}%`;
@@ -545,15 +670,31 @@ export class MapExploreModal extends Modal {
       };
       position();
 
-      dot.addEventListener("contextmenu", (ev: MouseEvent) => {
-        ev.preventDefault();
-        ev.stopPropagation();
+      const removeAoe = () => {
         this.panel.removeAoe(aoe.id);
         this.renderMarkers?.();
         redraw();
+      };
+      // An AoE that is not the live one swallows the press and does nothing:
+      // it neither moves, nor is removed, nor lets the press through to
+      // explore the room it is sitting on.
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
       });
+      if (!live) continue;
 
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("contextmenu", (ev: MouseEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        removeAoe();
+      });
+      // A finger has no right button, so a long press removes it instead.
+      this.markerCleanups.push(onLongPress(dot, removeAoe));
+
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -562,6 +703,7 @@ export class MapExploreModal extends Modal {
         const startAoeX = aoe.x;
         const startAoeY = aoe.y;
         this.beginDrag(
+          ev,
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
@@ -575,11 +717,12 @@ export class MapExploreModal extends Modal {
         );
       });
 
-      handle?.addEventListener("mousedown", (ev: MouseEvent) => {
+      handle?.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         this.beginDrag(
+          ev,
           (me) => {
             const { cx, cy, uw } = overlayGeom();
             if (!(uw > 0)) return;
@@ -609,8 +752,12 @@ export class MapExploreModal extends Modal {
   ) {
     const positions: Array<() => void> = [];
     for (const vision of this.panel.visions) {
+      const live = this.panel.selectedVisionId === vision.id;
       const dot = layer.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`
+        : `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — open it in the Vision list to move it`;
       dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const position = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
@@ -618,7 +765,12 @@ export class MapExploreModal extends Modal {
       };
       position();
       positions.push(position);
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -627,6 +779,7 @@ export class MapExploreModal extends Modal {
         const targets = visionDragTargets(this.panel.visions, vision, this.panel.visionGroup);
         const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.beginDrag(
+          ev,
           (me) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
@@ -670,7 +823,7 @@ export class MapExploreModal extends Modal {
     if (this.panel.viewLocked) return;
 
     const hasBoundVision = this.panel.visions.some((v) => v.followsView);
-    rect.addEventListener("mousedown", (ev: MouseEvent) => {
+    rect.addEventListener("pointerdown", (ev: PointerEvent) => {
       if (ev.button !== 0) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -691,6 +844,7 @@ export class MapExploreModal extends Modal {
         }
       };
       this.beginDrag(
+          ev,
         (me) => step(me, false),
         (me) => step(me, true)
       );
@@ -700,25 +854,20 @@ export class MapExploreModal extends Modal {
   private disposeOverlayRepaint: (() => void) | null = null;
   private cancelOverlayRepaint: (() => void) | null = null;
 
-  private beginDrag(onMove: (e: MouseEvent) => void, onUp?: (e: MouseEvent) => void) {
-    // Tear down any prior drag whose mouseup was missed (e.g. released off-window)
-    // so its document listeners can't outlive this one or the modal.
+  private beginDrag(start: PointerEvent, onMove: (e: PointerEvent) => void, onUp?: (e: PointerEvent) => void) {
+    // Tear down any prior drag whose release was missed (off-window, or a
+    // touch the browser took over) so its listeners can't outlive this one.
     this.activeDrag?.();
     const release = this.panel.beginPanelDrag();
-    const move = (e: MouseEvent) => onMove(e);
-    const up = (e: MouseEvent) => {
-      cleanup();
-      onUp?.(e);
-    };
-    const cleanup = () => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      release();
-      this.activeDrag = null;
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-    this.activeDrag = cleanup;
+    const cancel = trackPointerDrag(start, {
+      onMove,
+      onEnd: onUp,
+      onRelease: () => {
+        release();
+        this.activeDrag = null;
+      },
+    });
+    this.activeDrag = cancel;
   }
 
   private blockedMask(fogScale: number): Uint8Array {
@@ -749,10 +898,16 @@ export class MapExploreModal extends Modal {
   }
 
   onClose() {
+    this.plugin.exploreModals.delete(this);
     this.activeDrag?.();
     this.activeDrag = null;
     this.cleanupListeners?.();
     this.cleanupListeners = null;
+    this.cancelWebkitGestures?.();
+    this.cancelWebkitGestures = null;
+    for (const cancel of this.cancelStageZoom.splice(0)) cancel();
+    this.stageView = { ...IDENTITY_VIEW };
+    for (const cleanup of this.markerCleanups.splice(0)) cleanup();
     this.renderMarkers = null;
     this.hoverCell = null;
     this.hoverRegion = null;
@@ -764,14 +919,10 @@ export class MapExploreModal extends Modal {
     this.disposeOverlayRepaint = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.aoesWindow?.destroy();
-    this.aoesWindow = null;
-    this.visionWindow?.destroy();
-    this.visionWindow = null;
     this.disposeCombatMirror?.();
     this.disposeCombatMirror = null;
-    this.combatWindow?.destroy();
-    this.combatWindow = null;
+    this.panels?.destroy();
+    this.panels = null;
     this.panel.refreshPanel();
     this.contentEl.empty();
   }

@@ -1,13 +1,12 @@
 import { Menu, Notice, setIcon } from "obsidian";
 import type DmScreenPlugin from "../main";
 import type { CombatMirror, DmControlPanel } from "./DmControlPanel";
-import { encodeForVaultUrl, layerLabelFromTags } from "./HydrusExplorerModal";
+import { layerLabelFromTags } from "./HydrusExplorerModal";
 import { ensureLocalCopy, type ResolvedHydrusRef } from "../hydrus/noteRefs";
 import { resolveSourceLabel } from "../sourceLabel";
 import { recoverVaultImage } from "../hydrus/recoverImage";
-import { vaultPathFromUrl, type ClientInfo } from "../server";
-import { fogCanvasSize, loadFogSidecar, saveFogSidecar, type FogAdapter } from "../map/fog";
-import { loadWallsSidecar, saveWallsSidecar } from "../map/walls";
+import type { ClientInfo } from "../server";
+import { fogCanvasSize } from "../map/fog";
 import { MapFogModal } from "./MapFogModal";
 import { MapExploreModal } from "./MapExploreModal";
 import { FoundryImportConfirmModal, FoundrySceneModal } from "./FoundryImportModals";
@@ -26,12 +25,12 @@ import { renderAoe } from "../map/aoe";
 import { anchorToView, DEFAULT_VISION_COLOR, eraseVisionWithWalls, followView, moveVisions, normalizeVision, visionDragTargets } from "../map/vision";
 import { SpellAoeModal } from "./SpellAoeModal";
 import { LightSourceModal } from "./LightSourceModal";
-import { finiteScale, fitScale } from "./mapStage";
+import { finiteScale, fitScale, handleDistance } from "./mapStage";
 import { createRepaintScheduler, sizeCanvas } from "../map/canvas";
 import { MapCalibrationModal } from "./MapCalibrationModal";
 import { debug, debugWarn } from "../debug";
-import { buildJoinUrl } from "../auth";
 import { renderControlCard } from "./controlCard";
+import { trackPointerDrag } from "./pointerDrag";
 
 export interface ActiveMap {
   url: string;
@@ -92,6 +91,34 @@ export class MapScreenPanel {
 
   constructor(private plugin: DmScreenPlugin, private host: DmControlPanel) {}
 
+  // The open card in the list is the one the map lets you move. Every marker
+  // used to answer to any press that landed on it, which on a finger-sized hit
+  // area meant a map that rearranged itself while the DM was reading it.
+  get selectedAoeId(): string | null {
+    return this.expandedAoeId;
+  }
+
+  get selectedVisionId(): string | null {
+    return this.expandedVisionId;
+  }
+
+  clearMarkerSelection(): boolean {
+    const had = this.expandedAoeId !== null || this.expandedVisionId !== null;
+    this.expandedAoeId = null;
+    this.expandedVisionId = null;
+    return had;
+  }
+
+  // A session reload starts from nothing, so a map the server no longer
+  // shows does not linger on a read-only device.
+  resetForSession() {
+    this.activeMap = null;
+    this.aoes = [];
+    this.visions = [];
+    this.walls = [];
+    this.fogDataUrl = null;
+  }
+
   async restoreFromCache(cache: Record<string, string>) {
     const show = cache["map-show"];
     if (!show) return;
@@ -108,7 +135,7 @@ export class MapScreenPanel {
       return;
     }
     this.state =
-      this.plugin.settings.mapConfigs[this.activeMap.url] ??
+      this.plugin.transport.mapData.config(this.activeMap.url) ??
       defaultMapState(
         this.activeMap.naturalWidth,
         this.activeMap.naturalHeight,
@@ -166,7 +193,7 @@ export class MapScreenPanel {
       return;
     }
 
-    const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+    const savedLabel = this.plugin.sourceLabels().map;
     const label = savedLabel ? savedLabel.label : resolveSourceLabel({ url: this.activeMap.url, plugin: this.plugin }).label;
     new Notice(`Map "${label}" is no longer available`);
     this.activeMap = null;
@@ -175,9 +202,7 @@ export class MapScreenPanel {
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
-    if (this.plugin.settings.lastSourceLabels) {
-      delete this.plugin.settings.lastSourceLabels.map;
-    }
+    delete this.plugin.sourceLabels().map;
 
     const mapTypes = ["map-show", "map-view", "map-config", "map-aoe-sync", "map-vision", "map-fog", "map-walls"];
     this.plugin.replayCache.forget(mapTypes);
@@ -185,7 +210,7 @@ export class MapScreenPanel {
   }
 
   async republish() {
-    if (!this.plugin.server) return;
+    if (!this.plugin.transport.isLive()) return;
     this.plugin.broadcastMapCalibration();
     if (!this.activeMap) return;
     debug("MapScreenPanel: republish —", this.activeMap.url);
@@ -206,8 +231,8 @@ export class MapScreenPanel {
       type: "map-show",
       payload: {
         ...this.activeMap,
-        loop: this.plugin.settings.hydrusDefaultLoop,
-        muted: this.plugin.settings.hydrusDefaultMuted,
+        loop: this.plugin.prefs.get("hydrusDefaultLoop"),
+        muted: this.plugin.prefs.get("hydrusDefaultMuted"),
       },
     });
   }
@@ -279,7 +304,7 @@ export class MapScreenPanel {
   }
 
   // The Exploration modal owns its own listener plumbing (it has to tear down a
-  // drag whose mouseup was missed), so it takes the lock directly.
+  // drag whose release was missed), so it takes the lock directly.
   beginPanelDrag(): () => void {
     return this.host.beginDrag();
   }
@@ -287,26 +312,21 @@ export class MapScreenPanel {
   // Every preview drag goes through here: it holds the panel's drag lock for
   // the gesture, so a background render cannot empty the container and detach
   // the stage the drag's closures measure against.
-  trackDrag(onMove: (e: MouseEvent) => void, onEnd?: () => void) {
-    // A mouseup released outside the window never arrives. Without this the
-    // lock would leak and the panel would stop taking background renders for
-    // the rest of its life, so a new drag tears down any prior one first.
+  trackDrag(start: PointerEvent, onMove: (e: PointerEvent) => void, onEnd?: () => void) {
+    // A release outside the window never arrives at the element. Without this
+    // the lock would leak and the panel would stop taking background renders
+    // for the rest of its life, so a new drag tears down any prior one first.
     this.activeDrag?.();
     const release = this.beginPanelDrag();
-    const move = (e: MouseEvent) => onMove(e);
-    const cleanup = () => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      release();
-      this.activeDrag = null;
-    };
-    const up = () => {
-      cleanup();
-      onEnd?.();
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-    this.activeDrag = cleanup;
+    const cancel = trackPointerDrag(start, {
+      onMove,
+      onEnd: () => onEnd?.(),
+      onRelease: () => {
+        release();
+        this.activeDrag = null;
+      },
+    });
+    this.activeDrag = cancel;
   }
 
   private clampStateToViewport() {
@@ -329,24 +349,19 @@ export class MapScreenPanel {
 
   private persistState() {
     if (!this.activeMap) return;
-    this.plugin.settings.mapConfigs[this.activeMap.url] = { ...this.state };
-    void this.plugin.saveSettings();
-  }
-
-  private fogAdapter(): FogAdapter {
-    return this.plugin.app.vault.adapter as unknown as FogAdapter;
+    this.plugin.transport.mapData.setConfig(this.activeMap.url, this.state);
   }
 
   broadcastFog() {
     this.plugin.broadcast({
       type: "map-fog",
-      payload: { dataUrl: this.fogDataUrl, opacity: this.plugin.settings.mapFogTvOpacity },
+      payload: { dataUrl: this.fogDataUrl, opacity: this.plugin.prefs.get("mapFogTvOpacity") },
     });
   }
 
   async commitFog(dataUrl: string) {
     this.fogDataUrl = dataUrl;
-    if (this.activeMap) await saveFogSidecar(this.fogAdapter(), this.activeMap.url, dataUrl);
+    if (this.activeMap) await this.plugin.transport.mapData.saveFog(this.activeMap.url, dataUrl);
     this.broadcastFog();
   }
 
@@ -356,7 +371,7 @@ export class MapScreenPanel {
 
   async commitWalls(walls: MapWall[]) {
     this.walls = walls;
-    if (this.activeMap) await saveWallsSidecar(this.fogAdapter(), this.activeMap.url, walls);
+    if (this.activeMap) await this.plugin.transport.mapData.saveWalls(this.activeMap.url, walls);
     this.broadcastWalls();
   }
 
@@ -369,19 +384,39 @@ export class MapScreenPanel {
     this.host.render();
   }
 
-  async setVaultMap(vaultPath: string, mediaType: "image" | "video", opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string }) {
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = adapter.getResourcePath?.(vaultPath);
+  async setVaultMap(
+    vaultPath: string,
+    mediaType: "image" | "video",
+    opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string; offerFoundryWalls?: boolean }
+  ): Promise<string | null> {
+    let url: string;
+    try {
+      url = await this.plugin.transport.mediaUrl(vaultPath);
+    } catch (e) {
+      new Notice(`Could not publish the map: ${(e as Error).message}`, 8000);
+      return null;
+    }
+    return this.applyMapUrl(url, mediaType, opts);
+  }
+
+  // Takes the URL the screens will use. The dimensions are measured from
+  // whatever this device can load for it, which in remote mode is the
+  // server's copy rather than a local file.
+  async applyMapUrl(
+    url: string,
+    mediaType: "image" | "video",
+    opts?: { hydrusHash?: string; knownTags?: string[]; noteBasename?: string; offerFoundryWalls?: boolean }
+  ): Promise<string | null> {
+    const resourceUrl = this.plugin.transport.displayUrl(url);
     const dims = resourceUrl ? await measureMedia(resourceUrl, mediaType) : null;
     if (!dims) {
       new Notice("Could not read the map's dimensions.");
-      return;
+      return null;
     }
-    const url = `/vault/${encodeForVaultUrl(vaultPath)}`;
-    const stored = this.plugin.settings.mapConfigs[url];
+    const stored = this.plugin.transport.mapData.config(url);
     this.state = stored
       ? { ...stored }
-      : defaultMapState(dims.w, dims.h, this.plugin.settings.mapDefaultPxPerSquare);
+      : defaultMapState(dims.w, dims.h, this.plugin.prefs.get("mapDefaultPxPerSquare"));
     this.activeMap = { url, mediaType, naturalWidth: dims.w, naturalHeight: dims.h };
     this.activeMapTags = opts?.knownTags ?? [];
 
@@ -392,22 +427,19 @@ export class MapScreenPanel {
       noteBasename: opts?.noteBasename,
       plugin: this.plugin,
     });
-    if (!this.plugin.settings.lastSourceLabels) {
-      this.plugin.settings.lastSourceLabels = {};
-    }
-    this.plugin.settings.lastSourceLabels.map = sourceLabel;
+    this.plugin.sourceLabels().map = sourceLabel;
     void this.plugin.saveSettings();
 
     this.releasePreviewThumb();
-    this.fogDataUrl = await loadFogSidecar(this.fogAdapter(), url);
-    this.walls = await loadWallsSidecar(this.fogAdapter(), url);
+    this.fogDataUrl = await this.plugin.transport.mapData.loadFog(url);
+    this.walls = await this.plugin.transport.mapData.loadWalls(url);
     this.aoes = [];
     this.visions = [];
     this.previewZoom = 1;
     this.previewPanX = 0;
     this.previewPanY = 0;
     this.clampStateToViewport();
-    debug("MapScreenPanel: setVaultMap", vaultPath, mediaType, `${dims.w}×${dims.h}`, stored ? "(remembered config)" : "(defaults)");
+    debug("MapScreenPanel: applyMapUrl", url, mediaType, `${dims.w}×${dims.h}`, stored ? "(remembered config)" : "(defaults)");
     this.broadcastShow();
     this.broadcastConfig();
     this.broadcastView(true);
@@ -417,7 +449,46 @@ export class MapScreenPanel {
     this.broadcastWalls();
     this.persistState();
     this.host.render();
-    if (opts?.hydrusHash) void this.offerFoundryWalls(url);
+    if (opts?.hydrusHash && opts.offerFoundryWalls !== false) void this.offerFoundryWalls(url);
+    return url;
+  }
+
+  // The scene loader's entry point: applies the map as Add Map does, then
+  // overrides everything the scene carries and persists it as the map's
+  // current state, so a loaded scene behaves like the DM's own edits.
+  async applyMapScene(
+    vaultPath: string,
+    mediaType: "image" | "video",
+    opts: { hydrusHash?: string; knownTags?: string[] },
+    scene: {
+      view: Pick<StoredMapState, "mode" | "panX" | "panY" | "rotation">;
+      grid: Pick<StoredMapState, "pxPerSquare" | "gridOffsetX" | "gridOffsetY" | "showGrid" | "gridColor" | "gridOpacity">;
+      fog: string | null;
+      walls: MapWall[];
+      aoes: MapAoe[];
+      visions: MapVision[];
+    }
+  ): Promise<boolean> {
+    const url = await this.setVaultMap(vaultPath, mediaType, { ...opts, offerFoundryWalls: false });
+    if (!url) return false;
+    this.state = { ...this.state, ...scene.view, ...scene.grid };
+    this.clampStateToViewport();
+    this.aoes = scene.aoes.map((a) => ({ ...a }));
+    this.visions = scene.visions.map((v) => ({ ...v }));
+    this.walls = scene.walls.map((w) => ({ ...w }));
+    this.fogDataUrl = scene.fog;
+    await this.plugin.transport.mapData.saveFog(url, scene.fog);
+    await this.plugin.transport.mapData.saveWalls(url, this.walls);
+    this.broadcastConfig();
+    this.broadcastView(true);
+    this.broadcastAoes(true);
+    this.broadcastVisions(true);
+    this.broadcastFog();
+    this.broadcastWalls();
+    this.persistState();
+    this.host.render();
+    debug("MapScreenPanel: applyMapScene", vaultPath, "walls:", this.walls.length, "aoes:", this.aoes.length, "visions:", this.visions.length);
+    return true;
   }
 
   // Scale imported walls (UVTT or Foundry, in their own pixel space) onto the
@@ -459,7 +530,7 @@ export class MapScreenPanel {
   // import that module's walls. Every await re-checks the active map, so a map
   // switched mid-flight never receives another map's walls.
   async offerFoundryWalls(mapUrl: string) {
-    const client = this.plugin.buildHydrusClient();
+    const client = this.plugin.hydrusApi();
     if (!client) return;
     const isCurrent = () => this.activeMap?.url === mapUrl;
     let modules;
@@ -498,9 +569,7 @@ export class MapScreenPanel {
     this.visions = [];
     this.walls = [];
     this.fogDataUrl = null;
-    if (this.plugin.settings.lastSourceLabels) {
-      delete this.plugin.settings.lastSourceLabels.map;
-    }
+    delete this.plugin.sourceLabels().map;
     void this.plugin.saveSettings();
     this.plugin.broadcast({ type: "map-clear", payload: {} });
     this.host.render();
@@ -508,12 +577,14 @@ export class MapScreenPanel {
 
   private async applyHydrusRefAsMap(ref: ResolvedHydrusRef) {
     try {
-      const entry = await ensureLocalCopy(ref, this.plugin.hydrusCache!, this.plugin.buildHydrusClient());
-      await this.setVaultMap(entry.vaultPath, ref.mediaType === "video" ? "video" : "image", {
+      const api = this.plugin.hydrusApi();
+      if (!api) throw new Error("Hydrus is not configured");
+      const file = await api.publish(ref.hash);
+      await this.applyMapUrl(file.url, file.mediaType, {
         hydrusHash: ref.hash,
-        knownTags: entry.knownTags,
+        knownTags: file.knownTags,
       });
-      await this.plugin.hydrusCache!.markUsed(ref.hash);
+      await api.markUsed(ref.hash);
     } catch (err) {
       new Notice(`Hydrus: ${(err as Error).message}`, 6000);
     }
@@ -580,7 +651,7 @@ export class MapScreenPanel {
     calibrated: boolean;
   } {
     const profile =
-      this.plugin.settings.mapScreenProfiles[profileKey(client.width, client.height, client.devicePixelRatio)];
+      this.plugin.transport.mapData.profiles()[profileKey(client.width, client.height, client.devicePixelRatio)];
     return { ppi: cssPixelsPerInch(client.width, client.height, profile), calibrated: (profile?.diagonalInches ?? 0) > 0 };
   }
 
@@ -591,7 +662,8 @@ export class MapScreenPanel {
     const header = section.createDiv("dm-section-header");
     const title = header.createEl("h3", { text: "Map Screen" });
     this.host.makeCollapsible(section, title, "map-screen");
-    const exploreBtn = header.createEl("button", { text: "Explore", cls: "dm-explore-open-btn" });
+    const actions = this.host.renderSceneButtons(header, "map", !!this.activeMap);
+    const exploreBtn = actions.createEl("button", { text: "Explore", cls: "dm-explore-open-btn" });
     const exploreMap = this.activeMap;
     if (exploreMap) {
       exploreBtn.title = "Table-play exploration: toggle doors and reveal rooms";
@@ -603,19 +675,11 @@ export class MapScreenPanel {
       exploreBtn.title = "Add a map to explore it";
     }
 
-    const isRunning = !!this.plugin.server;
-    if (isRunning) {
-      const port = this.plugin.settings.serverPort;
-      const lanIp = this.host.getLanIp();
-      const mapUrl = `http://${lanIp ?? "localhost"}:${port}/map`;
-      const joinUrl = buildJoinUrl(
-        lanIp ?? "localhost",
-        port,
-        this.plugin.settings.accessToken,
-        "/map",
-      );
+    const join = this.plugin.transport.joinLink("/map");
+    if (join) {
+      const joinUrl = join.href;
       const urlRow = section.createDiv("dm-server-url");
-      const link = urlRow.createEl("a", { text: `Map: ${mapUrl}`, href: joinUrl, cls: "dm-server-url-link" });
+      const link = urlRow.createEl("a", { text: `Map: ${join.text}`, href: joinUrl, cls: "dm-server-url-link" });
       link.setAttr("target", "_blank");
       const copyBtn = urlRow.createEl("button", { text: "Copy", cls: "dm-copy-url-btn" });
       copyBtn.addEventListener("click", () => {
@@ -637,7 +701,7 @@ export class MapScreenPanel {
         if (seen.has(key)) continue;
         seen.add(key);
         const { calibrated } = this.clientPpi(c);
-        const original = this.plugin.settings.mapScreenProfiles[key]?.quality === "original";
+        const original = this.plugin.transport.mapData.profiles()[key]?.quality === "original";
         const badge = clientInfo.createSpan({
           text: `${c.width}×${c.height}${calibrated ? " ✓" : " — calibrate"}${original ? " · original" : ""}`,
           cls: "dm-client-resolution",
@@ -649,7 +713,7 @@ export class MapScreenPanel {
           new MapCalibrationModal(this.plugin.app, this.plugin, c, () => this.host.render()).open();
         });
       }
-    } else if (isRunning) {
+    } else if (join) {
       section.createDiv({
         cls: "dm-status-detail",
         text: "Open the map URL on the table screen to connect it.",
@@ -974,7 +1038,7 @@ export class MapScreenPanel {
     const zoomControls = preview.createDiv("dm-map-zoom-controls");
     // Clicks on the overlay controls must never fall through to the preview's
     // click-to-center pan handler.
-    zoomControls.addEventListener("mousedown", (e: MouseEvent) => e.stopPropagation());
+    zoomControls.addEventListener("pointerdown", (e: PointerEvent) => e.stopPropagation());
 
     const zoomSlider = zoomControls.createEl("input", { type: "range" });
     zoomSlider.min = "1";
@@ -1037,28 +1101,26 @@ export class MapScreenPanel {
     // DM-local "look around": pans the preview stage only (previewPanX/Y),
     // never broadcast, so the players' view stays put. Bound to middle-drag
     // always, and to left-drag while the view is locked.
-    const startLookAround = (e: MouseEvent) => {
+    const startLookAround = (e: PointerEvent) => {
       e.preventDefault();
       const startX = e.clientX;
       const startY = e.clientY;
       const startPanX = this.previewPanX;
       const startPanY = this.previewPanY;
-      this.trackDrag((ev: MouseEvent) => {
+      this.trackDrag(e, (ev: PointerEvent) => {
         this.previewPanX = startPanX + (ev.clientX - startX);
         this.previewPanY = startPanY + (ev.clientY - startY);
         applyTransform();
       });
     };
 
-    preview.addEventListener("mousedown", (e: MouseEvent) => {
+    preview.addEventListener("pointerdown", (e: PointerEvent) => {
       // Middle-drag always looks around; left-drag looks around only while the
       // view is locked (unlocked left-drag moves the players' viewport below).
       if (e.button === 1 || (e.button === 0 && this.previewLocked)) startLookAround(e);
     });
 
-    const vaultPath = vaultPathFromUrl(map.url);
-    const adapter = this.plugin.app.vault.adapter as { getResourcePath?: (p: string) => string };
-    const resourceUrl = vaultPath ? adapter.getResourcePath?.(vaultPath) : null;
+    const resourceUrl = this.plugin.transport.displayUrl(map.url);
     if (resourceUrl) {
       if (map.mediaType === "video") {
         const v = stage.createEl("video");
@@ -1084,7 +1146,7 @@ export class MapScreenPanel {
         });
       }
 
-      const savedLabel = this.plugin.settings.lastSourceLabels?.map;
+      const savedLabel = this.plugin.sourceLabels().map;
       const sourceLabel = savedLabel || resolveSourceLabel({ url: map.url, plugin: this.plugin });
       const labelChip = stage.createDiv("dm-source-label");
       labelChip.textContent = sourceLabel.label;
@@ -1094,12 +1156,18 @@ export class MapScreenPanel {
     const repositionMarkers: Array<() => void> = [];
 
     for (const aoe of this.aoes) {
+      const live = this.expandedAoeId === aoe.id;
       const dot = stage.createDiv("dm-map-aoe-dot");
       dot.style.background = aoe.color;
-      dot.title = `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — drag to move`
+        : `${aoe.label ?? aoe.shape} ${aoe.sizeFt}ft — open it in the AoEs list to move it`;
       // Circle and ring are rotationally symmetric — no rotation handle.
       const handle =
-        aoe.shape === "circle" || aoe.shape === "ring" ? null : stage.createDiv("dm-map-aoe-rot-handle");
+        !live || aoe.shape === "circle" || aoe.shape === "ring"
+          ? null
+          : stage.createDiv("dm-map-aoe-rot-handle");
       if (handle) {
         handle.style.background = aoe.color;
         handle.title = "Drag to rotate";
@@ -1107,7 +1175,8 @@ export class MapScreenPanel {
       const ftToPx = this.state.pxPerSquare / 5;
       // The handle sits where the shape "points": tip of cone/line, mid-edge
       // of a square.
-      const handleDistPx = () => (aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx;
+      const handleDistPx = () =>
+        handleDistance((aoe.shape === "square" ? aoe.sizeFt / 2 : aoe.sizeFt) * ftToPx, effectiveScale());
       const positionMarkers = () => {
         dot.style.left = `${(aoe.x / nw) * 100}%`;
         dot.style.top = `${(aoe.y / nh) * 100}%`;
@@ -1122,7 +1191,12 @@ export class MapScreenPanel {
       positionMarkers();
       repositionMarkers.push(positionMarkers);
 
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -1132,7 +1206,8 @@ export class MapScreenPanel {
         const startAoeX = aoe.x;
         const startAoeY = aoe.y;
         this.trackDrag(
-          (me: MouseEvent) => {
+          ev,
+          (me: PointerEvent) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
             aoe.x = Math.max(0, Math.min(nw, startAoeX + d.x));
@@ -1145,12 +1220,13 @@ export class MapScreenPanel {
         );
       });
 
-      handle?.addEventListener("mousedown", (ev: MouseEvent) => {
+      handle?.addEventListener("pointerdown", (ev: PointerEvent) => {
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
         this.trackDrag(
-          (me: MouseEvent) => {
+          ev,
+          (me: PointerEvent) => {
             const s = effectiveScale();
             if (s === null) return;
             const b = stage.getBoundingClientRect();
@@ -1173,8 +1249,12 @@ export class MapScreenPanel {
     // repaints the canvas outline, not these dots).
     const repositionVisionDots: Array<() => void> = [];
     for (const vision of this.visions) {
+      const live = this.expandedVisionId === vision.id;
       const dot = stage.createDiv("dm-map-vision-dot");
-      dot.title = `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`;
+      dot.toggleClass("dm-map-marker-selected", live);
+      dot.title = live
+        ? `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — drag to move`
+        : `${vision.label ?? vision.shape} ${vision.sizeFt}ft vision — open it in the Vision list to move it`;
       dot.style.background = vision.color ?? DEFAULT_VISION_COLOR;
       const positionVisionDot = () => {
         dot.style.left = `${(vision.x / nw) * 100}%`;
@@ -1183,7 +1263,12 @@ export class MapScreenPanel {
       positionVisionDot();
       repositionVisionDots.push(positionVisionDot);
       repositionMarkers.push(positionVisionDot);
-      dot.addEventListener("mousedown", (ev: MouseEvent) => {
+      dot.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (!live) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
         if (ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -1193,7 +1278,8 @@ export class MapScreenPanel {
         const targets = visionDragTargets(this.visions, vision, this.visionGroup);
         const starts = targets.map((v) => ({ x: v.x, y: v.y }));
         this.trackDrag(
-          (me: MouseEvent) => {
+          ev,
+          (me: PointerEvent) => {
             const d = deltaToMap(me.clientX - startX, me.clientY - startY);
             if (!d) return;
             moveVisions(targets, starts, d.x, d.y, nw, nh);
@@ -1243,7 +1329,7 @@ export class MapScreenPanel {
       }
     };
 
-    preview.addEventListener("mousedown", (e: MouseEvent) => {
+    preview.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (this.previewLocked) return;
       e.preventDefault();
@@ -1253,12 +1339,13 @@ export class MapScreenPanel {
       const startX = e.clientX;
       const startY = e.clientY;
       const fromRect = e.target === rect;
-      // A bare click used to re-centre on mousedown, so a near miss on a marker
+      // A bare click used to re-centre on the press, so a near miss on a marker
       // moved what the players see. The pan waits for real movement; a drag that
       // starts on the rectangle is already deliberate and starts immediately.
       let panStarted = fromRect;
       this.trackDrag(
-        (ev: MouseEvent) => {
+        e,
+        (ev: PointerEvent) => {
           if (!panStarted) {
             if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < PAN_START_THRESHOLD_PX) return;
             panStarted = true;

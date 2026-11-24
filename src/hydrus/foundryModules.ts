@@ -1,7 +1,8 @@
-import { inflateSync, unzipSync } from "fflate";
+import { inflateSync, unzipSync } from "fflate/browser";
 import { debug, debugWarn } from "../debug";
 import { collectFoundryScenes, type FoundryScene } from "../map/foundry";
-import type { HydrusClient, HydrusFile } from "./client";
+import type { HydrusApi } from "../integrations/gateway";
+import type { HydrusFile } from "./client";
 
 export const FOUNDRY_MODULE_TAG = "type:foundry module";
 const MAX_MODULES = 8;
@@ -65,7 +66,7 @@ export async function readZipEntries(read: RangeReader, size: number, wanted: Re
   return entries;
 }
 
-export async function findFoundryModules(client: HydrusClient, mapTags: string[]): Promise<HydrusFile[]> {
+export async function findFoundryModules(client: HydrusApi, mapTags: string[]): Promise<HydrusFile[]> {
   const names = mapTags.filter((t) => t.startsWith("name:"));
   if (names.length === 0) return [];
   const hashes = new Set<string>();
@@ -77,7 +78,7 @@ export async function findFoundryModules(client: HydrusClient, mapTags: string[]
   return client.getFileMetadata([...hashes].slice(0, MAX_MODULES));
 }
 
-export async function loadModuleScenes(client: HydrusClient, modules: HydrusFile[]): Promise<FoundryScene[]> {
+export async function loadModuleScenes(client: HydrusApi, modules: HydrusFile[]): Promise<FoundryScene[]> {
   const scenes: FoundryScene[] = [];
   for (const module of modules) {
     try {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as obsidian from "obsidian";
 import { zipSync } from "fflate";
 import { HydrusClient, type HydrusFile } from "../hydrus/client";
+import type { HydrusApi } from "../integrations/gateway";
 import { FOUNDRY_MODULE_TAG, findFoundryModules, loadModuleScenes, readZipEntries, type RangeReader } from "../hydrus/foundryModules";
 
 const enc = new TextEncoder();
@@ -59,7 +60,16 @@ describe("readZipEntries", () => {
 });
 
 describe("findFoundryModules / loadModuleScenes", () => {
-  const client = new HydrusClient({ baseUrl: "https://hydrus-api.test", apiKey: "deadbeef" });
+  // The real client plus the two gateway methods these helpers never call.
+  const client: HydrusApi = Object.assign(
+    new HydrusClient({ baseUrl: "https://hydrus-api.test", apiKey: "deadbeef" }),
+    {
+      publish: async () => {
+        throw new Error("publish is not part of the Foundry lookup");
+      },
+      markUsed: async () => {},
+    }
+  );
   const module: HydrusFile = { hash: "a".repeat(64), mime: "application/zip", ext: ".zip", size: 0, knownTags: [] };
 
   it("searches each name: tag together with the module type tag", async () => {
@@ -81,7 +91,7 @@ describe("findFoundryModules / loadModuleScenes", () => {
     const zip = moduleZip();
     const good = { ...module, size: zip.length };
     const bad = { ...module, hash: "b".repeat(64), size: 4096 };
-    vi.spyOn(client, "getFileRange").mockImplementation(async (hash, start, end) =>
+    vi.spyOn(client, "getFileRange").mockImplementation(async (hash: string, start: number, end: number) =>
       hash === good.hash ? { bytes: zip.slice(start, end + 1), partial: true } : { bytes: new Uint8Array(end - start + 1), partial: true }
     );
     const scenes = await loadModuleScenes(client, [bad, good]);

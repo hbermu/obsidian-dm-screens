@@ -17,7 +17,8 @@
 
 ## Requirements
 
-1. The DM panel shall maintain an array of `ImageLayer` objects, each with: `id`, `label`, `dataUrl`, `x`, `y`, `width`, `height` (all four as percentages 0–100), `zIndex`, `rotation` (degrees), `visible`, `fogEnabled`, `fogDataUrl`, `bordered`.
+1. The DM panel shall maintain an array of `ImageLayer` objects, each with: `id`, `label`, `dataUrl`, `x`, `y`, `width`, `height` (all four as percentages 0–100), `zIndex`, `rotation` (degrees), `visible`, `fogEnabled`, `fogDataUrl`, `bordered`, and an optional `source`.
+1b. Every path that adds a layer shall record where its image came from in `source`, as a scene source reference: `vault:<vault path>` for a note image or a D&D Beyond avatar, `hydrus:<sha256>` for a Hydrus file (Hydrus explorer or a note's `hydrus://` reference). `source` is DM-side only: the transports strip it from `image-layers-sync` (`toWire` in `src/transport/wire.ts`) before the message reaches the server, the replay cache or the wire, so vault paths never reach player devices. It persists with the layer in `lastImageLayers`, and a layer restored from before it existed has none.
 2. The DM panel shall assign a monotonically increasing `zIndex` to every new layer.
 3. The DM panel shall refuse to add a layer whose `label` (case-insensitive) equals an existing layer's label.
 4. When a layer is added, the DM panel shall load the image off-screen, derive `width` and `height` as percentages from the natural pixel dimensions over the effective resolution, clamp both so neither exceeds 100% while preserving aspect ratio, centre the layer in the viewport, then broadcast `image-layers-sync`.
@@ -50,6 +51,7 @@ The cache rule for both is the standard one in `../player-server/websocket-proto
 - `src/__tests__/dm-control-combat.test.ts` — layer addition does not duplicate by label, `addImageLayer` flow, republish emits sync + geometry pair
 - `src/__tests__/layer-renderer.test.ts` — node reuse across syncs, src reassigned only on data-URL change, geometry-only updates, unknown-id/visibility handling, fog overlay lifecycle, URL validation, clear
 - `src/__tests__/server-broadcast.test.ts` — `image-layers-sync` is cached and replayed to late joiners
+- `src/__tests__/dm-control-combat.test.ts` — `addImageLayer` records `source` on the layer and the `image-layers-sync` payload omits it (requirement 1b)
 - `src/__tests__/ddb-to-player.integration.test.ts` — DDB monster-image layers reach the player
 - `test/visual/layers-fog.spec.ts` — Playwright visual regression: two stacked image layers rendered on the real player bundle, with and without fog overlays. Asserts wrapper geometry, frame sizing (aspect-preserving), and z-order. See `../player-server/overview.md`.
 - `test/e2e/specs/layers.e2e.ts` — real Obsidian: Add Image from a real note embed pushes a hidden layer (`image-layers-sync` + geometry pair on the wire, `dm-layer-hidden` row); Clear All Layers empties the sync

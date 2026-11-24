@@ -21,7 +21,7 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: /[\\/]tablet\.spec\.ts$/,
+      testIgnore: /[\\/](tablet|touch)\.spec\.ts$/,
       use: {
         viewport: { width: 1920, height: 1080 },
         deviceScaleFactor: 1,
@@ -34,6 +34,18 @@ export default defineConfig({
         viewport: { width: 1280, height: 800 },
         deviceScaleFactor: 1,
       },
+    },
+    // The touch suite runs the gesture code under real fingers, on both engines
+    // the DM may hold in their hands: an Android tablet and an iPad.
+    {
+      name: "touch-chromium",
+      testMatch: /[\\/]touch\.spec\.ts$/,
+      use: { ...devices["Galaxy Tab S4 landscape"] },
+    },
+    {
+      name: "touch-webkit",
+      testMatch: /[\\/]touch\.spec\.ts$/,
+      use: { ...devices["iPad (gen 7) landscape"] },
     },
   ],
 });

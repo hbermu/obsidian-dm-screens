@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `src/dndbeyond/client.ts` — `DdbClient` constructor, `validateSession`, `refreshToken`, `authedGet`, `authedPost`
+- `src/dndbeyond/client.ts` — `DdbClient` constructor, `validateSession`, `refreshToken`, `authedGet`
 
 ## Settings used
 

@@ -6,7 +6,7 @@
 
 - `src/views/DmControlPanel.ts` — `initFogCanvas`, `getFogCanvas`, `syncFogToLayer`, `initInlineFogCanvas`, `setupInlineFogDrawing`, `createFogToolBtn`, `fogEditLayerId`, `fogTool`, `fogCanvases`, plus the fog editor UI rendered below each layer row
 - `src/types.ts` — `fogEnabled`, `fogDataUrl` on `ImageLayer`
-- `src/player/player.ts` — fog overlay rendered as a sibling `<img>` inside each layer wrapper in `syncImageLayers`
+- `src/player/layerRenderer.ts` — `LayerRenderer.sync` renders the fog overlay as a sibling `<img>` (`createFogImg`) inside each layer's wrapper
 - `src/player/player.css` — fog overlay sizing is inherited from the parent wrapper
 
 ## Settings used

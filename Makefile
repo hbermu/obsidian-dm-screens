@@ -1,4 +1,4 @@
-.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-e2e logs ps clean
+.PHONY: help up down build dev typecheck test deps-audit deps-update test-coverage test-watch test-visual test-visual-update test-touch test-e2e test-e2e-remote test-conformance server-screens server-test server-lint server-image logs ps clean
 
 help:                ## list available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -43,8 +43,36 @@ test-visual:         ## playwright visual regression (inside the official playwr
 test-visual-update:  ## refresh visual baselines (inside container — host PNGs WILL diff)
 	docker compose --profile tools run --rm visual sh -c "npm install --no-audit --no-fund && npx playwright test --update-snapshots"
 
+test-touch:          ## touch-gesture suite under real fingers (Chromium + WebKit tablet profiles)
+	docker compose --profile tools run --rm visual sh -c "npm install --no-audit --no-fund && npx playwright test --project=touch-chromium --project=touch-webkit"
+
 test-e2e:            ## real-Obsidian e2e suite (wdio; OBSIDIAN_VERSIONS=app/installer pairs, default latest/latest)
 	docker compose --profile tools run --rm e2e
+
+test-conformance:    ## black-box server contract (CONFORMANCE_TARGET=embedded|remote, default embedded)
+ifeq ($(CONFORMANCE_TARGET),remote)
+	docker compose --profile tools build conformance-remote
+	docker compose --profile tools run --rm conformance-remote
+else
+	docker compose --profile tools run --rm conformance
+endif
+
+test-e2e-remote:     ## real-Obsidian remote-mode e2e against a fresh remote server container
+	docker compose --profile tools up -d --build --force-recreate --renew-anon-volumes e2e-server
+	E2E_SPEC=./test/e2e/specs/remote.e2e.ts DM_SCREEN_E2E_REMOTE_URL=http://dmscreen.local:8080 docker compose --profile tools run --rm e2e; \
+	  status=$$?; docker compose --profile tools rm -sfv e2e-server >/dev/null; exit $$status
+
+server-screens:      ## export the player/map screens into server/assets/ for the Rust build
+	docker compose --profile tools run --rm deps "npm install --no-audit --no-fund >/dev/null 2>&1 && node scripts/export-screens.mjs server/assets"
+
+server-test: server-screens  ## cargo test for the remote server
+	docker compose --profile tools run --rm server cargo test --locked
+
+server-lint: server-screens  ## rustfmt check + clippy (warnings are errors)
+	docker compose --profile tools run --rm server sh -c "cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings"
+
+server-image:        ## build the remote server container image (dm-screen-server:dev)
+	docker build -f server/Dockerfile -t dm-screen-server:dev .
 
 logs:                ## tail combined logs
 	docker compose logs -f --tail=50

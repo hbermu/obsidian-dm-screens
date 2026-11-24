@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `src/views/DmControlPanel.ts` — Add BG / Stop BG button, `showBackgroundPicker`, `setImageAsBackground`, `getImagesFromNote`, `collectHydrusRefEntries`, `applyHydrusRef`, `activeBackgroundUrl`, `activeVideoPath`, DM-side preview overlay rendered in `renderPlayerScreenSection`, `resolveBackgroundPreviewUrl`, `isVideoBackgroundUrl`
+- `src/views/DmControlPanel.ts` — Add BG / Stop BG button, `showBackgroundPicker`, `setImageAsBackground`, `getImagesFromNote`, `collectHydrusRefEntries`, `applyHydrusRef`, `activeBackgroundUrl`, `activeVideoPath`, DM-side preview overlay rendered in `renderPlayerScreenSection`, `isVideoBackgroundUrl`
 - `src/sourceLabel.ts` — `resolveSourceLabel` computes human labels for images from Hydrus name tags, note basenames or file names; extracts hash from Hydrus cache URLs to lookup tags when no explicit hash is provided
 - `src/hydrus/hashFromPath.ts` — `hydrusHashFromVaultPath` extracts the Hydrus hash from a vault path matching the cache pattern, shared with `recoverImage`
 - `src/hydrus/cache.ts` — `getSync` provides synchronous access to a cached entry's tags when the index is already loaded
@@ -61,8 +61,7 @@
 ## Tests covering this
 
 - `src/__tests__/server-broadcast.test.ts` — `show-background-media` is cached and replayed; requirement 23: payload has no label keys
-- `src/__tests__/server-bootstrap.integration.test.ts` — wires the DM → player flow
-- `src/__tests__/dm-preview-bg.test.ts` — `resolveBackgroundPreviewUrl` and `isVideoBackgroundUrl` helpers used by the DM-side preview overlay
+- `src/__tests__/dm-preview-bg.test.ts` — the `isVideoBackgroundUrl` helper used by the DM-side preview overlay
 - `src/__tests__/dm-control-restore.test.ts` — unit tests for requirement 17: missing non-Hydrus file → Notice + state cleared + `show-background-media` forgotten from the `ReplayCache` (other entries kept); Notice uses the label
 - `src/__tests__/source-label.test.ts` — requirement 20: label resolution from name tags, Hydrus hash, note basename and filename; Hydrus-aware URL fallback via cache lookup
 - `src/__tests__/hydrus-hash-from-path.test.ts` — `hydrusHashFromVaultPath` helper extracts hash from cache paths with default/custom folders and various edge cases

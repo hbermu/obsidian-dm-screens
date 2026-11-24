@@ -5,11 +5,87 @@
 .dm-control-panel {
   --dm-radius: 8px;
   --dm-radius-lg: 12px;
-  padding: 12px;
+  --dm-panel-pad: 12px;
+  padding: var(--dm-panel-pad);
   /* Drive responsive rules off the panel's own width, not the window's.
      Side panels in Obsidian can be narrow even when the window is wide. */
   container-type: inline-size;
   container-name: dm-panel;
+}
+
+/* The jump bar for a long column. Hidden until the panel is narrow enough to
+   show one section at a time (see the container query below). */
+.dm-section-nav {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  gap: 6px;
+  padding: 6px 0 8px;
+  /* Out through the panel's own side padding: a bar inset from the edges
+     leaves a sharp strip of text down each side, which reads as a box drawn
+     around the chips rather than as a surface. */
+  margin-inline: calc(-1 * var(--dm-panel-pad));
+  padding-inline: var(--dm-panel-pad);
+  background: transparent;
+  /* The bar paints the surface it sits on. Which token that is depends on
+     where the panel was opened, so `DmControlPanel` reads the colour actually
+     painted behind the panel and sets it here; this is only the fallback for
+     when nothing up the tree paints anything. It used to dodge the question
+     with `backdrop-filter`, but that is the one property here whose support
+     cannot be assumed: Obsidian on iOS showed a black band where the blur
+     should have been, and a bar that is wrong on the phone is worse than one
+     that is not frosted on a desktop. */
+  --dm-nav-surface: var(--background-primary);
+}
+
+/* The surface is a scrim behind the chips rather than a background on the bar,
+   because it has to reach further than the bar does: up over the panel's top
+   padding, which sticky positioning cannot be pulled into, and down past the
+   bar, where it fades out so content scrolling under it goes gradually out of
+   sight instead of meeting a ruled line. */
+.dm-section-nav::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--dm-panel-pad));
+  bottom: -40px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--dm-nav-surface) 0 64%, transparent 100%);
+}
+
+.dm-section-nav button.dm-section-chip {
+  /* Above the scrim, which is a child of the bar and would otherwise cover
+     them. No negative z-index on the scrim: that is where engines disagree. */
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.8em;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  box-shadow: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Themes style plain buttons through `button:not(.clickable-icon)`, which
+   outweighs a lone class: the active chip kept the theme's grey and the bar
+   showed nothing as current. Element plus class wins it back. */
+.dm-section-nav button.dm-section-chip-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.dm-section-chip-initial {
+  display: none;
 }
 
 .dm-section {
@@ -105,12 +181,24 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  /* The actions drop to their own row rather than being clipped: a panel can
+     be narrower than its title plus three buttons at any window size. */
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .dm-section-header h3 {
   margin: 0;
 }
 
+.dm-section-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.dm-section-actions button:disabled,
 .dm-explore-open-btn:disabled {
   cursor: not-allowed;
   opacity: 0.4;
@@ -794,6 +882,19 @@
   flex: 1;
   min-width: 0;
   justify-content: center;
+}
+
+/* The disclosure control for a layer's own buttons. A wide panel shows them
+   all, so it has nothing to disclose. */
+.dm-layer-expand {
+  display: none;
+  margin-left: auto;
+  padding: 0 8px;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 1.1em;
+  line-height: 1;
 }
 
 .dm-layer-name-row {
@@ -1724,6 +1825,83 @@
    that normally fit horizontally collapse onto a second line so
    nothing gets clipped or hidden by overflow.                       */
 
+/* A panel this narrow is a phone-shaped column: every row is laid out to be
+   reachable with a thumb and nothing is reached by scrolling sideways. */
+@container dm-panel (max-width: 460px) {
+  /* The section's buttons take a full row under the title, instead of
+     trailing off the right edge. */
+  .dm-section-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  /* They share the row, but they grow from their own label rather than from
+     zero: a panel narrow enough to give three buttons less than a label each
+     would otherwise spill the text out over its neighbour. Below that width
+     the row wraps instead. */
+  .dm-section-actions button {
+    flex: 1 1 auto;
+    min-width: max-content;
+  }
+
+  /* A join URL is longer than the panel; it gets its own row above the
+     Copy button rather than squeezing it off screen. */
+  .dm-server-url {
+    flex-wrap: wrap;
+  }
+  .dm-server-url-link {
+    flex-basis: 100%;
+  }
+
+  /* The primary action of a section goes full width: the easiest target on a
+     phone, and the clearest hierarchy. The `mod-cta` class is what marks it,
+     so a row's secondary buttons keep their size. */
+  .dm-layer-btn-row > button.mod-cta,
+  .dm-ddb-choose-btn {
+    flex: 1 1 100%;
+  }
+
+  /* One section at a time means a long column, so it gets what a long column
+     needs: a bar that stays put and says where you are. */
+  .dm-section-nav {
+    display: flex;
+  }
+
+  /* Each section is a card: on a phone a hairline is not enough to tell two
+     stacked sections apart, and the padding gives the controls room. */
+  .dm-section {
+    margin-bottom: 12px;
+    padding: 12px;
+    border-bottom: none;
+    border-radius: var(--dm-radius-lg);
+    background: var(--background-secondary);
+  }
+  .dm-section-collapsed {
+    padding-bottom: 12px;
+  }
+
+  /* The last control has to clear the home indicator. An element is never its
+     own query container, so this has to be asked of the last section rather
+     than of the panel. */
+  .dm-section:last-of-type {
+    margin-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* A layer is one line plus its opacity until it is opened: ten buttons and
+     two toggles per layer filled the screen with two layers on it. The eye
+     stays out, because hiding a layer is the one thing done without looking
+     at anything else. */
+  .dm-layer-expand {
+    display: block;
+  }
+  .dm-layer-name-row {
+    cursor: pointer;
+  }
+  .dm-layer-row:not(.dm-layer-expanded) .dm-layer-right-col,
+  .dm-layer-row:not(.dm-layer-expanded) .dm-layer-left-bottom {
+    display: none;
+  }
+}
+
 @container dm-panel (max-width: 380px) {
   /* Combat tabs stack so the D&D Beyond tab is fully visible. */
   .dm-combat-tabs {
@@ -1764,6 +1942,19 @@
   }
   .dm-ddb-preview .init-condition {
     min-width: 50px;
+  }
+}
+
+/* Four whole words need about 300 px between them. Below that they were each
+   clipped to a few letters, and a bar of fragments navigates nothing: one
+   letter per section is read at a glance and the full title stays in the
+   chip's `aria-label`. */
+@container dm-panel (max-width: 300px) {
+  .dm-section-chip-full {
+    display: none;
+  }
+  .dm-section-chip-initial {
+    display: inline;
   }
 }
 
@@ -2046,6 +2237,38 @@
   inset: calc(-9px * var(--dm-map-zoom, 1));
 }
 
+/* Only the marker whose card is open in its list answers to a press. It says
+   so: a halo marks the one that moves, and every other dot shows the arrow
+   cursor it deserves for doing nothing. */
+.dm-map-aoe-dot:not(.dm-map-marker-selected),
+.dm-map-vision-dot:not(.dm-map-marker-selected) {
+  cursor: default;
+  opacity: 0.75;
+}
+
+/* Above the inert ones. Two markers on the same spot are common — two visions
+   dropped on one token, a cone over its own anchor — and the one that cannot
+   be moved used to swallow the press meant for the one that can, purely
+   because it was drawn later. The live marker and its handle win every
+   overlap. */
+.dm-map-aoe-rot-handle {
+  z-index: 6;
+}
+
+/* The live marker beats its own rotation handle too: wherever the two overlap,
+   the press moves the shape, because that is what nine presses in ten are
+   for. */
+.dm-map-marker-selected {
+  z-index: 7;
+}
+
+.dm-map-marker-selected {
+  opacity: 1;
+  box-shadow:
+    0 0 0 3px var(--background-primary),
+    0 0 0 5px var(--interactive-accent);
+}
+
 .dm-map-aoe-section {
   margin-top: 8px;
 }
@@ -2171,6 +2394,12 @@
   overflow: hidden;
   background: var(--background-secondary);
 }
+/* The zoomed box the media and the overlay ride on; the stage clips it. */
+.dm-fog-inner {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+}
 .dm-fog-stage img,
 .dm-fog-stage video {
   position: absolute;
@@ -2192,6 +2421,11 @@
   gap: 4px;
   margin-bottom: 6px;
 }
+/* Zoom is a property of the stage, not of a tab, so it sits apart from the
+   two tab buttons. */
+.dm-fog-zoom-btn {
+  margin-left: auto;
+}
 
 .dm-explore-modal {
   --dm-radius: 8px;
@@ -2205,6 +2439,9 @@
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
+  /* On a phone the bar's buttons are 44px tall and there are seven of them:
+     without this they overflow the modal instead of taking a second row. */
+  flex-wrap: wrap;
 }
 /* The content column fills the modal so the body can claim the leftover
    height below the bar. */
@@ -2281,6 +2518,74 @@
 .dm-floating-window-minimize:hover {
   background: var(--background-modifier-hover);
 }
+/* The compact layout for a narrow stage: a tab row pinned along the bottom of
+   the stage and a sheet that slides over its lower part. Closed, only the tab
+   row is on screen, so the map keeps the whole stage. */
+.dm-explore-sheet-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  pointer-events: none;
+}
+.dm-explore-tabs {
+  display: flex;
+  gap: 1px;
+  background: var(--background-modifier-border);
+  pointer-events: auto;
+}
+.dm-explore-tabs button {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 0;
+  box-shadow: none;
+}
+.dm-explore-sheet {
+  display: none;
+  flex-direction: column;
+  max-height: 45vh;
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+}
+.dm-explore-sheet-open .dm-explore-sheet {
+  display: flex;
+}
+.dm-explore-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.dm-explore-sheet-title {
+  font-weight: 600;
+}
+.dm-explore-sheet-extra {
+  flex: 1;
+  min-width: 0;
+}
+.dm-explore-sheet-close {
+  min-height: 44px;
+  min-width: 44px;
+}
+.dm-explore-sheet-bodies {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.dm-explore-sheet-body {
+  display: none;
+  padding: 12px;
+}
+.dm-explore-sheet-body-open {
+  display: block;
+}
+
 .dm-floating-window-body {
   padding: 12px;
   overflow-y: auto;
@@ -2344,4 +2649,119 @@
 .dm-explore-markers.dm-explore-focus,
 .dm-explore-markers.dm-explore-focus * {
   pointer-events: none;
+}
+
+.dm-scene-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.dm-scene-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dm-scene-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-scene-summary {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.dm-scene-error {
+  color: var(--text-error);
+}
+
+.dm-readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.dm-readonly .dm-session,
+.dm-explore-readonly {
+  opacity: 0.55;
+}
+
+/* ── Touch ───────────────────────────────────────────────────────────── */
+
+/* A surface that drags must claim the gesture, or the browser pans or zooms
+   the page and the first pointermove never arrives. */
+.dm-explore-overlay,
+.dm-explore-markers,
+.dm-explore-inner,
+.dm-map-preview-stage,
+.dm-fog-stage,
+.dm-map-aoe-dot,
+.dm-map-vision-dot,
+.dm-map-aoe-rot-handle,
+.dm-map-viewport-rect,
+.dm-player-viewport-rect,
+.dm-layer-rect,
+.dm-fog-draw-canvas-inline {
+  touch-action: none;
+}
+
+/* A finger is far blunter than a cursor: the hit area grows to the 44px a
+   touch target needs, without changing what is drawn. */
+@media (pointer: coarse) {
+  .dm-map-aoe-dot::before,
+  .dm-map-vision-dot::before,
+  .dm-map-aoe-rot-handle::before {
+    inset: calc(-17px * var(--dm-map-zoom, 1));
+  }
+
+  .dm-explore-bar button,
+  .dm-section-actions button,
+  .dm-explore-open-btn,
+  .dm-fog-tabs button,
+  .dm-fog-toolbar button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* The layer row's icon buttons grow in height only: they sit side by side in
+     a narrow column, and a 44px floor on both axes would push the row wider
+     than the panel. */
+  .dm-layer-btn {
+    min-height: 44px;
+  }
+
+  /* Nothing hovers under a finger, so a press has to answer for itself. */
+  .dm-control-panel button:active,
+  .dm-explore-modal button:active,
+  .dm-fog-modal button:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+  }
+  .dm-layer-name-row:active {
+    opacity: 0.7;
+  }
+
+  /* A slider thumb is the one control a finger cannot miss by being small. */
+  input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  input[type="range"] {
+    height: 28px;
+  }
 }

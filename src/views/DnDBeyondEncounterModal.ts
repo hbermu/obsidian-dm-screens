@@ -1,19 +1,19 @@
 import { App, Modal, Notice } from "obsidian";
 import type DmScreenPlugin from "../main";
-import type { DdbClient } from "../dndbeyond/client";
+import type { DdbApi, DdbEncounterSummary } from "../integrations/gateway";
 import type { DdbEncounter } from "../dndbeyond/types";
 import { debug, debugWarn } from "../debug";
 
 export class DnDBeyondEncounterModal extends Modal {
-  private client: DdbClient;
+  private client: DdbApi;
   private onSelect: (id: string) => void;
-  private encounters: DdbEncounter[] = [];
+  private encounters: DdbEncounterSummary[] = [];
   private listEl: HTMLElement | null = null;
   private statusEl: HTMLElement | null = null;
   private filter = "";
   private fetchSeq = 0;
 
-  constructor(app: App, _plugin: DmScreenPlugin, client: DdbClient, onSelect: (id: string) => void) {
+  constructor(app: App, _plugin: DmScreenPlugin, client: DdbApi, onSelect: (id: string) => void) {
     super(app);
     this.client = client;
     this.onSelect = onSelect;

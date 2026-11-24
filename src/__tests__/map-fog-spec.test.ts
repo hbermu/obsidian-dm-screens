@@ -15,6 +15,8 @@ import { messageChannel } from "../server";
 import { MapScreenPanel } from "../views/MapScreenPanel";
 import { DEFAULT_SETTINGS } from "../settings";
 import type { MapVision, MapWall } from "../map/types";
+import { EmbeddedTransport } from "../transport/embedded";
+import { SessionPreferences } from "../integrations/prefs";
 
 const PNG_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -53,6 +55,11 @@ function makePanel(fogOpacity = 1) {
       },
     },
   };
+  (plugin as any).transport = new EmbeddedTransport(plugin as any);
+  (plugin as any).prefs = new SessionPreferences(plugin as any);
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
+  (plugin as any).hydrusApi = () => null;
   const host = { render: () => {} };
   const panel = new MapScreenPanel(plugin as any, host as any);
   return { panel, broadcasts };

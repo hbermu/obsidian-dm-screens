@@ -26,6 +26,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+    # The tag just published, for the image jobs; empty when nothing was.
+    outputs:
+      image_version: ${{ steps.stable_tag.outputs.version || steps.beta_tag.outputs.version }}
+      stable: ${{ steps.stable_tag.outputs.version != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -231,6 +235,7 @@ jobs:
 
       - name: Tag the bumped commit (without touching main)
         if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
+        id: stable_tag
         env:
           VERSION: ${{ steps.next.outputs.version }}
         run: |
@@ -243,6 +248,7 @@ jobs:
           fi
           git tag -a "$VERSION" -m "$VERSION"
           git push origin "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Publish stable release
         if: github.event_name == 'pull_request' && steps.pr_bump.outputs.type != 'skip'
@@ -325,6 +331,7 @@ jobs:
 
       - name: Create prerelease tag
         if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true' && steps.tag_check.outputs.exists == 'false' && steps.stable_check.outputs.stable_exists == 'false'
+        id: beta_tag
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
@@ -332,6 +339,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$VERSION" -m "$VERSION"
           git push origin "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Publish prerelease
         if: github.event_name == 'push' && steps.ver.outputs.is_prerelease == 'true' && steps.tag_check.outputs.exists == 'false' && steps.stable_check.outputs.stable_exists == 'false'
@@ -344,3 +352,86 @@ jobs:
               --generate-notes \
               --prerelease \
               main.js manifest.json styles.css
+
+  # The remote server image, built from the tag just published with the same
+  # version as the plugin. Each architecture builds natively (a Rust release
+  # build under QEMU takes far longer) and pushes by digest; the manifest job
+  # then names the pair.
+  image:
+    needs: publish
+    if: needs.publish.outputs.image_version != ''
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            slug: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            slug: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.publish.outputs.image_version }}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Image name
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/dm-screen-server" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-${{ matrix.slug }}
+          path: digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  image-manifest:
+    needs: [publish, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: digests
+          pattern: digests-*
+          merge-multiple: true
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Tag the multi-arch manifest
+        working-directory: digests
+        env:
+          VERSION: ${{ needs.publish.outputs.image_version }}
+          STABLE: ${{ needs.publish.outputs.stable }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/dm-screen-server"
+          TAGS=(-t "$IMAGE:$VERSION")
+          if [ "$STABLE" = "true" ]; then TAGS+=(-t "$IMAGE:latest"); fi
+          docker buildx imagetools create "${TAGS[@]}" $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$VERSION"

@@ -15,14 +15,16 @@ async function clickCanvas(nx: number, ny: number): Promise<void> {
     const el = document.querySelector(".dm-fog-overlay");
     if (!el) throw new Error("fog overlay not found");
     const b = el.getBoundingClientRect();
-    const opts: MouseEventInit = {
+    const opts: PointerEventInit = {
+      pointerId: 1,
+      pointerType: "mouse",
       clientX: b.left + (a.nx / a.w) * b.width,
       clientY: b.top + (a.ny / a.h) * b.height,
       button: 0,
       bubbles: true,
     };
-    el.dispatchEvent(new MouseEvent("mousedown", opts));
-    document.dispatchEvent(new MouseEvent("mouseup", opts));
+    el.dispatchEvent(new PointerEvent("pointerdown", opts));
+    document.dispatchEvent(new PointerEvent("pointerup", opts));
   }, { nx, ny, w: MAP_W, h: MAP_H });
 }
 
@@ -32,16 +34,18 @@ async function dragCanvas(n0: [number, number], n1: [number, number]): Promise<v
       const el = document.querySelector(".dm-fog-overlay");
       if (!el) throw new Error("fog overlay not found");
       const b = el.getBoundingClientRect();
-      const pt = (nx: number, ny: number): MouseEventInit => ({
+      const pt = (nx: number, ny: number): PointerEventInit => ({
+        pointerId: 1,
+        pointerType: "mouse",
         clientX: b.left + (nx / a.w) * b.width,
         clientY: b.top + (ny / a.h) * b.height,
         button: 0,
         bubbles: true,
       });
-      el.dispatchEvent(new MouseEvent("mousedown", pt(a.x0, a.y0)));
-      document.dispatchEvent(new MouseEvent("mousemove", pt((a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2)));
-      document.dispatchEvent(new MouseEvent("mousemove", pt(a.x1, a.y1)));
-      document.dispatchEvent(new MouseEvent("mouseup", pt(a.x1, a.y1)));
+      el.dispatchEvent(new PointerEvent("pointerdown", pt(a.x0, a.y0)));
+      document.dispatchEvent(new PointerEvent("pointermove", pt((a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2)));
+      document.dispatchEvent(new PointerEvent("pointermove", pt(a.x1, a.y1)));
+      document.dispatchEvent(new PointerEvent("pointerup", pt(a.x1, a.y1)));
     },
     { x0: n0[0], y0: n0[1], x1: n1[0], y1: n1[1], w: MAP_W, h: MAP_H },
   );

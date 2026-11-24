@@ -1,4 +1,4 @@
-export type OutboundKind = "webhook" | "hydrus" | "ddb-image";
+export type OutboundKind = "webhook" | "hydrus" | "ddb-image" | "remote-server";
 
 // Loopback, RFC1918 and mDNS. Plaintext is tolerable only for a service on the
 // same trusted network; 172.16/12 is spelled out so 172.15.x and 172.32.x stay

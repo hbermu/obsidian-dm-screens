@@ -63,6 +63,7 @@ function makePlugin() {
   return {
     settings: { ddbCobaltSession: "" },
     sendInitiativeUpdate: vi.fn(),
+    canEditSession: () => true,
   } as any;
 }
 
@@ -110,22 +111,22 @@ describe("DnDBeyondPanel tracking state", () => {
     expect(panel.isTracking()).toBe(false);
   });
 
-  it("isTracking() returns true after a poller and encounter id are set", () => {
+  it("isTracking() returns true once tracking starts and an encounter is picked", () => {
     const container = document.createElement("div");
     const panel = new DnDBeyondPanel(makePlugin(), container);
-    (panel as any).poller = { stop: vi.fn() };
+    (panel as any).tracking = true;
     (panel as any).selectedEncounterId = "enc-1";
     expect(panel.isTracking()).toBe(true);
   });
 
-  it("isTracking() returns false when only one of poller/encounter is set", () => {
+  it("isTracking() returns false when only one of tracking/encounter is set", () => {
     const container = document.createElement("div");
     const panel = new DnDBeyondPanel(makePlugin(), container);
-    (panel as any).poller = { stop: vi.fn() };
+    (panel as any).tracking = true;
     (panel as any).selectedEncounterId = null;
     expect(panel.isTracking()).toBe(false);
 
-    (panel as any).poller = null;
+    (panel as any).tracking = false;
     (panel as any).selectedEncounterId = "enc-1";
     expect(panel.isTracking()).toBe(false);
   });
@@ -135,14 +136,15 @@ describe("DnDBeyondPanel tracking state", () => {
     const plugin = makePlugin();
     const panel = new DnDBeyondPanel(plugin, container);
     const stopSpy = vi.fn();
-    (panel as any).poller = { stop: stopSpy };
+    (panel as any).tracking = true;
+    (panel as any).client = { track: stopSpy };
     (panel as any).selectedEncounterId = "enc-1";
     (panel as any).polledState = { encounter: { name: "x", roundNum: 1 }, characters: new Map() };
 
     panel.stopTracking();
 
-    expect(stopSpy).toHaveBeenCalledOnce();
-    expect((panel as any).poller).toBeNull();
+    expect(stopSpy).toHaveBeenCalledWith(null, expect.any(Function));
+    expect((panel as any).tracking).toBe(false);
     expect((panel as any).selectedEncounterId).toBeNull();
     expect((panel as any).polledState).toBeNull();
     expect(plugin.sendInitiativeUpdate).toHaveBeenCalledWith([], 0);
@@ -152,7 +154,7 @@ describe("DnDBeyondPanel tracking state", () => {
   it("getActiveEncounterStatus returns id when tracking", () => {
     const container = document.createElement("div");
     const panel = new DnDBeyondPanel(makePlugin(), container);
-    (panel as any).poller = { stop: vi.fn() };
+    (panel as any).tracking = true;
     (panel as any).selectedEncounterId = "enc-7";
     (panel as any).polledState = { encounter: { name: "Goblin Ambush", roundNum: 3 }, characters: new Map() };
     expect(panel.getActiveEncounterStatus()).toEqual({ id: "enc-7", name: "Goblin Ambush", roundNum: 3 });
@@ -408,11 +410,58 @@ describe("DnDBeyondPanel monsterStatuses", () => {
   it("stopTracking clears monsterStatuses", () => {
     const container = document.createElement("div");
     const panel = new DnDBeyondPanel(makePlugin(), container);
-    (panel as any).poller = { stop: vi.fn() };
+    (panel as any).tracking = true;
     (panel as any).selectedEncounterId = "enc-1";
     (panel as any).monsterStatuses.set("monster-uid-0", new Set(["poisoned"]));
 
     panel.stopTracking();
     expect((panel as any).monsterStatuses.size).toBe(0);
+  });
+});
+
+describe("DnDBeyondPanel on a read-only remote device", () => {
+  it("does not turn polls into broadcasts without the lease", () => {
+    const plugin = { ...makePlugin(), canEditSession: () => false };
+    const panel = new DnDBeyondPanel(plugin, document.createElement("div"));
+    (panel as any).render = vi.fn();
+    (panel as any).onPollUpdate(makeState({ roundNum: 2, turnNum: 1, participants: [{ name: "A", initiative: 10, kind: "player" }] }));
+    expect(plugin.sendInitiativeUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("DnDBeyondPanel — switching encounters", () => {
+  function panelWithClient() {
+    const container = document.createElement("div");
+    const plugin = makePlugin();
+    const panel = new DnDBeyondPanel(plugin, container);
+    const track = vi.fn(async (_encounterId: string | null, _onState: (state: unknown) => void) => {});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (panel as any).client = { track, getEncounter: vi.fn(async () => ({ id: "e", players: [], monsters: [] })) };
+    return { panel, track };
+  }
+
+  // A stop and a start issued together raced over the network: the server
+  // logged a tracking started and a tracking stopped for the same encounter
+  // microseconds apart, and the encounter arrived with no combatants.
+  it("asks only for the new encounter, never a stop in the same breath", () => {
+    const { panel, track } = panelWithClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = panel as any;
+
+    p.selectEncounter("enc-1");
+    expect(track.mock.calls.map((c) => c[0])).toEqual(["enc-1"]);
+
+    p.selectEncounter("enc-2");
+    expect(track.mock.calls.map((c) => c[0])).toEqual(["enc-1", "enc-2"]);
+    expect(panel.isTracking()).toBe(true);
+  });
+
+  it("still stops tracking when the panel is told to", () => {
+    const { panel, track } = panelWithClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (panel as any).selectEncounter("enc-1");
+    panel.stopTracking();
+    expect(track.mock.calls.map((c) => c[0])).toEqual(["enc-1", null]);
+    expect(panel.isTracking()).toBe(false);
   });
 });

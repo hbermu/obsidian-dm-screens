@@ -1,10 +1,10 @@
 {
   "id": "dm-screen",
   "name": "DM Screen",
-  "version": "1.7.0",
+  "version": "2.0.0-beta.24",
   "minAppVersion": "1.5.3",
   "description": "Turn your notes into a live player screen and a true-scale battle map for in-person D&D 5e.",
   "author": "Héctor Bermúdez",
   "authorUrl": "https://github.com/hbermu",
-  "isDesktopOnly": true
+  "isDesktopOnly": false
 }

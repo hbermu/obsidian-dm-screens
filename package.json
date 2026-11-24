@@ -1,6 +1,6 @@
 {
   "name": "dm-screen",
-  "version": "1.7.0",
+  "version": "2.0.0-beta.24",
   "description": "Turn your notes into a live player screen and a true-scale battle map for in-person D&D 5e.",
   "main": "main.js",
   "scripts": {

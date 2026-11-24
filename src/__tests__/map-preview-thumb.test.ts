@@ -5,6 +5,10 @@ const RESOURCE = "app://local/vault/big.png";
 
 function makePanel() {
   const plugin = {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return (this as any).labels ??= {};
+    },
     settings: {
       mapConfigs: {} as Record<string, unknown>,
       mapDefaultPxPerSquare: 140,

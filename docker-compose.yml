@@ -70,6 +70,63 @@ services:
         npx vitest run
       "
 
+  # Black-box conformance suite (test/conformance/): the viewer contract both
+  # servers implement. CONFORMANCE_TARGET picks the server under test.
+  conformance:
+    image: node:22-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    environment:
+      CONFORMANCE_TARGET: ${CONFORMANCE_TARGET:-embedded}
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    command: >
+      sh -c "
+        npm install --no-audit --no-fund &&
+        npx tsc -p test/conformance --noEmit &&
+        npx vitest run -c vitest.conformance.config.mts
+      "
+
+  # Rust toolchain for the remote server (server/): cargo test, clippy, fmt.
+  # The screens it embeds come from `make server-screens`.
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      target: dev
+    profiles: ["tools"]
+    working_dir: /app/server
+    environment:
+      CARGO_TARGET_DIR: /target
+    volumes:
+      - .:/app
+      - cargo_registry:/usr/local/cargo/registry
+      - server_target:/target
+
+  # The conformance suite against the remote server binary, which the remote
+  # driver starts per test with a fresh data directory. Own node_modules: this
+  # glibc image cannot use the alpine services' native binaries.
+  conformance-remote:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      target: conformance
+    profiles: ["tools"]
+    working_dir: /app
+    environment:
+      CONFORMANCE_TARGET: remote
+      DM_SCREEN_SERVER_BIN: /usr/local/bin/dm-screen-server
+    volumes:
+      - .:/app
+      - conformance_modules:/app/node_modules
+    command: >
+      sh -c "
+        npm install --no-audit --no-fund &&
+        npx tsc -p test/conformance --noEmit &&
+        npx vitest run -c vitest.conformance.config.mts
+      "
+
   # Dependency maintenance. Writes package-lock.json through the bind mount while
   # keeping node_modules in the container-only volume, so the host never needs a
   # JS toolchain (see AGENTS.md).
@@ -120,6 +177,8 @@ services:
       OBSIDIAN_VERSIONS: ${OBSIDIAN_VERSIONS:-latest/latest}
       E2E_SPEC: ${E2E_SPEC:-}
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # Set by `make test-e2e-remote`; the remote spec skips itself without it.
+      DM_SCREEN_E2E_REMOTE_URL: ${DM_SCREEN_E2E_REMOTE_URL:-}
     shm_size: "1gb"
     volumes:
       - .:/app
@@ -132,7 +191,25 @@ services:
         xvfb-run -a npx wdio run wdio.conf.mts
       "
 
+  # The remote server for the real-Obsidian remote e2e spec. The `.local'
+  # alias is a host the plugin's URL policy accepts over plain http. The
+  # tokens are test fixtures, not secrets.
+  e2e-server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    profiles: ["tools"]
+    environment:
+      DM_SCREEN_VIEW_TOKEN: e2e-view-0123456789abcdef0123456789
+      DM_SCREEN_CONTROL_TOKEN: e2e-ctrl-0123456789abcdef0123456789
+    networks:
+      default:
+        aliases: [dmscreen.local]
+
 volumes:
   node_modules: {}
   playwright_modules: {}
   e2e_modules: {}
+  conformance_modules: {}
+  cargo_registry: {}
+  server_target: {}

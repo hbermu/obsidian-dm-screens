@@ -38,7 +38,8 @@ function makeExplorer(opts: { online: boolean; images?: boolean; videos?: boolea
   };
   const plugin = {
     hydrusCache: { listCached: () => Promise.resolve(CACHED) },
-    buildHydrusClient: () => client,
+    transport: { mode: "embedded" },
+    hydrusApi: () => client,
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const modal = new HydrusExplorerModal({} as any, plugin as any) as unknown as Explorer;

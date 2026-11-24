@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import * as http from "node:http";
+import WebSocket from "ws";
 import type { AddressInfo } from "net";
 import { PlayerScreenServer } from "../server";
 
@@ -59,5 +60,22 @@ describe("PlayerScreenServer.stop() releases the port despite idle keep-alive so
       hs.once("error", reject);
     });
     rebound.stop();
+  });
+});
+
+describe("PlayerScreenServer.disconnectAllClients", () => {
+  it("drops every viewer socket with 1008", async () => {
+    const { server, port } = await startServer();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/`);
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", () => resolve());
+      ws.on("error", reject);
+    });
+
+    const closed = new Promise<number>((resolve) => ws.on("close", (code: number) => resolve(code)));
+    server.disconnectAllClients();
+    expect(await closed).toBe(1008);
+    expect(server.clientCount).toBe(0);
+    server.stop();
   });
 });

@@ -2,7 +2,6 @@ import { App, Modal, Notice } from "obsidian";
 import type DmScreenPlugin from "../main";
 import type { ImageLayer } from "../types";
 import { debug } from "../debug";
-import { sendWebhookImage } from "../webhooks/client";
 
 export class SendToWebhookModal extends Modal {
   private plugin: DmScreenPlugin;
@@ -20,7 +19,7 @@ export class SendToWebhookModal extends Modal {
     super(app);
     this.plugin = plugin;
     this.layer = layer;
-    const webhooks = plugin.settings.webhooks;
+    const webhooks = plugin.gateway.webhooks().targets();
     this.selectedWebhookId =
       preselectedWebhookId && webhooks.some((w) => w.id === preselectedWebhookId)
         ? preselectedWebhookId
@@ -35,11 +34,14 @@ export class SendToWebhookModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    const webhooks = this.plugin.settings.webhooks;
+    const webhooks = this.plugin.gateway.webhooks().targets();
     if (webhooks.length === 0) {
       contentEl.createEl("p", {
         cls: "dm-send-modal-empty",
-        text: "Configure a webhook in DM Screen settings first.",
+        text:
+          this.plugin.transport.mode === "remote"
+            ? "This server has no webhook targets configured."
+            : "Configure a webhook in DM Screen settings first.",
       });
       return;
     }
@@ -97,9 +99,10 @@ export class SendToWebhookModal extends Modal {
   }
 
   private async send(): Promise<void> {
-    const webhook = this.plugin.settings.webhooks.find(
-      (w) => w.id === this.selectedWebhookId,
-    );
+    const webhook = this.plugin.gateway
+      .webhooks()
+      .targets()
+      .find((w) => w.id === this.selectedWebhookId);
     if (!webhook) {
       new Notice("No webhook selected", 4000);
       return;
@@ -115,7 +118,10 @@ export class SendToWebhookModal extends Modal {
         "layer=",
         this.layer.id,
       );
-      await sendWebhookImage(webhook, this.layer.dataUrl, this.caption);
+      // Remote mode sends what the server already holds; embedded mode sends
+      // the bytes the DM side has.
+      const asset = await this.plugin.transport.publishMedia(this.layer.dataUrl);
+      await this.plugin.gateway.webhooks().send(webhook.id, asset, this.caption);
       new Notice(`Sent to ${webhook.name}`, 4000);
       this.close();
     } catch (err) {

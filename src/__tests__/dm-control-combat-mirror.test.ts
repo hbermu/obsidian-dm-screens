@@ -52,6 +52,19 @@ function makePanel(settings: Record<string, unknown> = {}) {
     saveSettings: vi.fn(async () => {}),
     app: { workspace: { getLeavesOfType: () => [] }, plugins: { getPlugin: () => null } },
   } as any;
+  (plugin as any).sessionIsLocal ??= () => (plugin as any).transport?.mode !== "remote";
+  (plugin as any).sourceLabels ??= () => ((plugin as any).settings.lastSourceLabels ??= {});
+  (plugin as any).gateway = {
+    // Mirrors LocalGateway: the capability follows the settings.
+    capabilities: () => ({
+      hydrus: false,
+      ddb: !!(plugin.settings.ddbEnabled && plugin.settings.ddbCobaltSession),
+      webhooks: [],
+    }),
+    hydrus: () => null,
+    ddb: () => null,
+    webhooks: () => ({ targets: () => [], send: async () => {} }),
+  };
   const panel = new DmControlPanel({} as any, plugin);
   const contentEl = document.createElement("div");
   document.body.appendChild(contentEl);

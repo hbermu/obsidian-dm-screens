@@ -74,7 +74,6 @@
 - `src/__tests__/dm-control-combat.test.ts` — broadcast toggle state, stop-all behaviour, scale controls
 - `src/__tests__/dm-control-combat-mirror.test.ts` — requirements 27–29: a registered mirror receives the combat body and an active Live toggle, repaints on every render and stops once disposed, takes the D&D Beyond panel while registered and hands it back after disposal, and a focused field inside the mirror defers a background render
 - `src/__tests__/main.test.ts` — Initiative Tracker plugin event mapping into `TrackerCombatant[]`, `sendInitiativeUpdate` filters hidden
-- `src/__tests__/server-combat-scale.test.ts` — `combat-scale` end-to-end
 - `src/__tests__/ddb-to-player.integration.test.ts` — D&D Beyond → player `initiative-update`
 - `test/visual/initiative.spec.ts` — Playwright visual regression of the player-side initiative tracker: condition icons, hidden HP for hostiles, hidden combatant filtering, inspiration glow + pulse, active-turn marker, round-counter heading.
 

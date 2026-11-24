@@ -27,6 +27,10 @@ vi.mock("obsidian", async () => {
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return (this.settings.lastSourceLabels ??= {});
+    },
     settings: {
       lastBroadcastCache: {},
       ...((overrides.settings as object) ?? {}),

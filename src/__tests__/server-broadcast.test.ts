@@ -111,6 +111,10 @@ describe("PlayerScreenServer.broadcast", () => {
     expect(closed._sent).toHaveLength(0);
   });
 
+  it("admits ten viewers unless the DM says otherwise", () => {
+    expect(server.maxClients).toBe(10);
+  });
+
   it("clientCount reflects the number of connected clients", () => {
     expect(server.clientCount).toBe(0);
     const ws = makeWsStub();

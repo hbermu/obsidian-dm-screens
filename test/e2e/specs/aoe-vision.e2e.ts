@@ -36,6 +36,10 @@ describe("aoe overlays and vision", function () {
   });
 
   it("dragging the aoe anchor dot moves it and broadcasts", async function () {
+    // Only the AoE whose card is open answers the map, so open it first.
+    await browser.$(".dm-control-panel .dm-control-card .dm-control-card-header").click();
+    await browser.$(".dm-control-panel .dm-map-aoe-dot.dm-map-marker-selected").waitForExist();
+
     const r = await browser.executeObsidian(() => {
       const rect = document.querySelector(".dm-control-panel .dm-map-aoe-dot")!.getBoundingClientRect();
       return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -78,8 +82,8 @@ describe("aoe overlays and vision", function () {
     });
     await expect(browser.$(".dm-control-panel .dm-map-vision-dot")).toExist();
 
-    const card = browser.$(".dm-control-panel .dm-control-card");
-    await card.$(".dm-control-card-header").click();
+    // Resolved now, not held: the panel re-renders after the broadcast above.
+    await browser.$(".dm-control-panel .dm-control-card .dm-control-card-header").click();
 
     const seen = rec.count("map-vision");
     await browser.$(".dm-control-panel .dm-map-vision-bind").click();
@@ -174,8 +178,17 @@ describe("aoe overlays and vision", function () {
     const startXs = (before.payload.visions as Record<string, unknown>[]).map((v) => v.x as number);
     expect(startXs.length).toBe(2);
 
+    // Only the vision whose card is open answers the map, and an earlier case
+    // may have left one open: opening the first card would close that one.
+    const liveDot = () => browser.$(".dm-control-panel .dm-map-vision-dot.dm-map-marker-selected");
+    if (!(await liveDot().isExisting())) {
+      const headers = await browser.$$(".dm-control-panel .dm-control-card .dm-control-card-header");
+      await headers[0].click();
+    }
+    await liveDot().waitForExist();
+
     const r = await browser.executeObsidian(() => {
-      const rect = document.querySelector(".dm-control-panel .dm-map-vision-dot")!.getBoundingClientRect();
+      const rect = document.querySelector(".dm-control-panel .dm-map-vision-dot.dm-map-marker-selected")!.getBoundingClientRect();
       return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     });
     const seen = rec.count("map-vision");

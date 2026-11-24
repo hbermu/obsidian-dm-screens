@@ -14,6 +14,7 @@ Many of these rules are enforced locally: `.claude/hooks/bash-precheck.sh` (wire
 
 - No Node, npm, npx, or any JS toolchain runs on the host. Everything happens inside Docker via the Makefile.
 - Use `make <target>`. Never run `node`, `npx`, `npm install`, `tsc`, `vitest`, or `esbuild` directly.
+- The same holds for the remote server in `server/` (Rust): `cargo`, `rustc` and `ffmpeg` run only inside the `server` Compose service, through `make server-test` / `make server-lint`. Its behaviour is the same viewer contract as `src/server.ts`; a change to one side's routes, cache rules or limits must land on the other side in the same commit, with the conformance suite (`make test-conformance` for both targets) proving it.
 
 ### Code style
 
@@ -40,12 +41,12 @@ Many of these rules are enforced locally: `.claude/hooks/bash-precheck.sh` (wire
 - Create a branch named `<type>/<slug>` where `<type>` is one of `feature`, `fix`, `hotfix`, `chore`, `refactor`, `docs`, `test`, `ci`. Slugs are lowercase a–z, 0–9, hyphens only — no underscores, no leading hyphen, no consecutive hyphens.
 - Open the PR via `gh pr create` against `main`. The PR title must follow Conventional Commits: `<type>(<scope>): <subject>` where `<scope>` is the feature's short slug (`hydrus`, `dndbeyond`, `fog-of-war`, `dm-preview`, `webhooks`) or `deps`, `release`, `repo`, `changelog`. The lint enforces only the shape (lowercase slug, scope optional) — choosing a meaningful scope is the author's responsibility. The subject is at least 10 characters in imperative mood with no trailing period. Exception: `release:` titles may carry just the version (e.g. `release: v0.9.0`).
 - Apply a bump label on the PR (see `Release process` below). Patch is the default and needs no label; minor / major / skip need `release:minor`, `release:major`, or `release:skip`.
-- Six status checks must pass before merge: `typecheck`, `test`, `build`, `branch-name-lint`, `pr-title-lint`, `spec-update-check`.
+- Twelve status checks must pass before merge: `typecheck`, `test`, `build`, `branch-name-lint`, `pr-title-lint`, `spec-update-check`, `conformance (embedded)`, `conformance (remote)`, `server`, `visual`, `e2e-remote` and `Analyze` (CodeQL). The conformance suite is the only place the two servers' shared viewer contract is checked against both implementations, so it gates the merge rather than reporting next to it; the rest were promoted once they had soaked without a failure. The `e2e` matrix stays informational: its `earliest/earliest` leg is the one job with a failure history, and a required check that fails on its own is worse than one that reports.
 - The PR title type and the bump label must align with intent. `feat:` PRs are typically `release:minor`; `fix:` and `chore:` PRs are typically `release:patch` (default).
 - When a PR changes `src/` files, the matching `.agent/features/` spec MUST be updated in the same PR. The `spec-update-check` CI gate enforces this. Apply `spec:not-needed` only when the change is truly behaviour-free (e.g. a comment-only edit, a CI tweak).
 - Merges are squash-only; the PR title becomes the squash-commit subject on `main` (make it grep-worthy — future `git log --grep` runs depend on it). Merged branches are auto-deleted.
 - No approving reviews are required (solo project); admin bypass exists for break-glass emergencies. Do not request reviews from anyone.
-- Dependabot PRs are exempt from `branch-name-lint` and `pr-title-lint` (Dependabot owns the `dependabot/...` branch name and is configured in `.github/dependabot.yml` to emit `chore(deps): …` titles). Every other required check (`typecheck`, `test`, `build`, `spec-update-check`) still applies.
+- Dependabot PRs are exempt from `branch-name-lint` and `pr-title-lint` (Dependabot owns the `dependabot/...` branch name and is configured in `.github/dependabot.yml` to emit `chore(deps): …` titles). Every other required check (`typecheck`, `test`, `build`, `spec-update-check`, both `conformance` legs, `server`, `visual`, `e2e-remote`, `Analyze`) still applies.
 
 Examples of compliant PR titles:
 
@@ -79,9 +80,15 @@ All targets run inside Docker; the container manages `node_modules`.
 | `make test` | `vitest run` (all unit + integration tests) |
 | `make test-coverage` | `vitest run --coverage` — report in `./coverage/`; the `test` CI job runs this and posts the summary as a sticky PR comment. The browser bundles `src/player/player.ts` and `src/map/map.ts` are excluded from the coverage denominator (vitest cannot run them; the visual + e2e suites cover them). |
 | `make test-watch` | `vitest` in watch mode (interactive) |
-| `make test-visual` | Playwright visual regression suite (inside the official `mcr.microsoft.com/playwright` image) |
+| `make test-visual` | Playwright visual regression suite (inside the official `mcr.microsoft.com/playwright` image); it runs every project, the touch ones below included, which is what the `visual` CI job executes |
 | `make test-visual-update` | Refresh committed visual baselines (inside container — host-generated PNGs WILL diff) |
+| `make test-touch` | The touch-gesture suite (`test/visual/touch.spec.ts`) in the Playwright image, against the tablet profiles of both engines the DM may hold: `touch-chromium` and `touch-webkit`. It drives a harness page carrying the real gesture modules and the shipped `styles.css`, so `touch-action`, the coarse-pointer hit sizes and the pointer stream a tablet produces are checked in a real browser; the two-finger and injected-drag cases need Chromium's CDP touch injection and skip themselves on WebKit |
 | `make test-e2e` | Real-Obsidian end-to-end suite (WebdriverIO inside the Playwright image; first run downloads Obsidian into `.obsidian-cache/`) |
+| `make test-e2e-remote` | The remote-mode e2e spec (`test/e2e/specs/remote.e2e.ts`) in real Obsidian against a fresh remote server container (`e2e-server`, alias `dmscreen.local`); the spec skips itself in a plain `make test-e2e` |
+| `make test-conformance` | Black-box server contract in `test/conformance/` (HTTP + WebSocket) against the embedded server, or the remote one with `CONFORMANCE_TARGET=remote`; a case only one server implements is marked with `onlyOn(...)` |
+| `make server-test` | `cargo test` for the remote server in `server/` (Rust toolchain + `ffmpeg` in the `server` service); exports the screens into `server/assets/` first |
+| `make server-lint` | `cargo fmt --check` + `cargo clippy -- -D warnings` |
+| `make server-image` | the remote server container image, `dm-screen-server:dev` |
 | `make build` | production esbuild bundle → `main.js` |
 | `make dev` | esbuild watcher only, no Obsidian GUI |
 | `make up` | Obsidian GUI at `https://localhost:3001` + esbuild watcher |
@@ -92,13 +99,13 @@ Run `make typecheck && make test` before every commit. CI runs the same targets 
 
 ### Visual tests
 
-Visual regressions run via Playwright against the real production player bundle. Baselines live under `test/visual/__snapshots__/`. **Always update baselines inside the container** with `make test-visual-update` — host-generated PNGs render differently from the pinned Playwright image and will diff in CI. The `mcr.microsoft.com/playwright:vX.Y.Z-jammy` image tag in `docker-compose.yml` is kept in sync with the `@playwright/test` version pinned in `package.json`; bump them together. Dependabot raises the two in separate PRs (its `docker-compose` and `npm` ecosystems), and each one alone fails `visual` with `Executable doesn't exist at /ms-playwright/…`: push the image bump onto the npm PR (or merge both back to back) instead of merging either one by itself. The `visual` CI job is informational only (not in required checks) until the suite has soaked.
+Visual regressions run via Playwright against the real production player bundle. Baselines live under `test/visual/__snapshots__/`. **Always update baselines inside the container** with `make test-visual-update` — host-generated PNGs render differently from the pinned Playwright image and will diff in CI. The `mcr.microsoft.com/playwright:vX.Y.Z-jammy` image tag in `docker-compose.yml` is kept in sync with the `@playwright/test` version pinned in `package.json`; bump them together. Dependabot raises the two in separate PRs (its `docker-compose` and `npm` ecosystems), and each one alone fails `visual` with `Executable doesn't exist at /ms-playwright/…`: push the image bump onto the npm PR (or merge both back to back) instead of merging either one by itself. The `visual` CI job is a required check: the suite soaked without a failure and a baseline that drifts should stop a merge.
 
 ### End-to-end tests
 
 `make test-e2e` boots a real Obsidian (Electron) under Xvfb inside the `e2e` Docker service (`wdio-obsidian-service`), installs the built plugin into a sandboxed copy of the fixture vault at `test/e2e/vault/`, and drives it with WebdriverIO. Specs live in `test/e2e/specs/*.e2e.ts` (own `test/e2e/tsconfig.json`, typechecked at the start of the container run); helpers in `test/e2e/helpers/` (`ws.ts` for real WebSocket clients against the plugin's server, `obsidian.ts` for panel and vault plumbing). The suite asserts through three real seams: the panel DOM, plugin internals via `executeObsidian` (callbacks are serialized — no closures, JSON args/returns only), and HTTP/WebSocket traffic to the player server on localhost inside the container.
 
-`OBSIDIAN_VERSIONS` selects the Obsidian build as space-separated `app/installer` pairs (`earliest` = the `minAppVersion` from `manifest.json`, `latest` = newest stable). The local default is `latest/latest`; the `earliest/earliest` leg runs in the CI matrix. Downloaded Obsidian builds and chromedriver are cached in `.obsidian-cache/` (gitignored, cached in CI). The `e2e` CI job is informational only (not in required checks) until the suite has soaked, mirroring `visual`. The fixture image `test/e2e/vault/attachments/map.png` is a deterministic checkerboard generated by `test/e2e/scripts/generate-fixtures.mts` from the visual harness's PNG encoder — never commit real map assets to the fixture vault.
+`OBSIDIAN_VERSIONS` selects the Obsidian build as space-separated `app/installer` pairs (`earliest` = the `minAppVersion` from `manifest.json`, `latest` = newest stable). The local default is `latest/latest`; the `earliest/earliest` leg runs in the CI matrix. Downloaded Obsidian builds and chromedriver are cached in `.obsidian-cache/` (gitignored, cached in CI). The `e2e` CI job is informational only (not in required checks): the `earliest/earliest` leg has failed on its own more than once. `e2e-remote` is a required check — it soaked clean, and it is the only job that drives real Obsidian against the real server container. The fixture image `test/e2e/vault/attachments/map.png` is a deterministic checkerboard generated by `test/e2e/scripts/generate-fixtures.mts` from the visual harness's PNG encoder — never commit real map assets to the fixture vault.
 
 ## Where to find what
 
@@ -118,12 +125,27 @@ src/
   debug.ts               # Debug-mode logger
   redact.ts              # redactUrl / redactSecret for log and Notice text
   auth.ts                # Player-screen access token and join URL
+  protocol.ts            # PROTOCOL_VERSION shared with the remote server
+  screenPages.ts         # Player and map page shells (also exported to the remote server)
   mediaDerivative.ts     # Downscaled derivatives for /vault/?w= (WebP images, ≤1080p MP4 videos)
   sourceLabel.ts         # resolveSourceLabel — DM-side image label (Hydrus name: tag, Hydrus <hash8>, note basename)
   conditions.ts          # D&D 5e condition catalogue (icons, DDB id mapping, status encode/decode)
   global.d.ts            # Window augmentations (InitiativeTracker, FantasyStatblocks)
   net/
     urlPolicy.ts         # assertOutboundUrl — the outbound HTTP policy
+  transport/
+    transport.ts         # SceneTransport + MapDataStore: the seam every emitter and persister uses
+    embedded.ts          # EmbeddedTransport: in-process server, ReplayCache, settings, vault sidecars
+    remote.ts            # RemoteTransport: control socket, lease roles, reconnect, ordered relay queue
+    remoteApi.ts         # /api/ and /assets/ calls through requestUrl
+    assetUpload.ts       # AssetPublisher: fingerprint lookup, chunked upload, Hydrus by hash, message rewriting
+    remoteMapData.ts     # Map configs, calibration, fog, walls and asset sources on the server
+    wire.ts              # What screens may see of a message (no layer sources)
+  scenes/
+    format.ts            # dm-scene format, source references, paths
+    capture.ts           # Scene from panel state; writes the note and its fog masks
+    load.ts              # Resolve sources, apply through the panels, list scenes
+    codeBlock.ts         # The dm-scene card
   combat/
     tracker.ts           # Pure initiative helpers (sort, scale clamp, turn advance, round-1 reveal)
   player/
@@ -159,6 +181,7 @@ src/
     recoverImage.ts      # Re-download a missing cached image from Hydrus
   dndbeyond/
     client.ts            # CobaltSession auth + encounter/character/monster API
+    parse.ts             # Upstream bodies → DdbEncounter / DdbCharacterSummary (shared with the remote gateway)
     poller.ts            # Long-polling with min-gap and circuit breaker
     imageCache.ts        # Monster avatar cache
     types.ts             # D&D Beyond types
@@ -178,7 +201,9 @@ src/
     MapCalibrationModal.ts  # Per-screen physical calibration (diagonal + fine-tune + test pattern)
     MapFogModal.ts       # Fog and walls editor
     FoundryImportModals.ts  # Foundry import confirmation and scene picker
-    MapExploreModal.ts   # Exploration Mode (room/door gestures, scale/grid toggles, floating AoE, Vision and Combat windows)
+    MapExploreModal.ts   # Exploration Mode (room/door gestures, pinch zoom, scale/grid toggles, floating AoE, Vision and Combat windows)
+    pointerDrag.ts       # trackPointerDrag / onLongPress / blockWebkitGestures — one drag for mouse, touch and pen
+    pinchZoom.ts         # StageView maths + trackPinch / trackWheelZoom for the exploration stage
     FloatingWindow.ts    # Draggable, minimizable window used by Exploration Mode
     controlCard.ts       # Collapsible AoE/vision control card
     mapStage.ts          # fitScale / finiteScale shared stage math
@@ -189,6 +214,8 @@ src/
     layerContextMenu.ts  # Right-click context menu for image-layer rows
   __tests__/             # Vitest unit and integration tests
 tv-kiosk/                # Fully Kiosk start page for a table TV + its ADB installer (start.html, install.sh, README.md)
+server/                  # Remote server (Rust): relay, replay cache, control channel, assets, derivatives; Dockerfile, deployment compose
+test/conformance/        # Black-box server contract run against the embedded and the remote server
 ```
 
 ## Release process
@@ -211,7 +238,7 @@ Use `release:skip` for purely-internal PRs that ship no observable change (CI re
 ### Stable flow
 
 1. Open a PR. Apply the right bump label (or none for patch).
-2. CI runs the six required checks. Squash-merge to `main`.
+2. CI runs the twelve required checks. Squash-merge to `main`.
 3. The release workflow reads the labels, computes the next version from the latest stable tag (not `manifest.json` — see below), bumps the three version files + `versions.json` in a detached commit, tags `X.Y.Z` (no `v` prefix — required by Obsidian community plugin guidelines), builds `main.js`, publishes a GitHub release with tier-shaped notes (see below), and appends a matching section to `CHANGELOG.md` on `main`.
 
 ### Release notes by tier

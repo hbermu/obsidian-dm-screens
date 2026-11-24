@@ -49,6 +49,11 @@ function polyfillHTMLElement() {
       return el;
     };
   }
+  if (!HTMLElement.prototype.toggleClass) {
+    (HTMLElement.prototype as unknown as Record<string, unknown>).toggleClass = function (this: HTMLElement, cls: string, value: boolean) {
+      this.classList.toggle(cls, value);
+    };
+  }
   if (!HTMLElement.prototype.empty) {
     (HTMLElement.prototype as unknown as Record<string, unknown>).empty = function (this: HTMLElement) { this.innerHTML = ""; };
   }
@@ -56,6 +61,8 @@ function polyfillHTMLElement() {
 
 // ---- Stubs ----
 const appStub = { vault: { adapter: { getResourcePath: () => null as null } } };
+// The modals resolve the map preview through the transport; no media in these tests.
+const transportStub = { displayUrl: () => null as null };
 
 function makePanelStub(walls: MapWall[] = []) {
   const commitFogSpy = vi.fn().mockResolvedValue(undefined);
@@ -71,7 +78,7 @@ function makePanelStub(walls: MapWall[] = []) {
     pickFoundryScene: MapScreenPanel.prototype.pickFoundryScene,
     activeMap: null as ActiveMap | null,
     activeMapTags: [] as string[],
-    plugin: { app: appStub },
+    plugin: { app: appStub, transport: transportStub },
     fogDataUrl: null as string | null,
     walls,
     state: {
@@ -98,7 +105,7 @@ function openModal(panelStub: ReturnType<typeof makePanelStub>, walls?: MapWall[
 } {
   const modal = new MapFogModal(
     appStub as never,
-    { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+    { app: appStub, transport: transportStub, settings: { mapFogTvOpacity: 0.9 } } as never,
     panelStub as never,
     mapStub
   );
@@ -135,16 +142,27 @@ function coverAll(contentEl: HTMLElement) {
 }
 
 // Dispatch mouse events on the overlay, mousemove/mouseup on document
+// The editor's gestures are pointer events, so a mouse, a finger and a pen
+// all drive the same code; these helpers stand in for a cursor, and the
+// `pointerType: "touch"` ones below for a finger.
 function fireMousedown(overlay: HTMLElement, x: number, y: number, button = 0) {
-  overlay.dispatchEvent(new MouseEvent("mousedown", { clientX: x, clientY: y, button, bubbles: true }));
+  overlay.dispatchEvent(
+    new PointerEvent("pointerdown", { pointerId: 1, pointerType: "mouse", clientX: x, clientY: y, button, bubbles: true })
+  );
 }
 
 function fireMousemove(x: number, y: number) {
-  document.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }));
+  document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: x, clientY: y, bubbles: true }));
 }
 
 function fireMouseup(x: number, y: number) {
-  document.dispatchEvent(new MouseEvent("mouseup", { clientX: x, clientY: y, bubbles: true }));
+  document.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1, clientX: x, clientY: y, bubbles: true }));
+}
+
+function fireTouch(el: HTMLElement, type: string, pointerId: number, x: number, y: number) {
+  el.dispatchEvent(
+    new PointerEvent(type, { pointerId, pointerType: "touch", clientX: x, clientY: y, bubbles: true, cancelable: true })
+  );
 }
 
 function fireContextmenu(overlay: HTMLElement, x: number, y: number) {
@@ -621,7 +639,7 @@ describe("MapFogModal — uvtt import", () => {
     };
     const modal = new MapFogModal(
       appStub as never,
-      { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+      { app: appStub, transport: transportStub, settings: { mapFogTvOpacity: 0.9 } } as never,
       panel as never,
       halfMap
     );
@@ -789,7 +807,7 @@ describe("MapFogModal — Foundry import", () => {
     };
     const modal = new MapFogModal(
       appStub as never,
-      { app: appStub, settings: { mapFogTvOpacity: 0.9 } } as never,
+      { app: appStub, transport: transportStub, settings: { mapFogTvOpacity: 0.9 } } as never,
       panel as never,
       map
     );
@@ -865,6 +883,137 @@ describe("MapFogModal — Foundry import", () => {
     expect(opened).toEqual([["Kitchen", "Cellar"]]);
     expect(panel.commitWalls).toHaveBeenCalledTimes(1);
     expect(panel.commitWalls.mock.calls[0][0]).toEqual([{ x1: 0, y1: 0, x2: 0, y2: 300 }]);
+    modal.onClose();
+  });
+});
+
+async function decodeLastFog(commitFog: ReturnType<typeof vi.fn>) {
+  const dataUrl = commitFog.mock.calls[commitFog.mock.calls.length - 1][0] as string;
+  const { loadImage, createCanvas } = await import("@napi-rs/canvas");
+  const img = await loadImage(Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"));
+  const nc = createCanvas(FOG_W, FOG_H);
+  const ctx = nc.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  return ctx;
+}
+
+describe("MapFogModal — touch", () => {
+  function stageOf(modal: MapFogModal) {
+    const stage = modal.contentEl.querySelector(".dm-fog-stage") as HTMLElement;
+    stage.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: FOG_W, height: FOG_H, right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+    });
+    return stage;
+  }
+
+  function pickTool(contentEl: HTMLElement, ...labels: string[]) {
+    for (const label of labels) findBtn(contentEl, label).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  it("a tapping finger stamps the brush once and commits on the lift", async () => {
+    const panel = makePanelStub();
+    const { modal, overlay, contentEl } = openModal(panel);
+    pickTool(contentEl, "Reveal", "Brush");
+
+    fireTouch(overlay, "pointerdown", 1, 500, 400);
+    expect(panel.commitFog).not.toHaveBeenCalled();
+
+    fireTouch(document.documentElement, "pointerup", 1, 500, 400);
+    await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(1));
+    const ctx = await decodeLastFog(panel.commitFog);
+    expect(ctx.getImageData(500, 400, 1, 1).data[3]).toBeLessThan(50);
+
+    modal.onClose();
+  });
+
+  it("a finger that slides paints from where it landed", async () => {
+    const panel = makePanelStub();
+    const { modal, overlay, contentEl } = openModal(panel);
+    pickTool(contentEl, "Cover", "Brush");
+
+    fireTouch(overlay, "pointerdown", 1, 200, 200);
+    fireTouch(document.documentElement, "pointermove", 1, 600, 200);
+    fireTouch(document.documentElement, "pointerup", 1, 600, 200);
+
+    await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(1));
+    const ctx = await decodeLastFog(panel.commitFog);
+    // The landing point is painted, not only the point where the slop was crossed.
+    expect(ctx.getImageData(200, 200, 1, 1).data[3]).toBeGreaterThan(200);
+    expect(ctx.getImageData(600, 200, 1, 1).data[3]).toBeGreaterThan(200);
+
+    modal.onClose();
+  });
+
+  it("a second finger zooms the stage and paints nothing", () => {
+    const panel = makePanelStub();
+    const { modal, overlay, contentEl } = openModal(panel);
+    const stage = stageOf(modal);
+    const inner = modal.contentEl.querySelector(".dm-fog-inner") as HTMLElement;
+    pickTool(contentEl, "Reveal", "Brush");
+
+    fireTouch(overlay, "pointerdown", 1, 400, 400);
+    fireTouch(stage, "pointerdown", 2, 600, 400);
+    fireTouch(stage, "pointermove", 2, 800, 400);
+    fireTouch(stage, "pointerup", 2, 800, 400);
+    fireTouch(document.documentElement, "pointerup", 1, 400, 400);
+
+    expect(panel.commitFog).not.toHaveBeenCalled();
+    expect(inner.style.transform).toContain("scale(2)");
+
+    const zoomBtn = modal.contentEl.querySelector(".dm-fog-zoom-btn") as HTMLButtonElement;
+    expect(zoomBtn.textContent).toBe("Zoom: 200%");
+    zoomBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(inner.style.transform).toContain("scale(1)");
+
+    modal.onClose();
+  });
+
+  it("a tapping finger places a wall segment on the lift, and a long press ends the chain", () => {
+    vi.useFakeTimers();
+    const panel = makePanelStub();
+    const { modal, contentEl } = openModal(panel);
+    findBtn(contentEl, "Walls").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const overlay = modal.contentEl.querySelector(".dm-fog-overlay") as HTMLCanvasElement;
+    overlay.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: FOG_W, height: FOG_H, right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+    });
+    findBtn(contentEl, "Wall").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const tap = (x: number, y: number) => {
+      fireTouch(overlay, "pointerdown", 1, x, y);
+      fireTouch(document.documentElement, "pointerup", 1, x, y);
+    };
+    tap(100, 100);
+    expect(panel.commitWalls).not.toHaveBeenCalled();
+    tap(300, 100);
+    expect(panel.commitWalls).toHaveBeenCalledTimes(1);
+
+    // Holding the map is the finger's right-click: the chain stops, so the
+    // next tap starts a new one instead of extending the old.
+    fireTouch(overlay, "pointerdown", 1, 500, 100);
+    vi.advanceTimersByTime(600);
+    fireTouch(document.documentElement, "pointerup", 1, 500, 100);
+    tap(700, 100);
+    expect(panel.commitWalls).toHaveBeenCalledTimes(1);
+
+    modal.onClose();
+    vi.useRealTimers();
+  });
+
+  it("a tap with the Rect walls tool commits nothing", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = openModal(panel);
+    findBtn(contentEl, "Walls").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const overlay = modal.contentEl.querySelector(".dm-fog-overlay") as HTMLCanvasElement;
+    overlay.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: FOG_W, height: FOG_H, right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+    });
+    findBtn(contentEl, "Rect").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    fireTouch(overlay, "pointerdown", 1, 300, 300);
+    fireTouch(document.documentElement, "pointerup", 1, 300, 300);
+
+    expect(panel.commitWalls).not.toHaveBeenCalled();
     modal.onClose();
   });
 });

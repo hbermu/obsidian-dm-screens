@@ -1,6 +1,6 @@
 # Webhook Send
 
-> Share an image layer to a configured `multipart/form-data` endpoint (Telegram bot `sendPhoto`, Discord webhook, n8n, anything that accepts a file upload). The DM right-clicks a layer in the DM Control Panel, picks a target in a modal, optionally edits a caption, and the plugin POSTs the layer's existing in-memory bytes to the user-configured URL.
+> Share an image layer to a configured `multipart/form-data` endpoint (Telegram bot `sendPhoto`, Discord webhook, n8n, anything that accepts a file upload). The DM right-clicks a layer in the DM Control Panel, picks a target in a modal, optionally edits a caption, and the plugin POSTs the layer's existing in-memory bytes to the user-configured URL. This spec describes embedded mode; in remote mode the targets live on the server and the DM names one (`../server-integrations/webhooks.md`).
 
 ## Source files
 

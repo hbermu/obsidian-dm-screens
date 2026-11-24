@@ -89,3 +89,26 @@ describe("safePlayerUrl", () => {
     });
   });
 });
+
+describe("safePlayerUrl — remote server assets", () => {
+  const sha = "a".repeat(64);
+
+  it("accepts a content-addressed asset whose extension fits the kind", () => {
+    expect(safePlayerUrl(`/assets/${sha}.png`, "image")).toBe(`/assets/${sha}.png`);
+    expect(safePlayerUrl(`/assets/${sha}.jpeg`, "image")).toBe(`/assets/${sha}.jpeg`);
+    expect(safePlayerUrl(`/assets/${sha}.webm`, "video")).toBe(`/assets/${sha}.webm`);
+  });
+
+  it("rejects a video asset as an image, and the reverse", () => {
+    expect(safePlayerUrl(`/assets/${sha}.mp4`, "image")).toBeNull();
+    expect(safePlayerUrl(`/assets/${sha}.png`, "video")).toBeNull();
+  });
+
+  it("rejects malformed hashes, other extensions and anything appended", () => {
+    expect(safePlayerUrl(`/assets/${sha.slice(1)}.png`, "image")).toBeNull();
+    expect(safePlayerUrl(`/assets/${"A".repeat(64)}.png`, "image")).toBeNull();
+    expect(safePlayerUrl(`/assets/${sha}.svg`, "image")).toBeNull();
+    expect(safePlayerUrl(`/assets/${sha}.png?x=1`, "image")).toBeNull();
+    expect(safePlayerUrl(`/assets/../${sha}.png`, "image")).toBeNull();
+  });
+});

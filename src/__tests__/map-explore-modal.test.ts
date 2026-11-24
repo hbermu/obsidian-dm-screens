@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNapiCanvas } from "../../test/canvas/napi-canvas-shim";
 import { MapExploreModal } from "../views/MapExploreModal";
+import { MIN_HANDLE_GAP_PX } from "../views/mapStage";
 import { fogCanvasSize } from "../map/fog";
 import { followView } from "../map/vision";
 import type { ActiveMap } from "../views/MapScreenPanel";
@@ -58,6 +59,8 @@ function polyfillHTMLElement() {
 
 // ---- Stubs ----
 const appStub = { vault: { adapter: { getResourcePath: () => null as null } } };
+// The modals resolve the map preview through the transport; no media in these tests.
+const transportStub = { displayUrl: () => null as null };
 
 function makePanelStub(
   walls: MapWall[] = [],
@@ -67,6 +70,8 @@ function makePanelStub(
     mode?: "physical" | "fit";
     rotation?: 0 | 90 | 180 | 270;
     showGrid?: boolean;
+    selectedAoeId?: string;
+    selectedVisionId?: string;
   } = {}
 ) {
   const aoes = opts.aoes ?? [];
@@ -95,6 +100,14 @@ function makePanelStub(
     }),
     renderAoeSection: vi.fn(),
     renderVisionSection: vi.fn(),
+    selectedAoeId: opts.selectedAoeId ?? null,
+    selectedVisionId: opts.selectedVisionId ?? null,
+    clearMarkerSelection: vi.fn(() => {
+      const had = stub.selectedAoeId !== null || stub.selectedVisionId !== null;
+      stub.selectedAoeId = null;
+      stub.selectedVisionId = null;
+      return had;
+    }),
     disposeCombatMirror: vi.fn(),
     registerCombatMirror: vi.fn((_mirror: { body: HTMLElement; setTitleExtra(el: HTMLElement): void }) => stub.disposeCombatMirror),
     toggleScaleMode: vi.fn(() => {
@@ -145,7 +158,7 @@ function openModal(
 } {
   const modal = new MapExploreModal(
     appStub as never,
-    { app: appStub, settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
+    { app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true, sourceLabels: () => ({}), settings: { mapFogTvOpacity: 0.9, exploreWindows: {} }, saveSettings: vi.fn() } as never,
     panelStub as never,
     mapStub
   );
@@ -166,8 +179,10 @@ function openModal(
   return { modal, overlay, markers, contentEl: modal.contentEl };
 }
 
-function fireDocMouse(type: "mousemove" | "mouseup", x: number, y: number) {
-  document.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
+// The modal's gestures are pointer events now, so mouse, touch and pen all
+// drive the same code; these helpers stand in for a press, a move and a lift.
+function fireDocPointer(type: "pointermove" | "pointerup", x: number, y: number, pointerId = 1) {
+  document.dispatchEvent(new PointerEvent(type, { pointerId, clientX: x, clientY: y, bubbles: true }));
 }
 
 function findBtn(contentEl: HTMLElement, text: string): HTMLButtonElement {
@@ -182,12 +197,28 @@ function coverAll(contentEl: HTMLElement) {
   findBtn(contentEl, "Cover All").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
-function fireMousedown(overlay: HTMLElement, x: number, y: number, button = 0) {
-  overlay.dispatchEvent(new MouseEvent("mousedown", { clientX: x, clientY: y, button, bubbles: true }));
+function firePointerdown(overlay: HTMLElement, x: number, y: number, button = 0, pointerId = 1) {
+  overlay.dispatchEvent(
+    new PointerEvent("pointerdown", { pointerId, clientX: x, clientY: y, button, bubbles: true })
+  );
 }
 
-function fireMousemove(overlay: HTMLElement, x: number, y: number) {
-  overlay.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }));
+function fireTouch(el: HTMLElement, type: string, pointerId: number, x: number, y: number) {
+  el.dispatchEvent(
+    new PointerEvent(type, { pointerId, pointerType: "touch", clientX: x, clientY: y, bubbles: true, cancelable: true })
+  );
+}
+
+function stageOf(contentEl: HTMLElement) {
+  const stage = contentEl.querySelector(".dm-explore-stage") as HTMLElement;
+  stage.getBoundingClientRect = () => ({
+    left: 0, top: 0, width: FOG_W, height: FOG_H, right: FOG_W, bottom: FOG_H, x: 0, y: 0, toJSON: () => ({}),
+  });
+  return stage;
+}
+
+function firePointermove(overlay: HTMLElement, x: number, y: number) {
+  overlay.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: x, clientY: y, bubbles: true }));
 }
 
 async function decodeLastFog(commitFog: ReturnType<typeof vi.fn>) {
@@ -216,10 +247,9 @@ describe("MapExploreModal — visible source label", () => {
   it("renders a visible label in the bar with the map label text", () => {
     const panel = makePanelStub();
     const pluginStub = {
-      app: appStub,
-      settings: {
-        lastSourceLabels: { map: { label: "Test Map", title: "Full Title" } },
-      },
+      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true,
+      sourceLabels: () => ({ map: { label: "Test Map", title: "Full Title" } }),
+      settings: {},
     };
     const map: ActiveMap = {
       url: "/vault/maps/test.png",
@@ -242,7 +272,7 @@ describe("MapExploreModal — visible source label", () => {
   it("resolves label from URL when no saved label", () => {
     const panel = makePanelStub();
     const pluginStub = {
-      app: appStub,
+      app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true, sourceLabels: () => ({}),
       settings: { lastSourceLabels: {} },
       hydrusCache: null,
     };
@@ -276,7 +306,7 @@ describe("MapExploreModal — room fog auto-toggle", () => {
     panel.commitFog.mockClear();
 
     // Click Room A center (fog x=256)
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
 
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/png;base64,/)));
     const ctx = await decodeLastFog(panel.commitFog);
@@ -296,13 +326,13 @@ describe("MapExploreModal — room fog auto-toggle", () => {
     panel.commitFog.mockClear();
 
     // First click reveals Room A
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(1));
     let ctx = await decodeLastFog(panel.commitFog);
     expect(ctx.getImageData(200, 384, 1, 1).data[3]).toBeLessThan(50);
 
     // Second click on the now-revealed room covers it again
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(2));
     ctx = await decodeLastFog(panel.commitFog);
     expect(ctx.getImageData(200, 384, 1, 1).data[3]).toBeGreaterThan(200);
@@ -317,7 +347,7 @@ describe("MapExploreModal — room fog auto-toggle", () => {
     panel.commitFog.mockClear();
 
     // fog (512, 384) → natural (500, 375): on the wall
-    fireMousedown(overlay, 512, 384);
+    firePointerdown(overlay, 512, 384);
 
     await new Promise((r) => setTimeout(r, 20));
     expect(panel.commitFog).not.toHaveBeenCalled();
@@ -341,7 +371,7 @@ describe("MapExploreModal — doors are always room boundaries", () => {
     coverAll(contentEl);
     panel.commitFog.mockClear();
 
-    fireMousedown(overlay, 256, 384);
+    firePointerdown(overlay, 256, 384);
 
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalled());
     const ctx = await decodeLastFog(panel.commitFog);
@@ -362,7 +392,7 @@ describe("MapExploreModal — door marker toggle", () => {
     const { modal, overlay } = openModal(panel);
 
     // Door midpoint natural (500, 300) → fog (512, 307)
-    fireMousedown(overlay, 512, 307);
+    firePointerdown(overlay, 512, 307);
 
     expect(panel.commitWalls).toHaveBeenCalledTimes(1);
     const walls = panel.commitWalls.mock.calls[0][0] as MapWall[];
@@ -377,7 +407,7 @@ describe("MapExploreModal — door marker toggle", () => {
 });
 
 describe("MapExploreModal — listener cleanup", () => {
-  it("Exit closes the modal and no commit fires after a post-close mousemove", async () => {
+  it("Exit closes the modal and no commit fires after a post-close pointermove", async () => {
     const panel = makePanelStub([{ x1: 500, y1: 0, x2: 500, y2: MAP_H }]);
     const { modal, overlay, contentEl } = openModal(panel);
     coverAll(contentEl);
@@ -385,8 +415,8 @@ describe("MapExploreModal — listener cleanup", () => {
 
     modal.onClose();
 
-    // A synthetic mousemove on the overlay after close must be inert.
-    fireMousemove(overlay, 256, 384);
+    // A synthetic pointermove on the overlay after close must be inert.
+    firePointermove(overlay, 256, 384);
 
     await new Promise((r) => setTimeout(r, 20));
     expect(panel.commitFog).not.toHaveBeenCalled();
@@ -404,7 +434,7 @@ describe("MapExploreModal — rotated view", () => {
     panel.commitFog.mockClear();
 
     // Client (384, 256) un-rotates (invRotation 270) to fog Room A centre (256, 384).
-    fireMousedown(overlay, 384, 256);
+    firePointerdown(overlay, 384, 256);
 
     await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalled());
     const ctx = await decodeLastFog(panel.commitFog);
@@ -434,11 +464,11 @@ describe("MapExploreModal — players' viewport rectangle", () => {
 
     // Overlay rect is 1:1 with fog px (1024×768); deltaToMap divides by that and
     // scales to natural (1000×750). Drag +102.4 fog px → +100 natural px.
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 500 + 102.4, 400);
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 500 + 102.4, 400);
     expect(panel.applyExplorePan).toHaveBeenLastCalledWith(MAP_W / 2 + 100, MAP_H / 2, false);
 
-    fireDocMouse("mouseup", 500 + 102.4, 400);
+    fireDocPointer("pointerup", 500 + 102.4, 400);
     expect(panel.applyExplorePan).toHaveBeenLastCalledWith(MAP_W / 2 + 100, MAP_H / 2, true);
 
     modal.onClose();
@@ -453,16 +483,16 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
   it("dragging an AoE dot moves it and broadcasts (throttled + immediate on release)", () => {
     const aoe = anAoe();
-    const panel = makePanelStub([], { aoes: [aoe] });
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 102.4, 0); // +100 natural px in x
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 102.4, 0); // +100 natural px in x
     expect(aoe.x).toBeCloseTo(MAP_W / 2 + 100, 1);
     expect(panel.broadcastAoes).toHaveBeenCalledWith();
 
-    fireDocMouse("mouseup", 102.4, 0);
+    fireDocPointer("pointerup", 102.4, 0);
     expect(panel.broadcastAoes).toHaveBeenLastCalledWith(true);
 
     modal.onClose();
@@ -470,7 +500,7 @@ describe("MapExploreModal — AoE and vision markers", () => {
 
   it("leaves an AoE where it was when the overlay cannot be measured", () => {
     const aoe = anAoe();
-    const panel = makePanelStub([], { aoes: [aoe] });
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     // A collapsed or torn-down overlay reports a zero-width rect. Dividing by it
     // used to yield Infinity, which the map-bounds clamp turned into "snap to
     // the map edge" and then broadcast.
@@ -479,37 +509,37 @@ describe("MapExploreModal — AoE and vision markers", () => {
     const startX = aoe.x;
     const startY = aoe.y;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 400, 400);
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 400, 400);
 
     expect(aoe.x).toBe(startX);
     expect(aoe.y).toBe(startY);
     expect(panel.broadcastAoes).not.toHaveBeenCalled();
 
-    fireDocMouse("mouseup", 400, 400);
+    fireDocPointer("pointerup", 400, 400);
     modal.onClose();
   });
 
   it("leaves a vision where it was when the overlay cannot be measured", () => {
     const vision = { id: "vision-1", shape: "circle" as const, x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
-    const panel = makePanelStub([], { visions: [vision] });
+    const panel = makePanelStub([], { visions: [vision], selectedVisionId: vision.id });
     const { modal, markers } = openModal(panel, { width: 0, height: 0 });
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 400, 400);
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 400, 400);
 
     expect(vision.x).toBe(MAP_W / 2);
     expect(vision.y).toBe(MAP_H / 2);
     expect(panel.broadcastVisions).not.toHaveBeenCalled();
 
-    fireDocMouse("mouseup", 400, 400);
+    fireDocPointer("pointerup", 400, 400);
     modal.onClose();
   });
 
   it("re-places the rotation handle when a registered overlay repaint fires", () => {
     const aoe: MapAoe = { ...anAoe(), shape: "cone" };
-    const panel = makePanelStub([], { aoes: [aoe] });
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
     const { modal, markers } = openModal(panel);
     const before = (markers.querySelector(".dm-map-aoe-rot-handle") as HTMLElement).style.left;
 
@@ -534,8 +564,8 @@ describe("MapExploreModal — AoE and vision markers", () => {
     expect(dispose).toHaveBeenCalled();
   });
 
-  it("right-clicking an AoE dot removes it via panel.removeAoe", () => {
-    const panel = makePanelStub([], { aoes: [anAoe()] });
+  it("right-clicking the live AoE dot removes it via panel.removeAoe", () => {
+    const panel = makePanelStub([], { aoes: [anAoe()], selectedAoeId: "aoe-1" });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
 
@@ -545,18 +575,107 @@ describe("MapExploreModal — AoE and vision markers", () => {
     modal.onClose();
   });
 
-  it("dragging a vision dot moves it and broadcasts", () => {
+  // Every marker used to answer any press that landed on it. On a finger-sized
+  // hit area that meant a map that rearranged itself while it was being read,
+  // so now the map only moves what the DM has opened in its list.
+  it("ignores a drag on an AoE whose card is not open", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe] });
+    const { modal, markers } = openModal(panel);
+    const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
+    expect(dot.classList.contains("dm-map-marker-selected")).toBe(false);
+
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 102.4, 0);
+    fireDocPointer("pointerup", 102.4, 0);
+
+    expect(aoe.x).toBe(MAP_W / 2);
+    expect(panel.broadcastAoes).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("ignores a drag on a vision whose card is not open", () => {
     const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
     const panel = makePanelStub([], { visions: [vision] });
     const { modal, markers } = openModal(panel);
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
 
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 0, 102.4); // +100 natural px in y (768 fog h → 750 natural)
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 0, 102.4);
+    fireDocPointer("pointerup", 0, 102.4);
+
+    expect(vision.y).toBe(MAP_H / 2);
+    expect(panel.broadcastVisions).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("keeps a closed AoE inert: no removal and no rotation handle", () => {
+    const panel = makePanelStub([], { aoes: [{ ...anAoe(), shape: "cone" }] });
+    const { modal, markers } = openModal(panel);
+    expect(markers.querySelector(".dm-map-aoe-rot-handle")).toBeNull();
+
+    const dot = markers.querySelector(".dm-map-aoe-dot") as HTMLElement;
+    dot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(panel.removeAoe).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("marks the live AoE and puts it down again on a press outside it", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
+    const { modal, markers, overlay } = openModal(panel);
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(true);
+
+    firePointerdown(overlay, 10, 10);
+
+    expect(panel.clearMarkerSelection).toHaveBeenCalled();
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(false);
+    modal.onClose();
+  });
+
+  // On a stage too narrow for floating windows the list is a sheet over the
+  // map, so a rule that unselected on close would mean the marker can never be
+  // both selected and reachable. Closing a list leaves the selection alone; a
+  // press on the map is what puts a marker down.
+  it("keeps the live AoE when its list is put away", () => {
+    const aoe = anAoe();
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
+    const { modal, markers, contentEl } = openModal(panel);
+    const minimize = contentEl.querySelector(".dm-floating-window-minimize") as HTMLElement;
+
+    minimize.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(panel.selectedAoeId).toBe(aoe.id);
+    expect((markers.querySelector(".dm-map-aoe-dot") as HTMLElement).classList.contains("dm-map-marker-selected")).toBe(true);
+    modal.onClose();
+  });
+
+  it("keeps a cone's rotation handle a finger away from its anchor", () => {
+    // 10 ft at 10 px/ft is 100 natural px, which this stage shows at 0.1024 —
+    // about 10 screen px, well inside the dot's own touch target.
+    const aoe: MapAoe = { ...anAoe(), shape: "cone", sizeFt: 10 };
+    const panel = makePanelStub([], { aoes: [aoe], selectedAoeId: aoe.id });
+    const { modal, markers } = openModal(panel);
+
+    const handle = markers.querySelector(".dm-map-aoe-rot-handle") as HTMLElement;
+    const gapNatural = (parseFloat(handle.style.left) / 100) * MAP_W - aoe.x;
+    expect(gapNatural * (FOG_W / MAP_W)).toBeGreaterThanOrEqual(MIN_HANDLE_GAP_PX - 0.5);
+
+    modal.onClose();
+  });
+
+  it("dragging a vision dot moves it and broadcasts", () => {
+    const vision: MapVision = { id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5 };
+    const panel = makePanelStub([], { visions: [vision], selectedVisionId: vision.id });
+    const { modal, markers } = openModal(panel);
+    const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
+
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 0, 102.4); // +100 natural px in y (768 fog h → 750 natural)
     expect(vision.y).toBeCloseTo(MAP_H / 2 + 100, 0);
     expect(panel.broadcastVisions).toHaveBeenCalledWith();
 
-    fireDocMouse("mouseup", 0, 102.4);
+    fireDocPointer("pointerup", 0, 102.4);
     expect(panel.broadcastVisions).toHaveBeenLastCalledWith(true);
 
     modal.onClose();
@@ -607,8 +726,8 @@ describe("MapExploreModal — view lock", () => {
     const { modal, markers } = openModal(panel);
     const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
 
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 700, 400);
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 700, 400);
     expect(panel.applyExplorePan).not.toHaveBeenCalled();
 
     modal.onClose();
@@ -672,13 +791,13 @@ describe("MapExploreModal — view-bound vision", () => {
     const { modal, markers } = openModal(panel);
     const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
 
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 500 + 102.4, 400); // +100 natural px in x
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 500 + 102.4, 400); // +100 natural px in x
     // applyExplorePan (stub) moved the bound vision onto the new view centre.
     expect(vision.x).toBeCloseTo(MAP_W / 2 + 100, 1);
     expect(vision.y).toBeCloseTo(MAP_H / 2, 1);
 
-    fireDocMouse("mouseup", 500 + 102.4, 400);
+    fireDocPointer("pointerup", 500 + 102.4, 400);
     modal.onClose();
   });
 
@@ -687,20 +806,20 @@ describe("MapExploreModal — view-bound vision", () => {
       id: "v-1", shape: "circle", x: MAP_W / 2, y: MAP_H / 2, sizeFt: 30, dimFt: 0, featherFt: 5,
       followsView: true, viewOffsetX: 0, viewOffsetY: 0,
     };
-    const panel = makePanelStub([], { mode: "physical", visions: [vision] });
+    const panel = makePanelStub([], { mode: "physical", visions: [vision], selectedVisionId: vision.id });
     const { modal, markers } = openModal(panel);
 
     const dot = markers.querySelector(".dm-map-vision-dot") as HTMLElement;
-    dot.dispatchEvent(new MouseEvent("mousedown", { clientX: 0, clientY: 0, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 102.4, 0); // +100 natural px in x
-    fireDocMouse("mouseup", 102.4, 0);
+    dot.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 102.4, 0); // +100 natural px in x
+    fireDocPointer("pointerup", 102.4, 0);
     expect(vision.viewOffsetX).toBeCloseTo(100, 1);
     expect(vision.viewOffsetY).toBeCloseTo(0, 1);
 
     const rect = markers.querySelector(".dm-map-viewport-rect") as HTMLElement;
-    rect.dispatchEvent(new MouseEvent("mousedown", { clientX: 500, clientY: 400, button: 0, bubbles: true }));
-    fireDocMouse("mousemove", 500, 400 + 51.2); // +50 natural px in y
-    fireDocMouse("mouseup", 500, 400 + 51.2);
+    rect.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, clientY: 400, button: 0, bubbles: true }));
+    fireDocPointer("pointermove", 500, 400 + 51.2); // +50 natural px in y
+    fireDocPointer("pointerup", 500, 400 + 51.2);
     expect(vision.x).toBeCloseTo(MAP_W / 2 + 100, 1);
     expect(vision.y).toBeCloseTo(MAP_H / 2 + 50, 1);
 
@@ -776,7 +895,7 @@ describe("MapExploreModal — Combat window", () => {
     const modal = new MapExploreModal(
       appStub as never,
       {
-        app: appStub,
+        app: appStub, transport: transportStub, canEditSession: () => true, exploreModals: new Set(), sessionIsLocal: () => true, sourceLabels: () => ({}),
         settings: { exploreWindows: { combat: { x: 0.25, y: 0.5, minimized: true } } },
         saveSettings: vi.fn(),
       } as never,
@@ -790,5 +909,207 @@ describe("MapExploreModal — Combat window", () => {
     expect(combat.classList.contains("dm-floating-window-minimized")).toBe(true);
     expect(combat.style.width).toBe("320px");
     modal.onClose();
+  });
+});
+
+describe("MapExploreModal — touch exploration", () => {
+  const twoRoomWalls = (): MapWall[] => [{ x1: 500, y1: 0, x2: 500, y2: MAP_H }];
+
+  it("a tapping finger explores on the lift, not the press", async () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, overlay, contentEl } = openModal(panel);
+    coverAll(contentEl);
+    panel.commitFog.mockClear();
+
+    fireTouch(overlay, "pointerdown", 1, 256, 384);
+    expect(panel.commitFog).not.toHaveBeenCalled();
+
+    fireTouch(document.documentElement, "pointerup", 1, 256, 384);
+    await vi.waitFor(() => expect(panel.commitFog).toHaveBeenCalledTimes(1));
+
+    modal.onClose();
+  });
+
+  it("a finger that slides away was panning, so it explores nothing", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, overlay, contentEl } = openModal(panel);
+    coverAll(contentEl);
+    panel.commitFog.mockClear();
+
+    fireTouch(overlay, "pointerdown", 1, 256, 384);
+    fireTouch(document.documentElement, "pointermove", 1, 256, 500);
+    fireTouch(document.documentElement, "pointerup", 1, 256, 500);
+
+    expect(panel.commitFog).not.toHaveBeenCalled();
+    modal.onClose();
+  });
+
+  it("a second finger takes the gesture over: it zooms and reveals nothing", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, overlay, contentEl } = openModal(panel);
+    const stage = stageOf(contentEl);
+    const inner = contentEl.querySelector(".dm-explore-inner") as HTMLElement;
+    coverAll(contentEl);
+    panel.commitFog.mockClear();
+
+    fireTouch(overlay, "pointerdown", 1, 400, 384);
+    fireTouch(stage, "pointerdown", 2, 600, 384);
+    fireTouch(stage, "pointermove", 2, 800, 384);
+    fireTouch(stage, "pointerup", 2, 800, 384);
+    fireTouch(document.documentElement, "pointerup", 1, 400, 384);
+
+    expect(panel.commitFog).not.toHaveBeenCalled();
+    expect(inner.style.transform).toContain("scale(2)");
+    modal.onClose();
+  });
+
+  it("the zoom button reports the zoom and puts the map back to fit", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, contentEl } = openModal(panel);
+    const stage = stageOf(contentEl);
+    const inner = contentEl.querySelector(".dm-explore-inner") as HTMLElement;
+    const zoomBtn = contentEl.querySelector(".dm-explore-zoom-btn") as HTMLButtonElement;
+    expect(zoomBtn.textContent).toBe("Zoom: 100%");
+
+    fireTouch(stage, "pointerdown", 1, 400, 384);
+    fireTouch(stage, "pointerdown", 2, 600, 384);
+    fireTouch(stage, "pointermove", 2, 1000, 384);
+    expect(zoomBtn.textContent).toBe("Zoom: 300%");
+    expect(inner.style.getPropertyValue("--dm-map-zoom")).toBe("3");
+
+    zoomBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(zoomBtn.textContent).toBe("Zoom: 100%");
+    expect(inner.style.transform).toContain("scale(1)");
+    modal.onClose();
+  });
+
+  it("stops zooming once the modal is closed", () => {
+    const panel = makePanelStub(twoRoomWalls());
+    const { modal, contentEl } = openModal(panel);
+    const stage = stageOf(contentEl);
+    const inner = contentEl.querySelector(".dm-explore-inner") as HTMLElement;
+    modal.onClose();
+
+    fireTouch(stage, "pointerdown", 1, 400, 384);
+    fireTouch(stage, "pointerdown", 2, 600, 384);
+    fireTouch(stage, "pointermove", 2, 1000, 384);
+
+    expect(inner.style.transform).toContain("scale(1)");
+  });
+});
+
+// happy-dom reports 0 for every clientWidth, which the modal reads as "not
+// measured yet". A phone-width stage has to be faked to exercise the compact
+// layout, and a desktop-width one to prove the choice is the width's.
+function withStageWidth<T>(width: number, run: () => T): T {
+  const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+  const original = Object.getOwnPropertyDescriptor(proto, "clientWidth");
+  Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => width });
+  try {
+    return run();
+  } finally {
+    if (original) Object.defineProperty(proto, "clientWidth", original);
+    else delete proto.clientWidth;
+  }
+}
+
+describe("MapExploreModal — narrow stages", () => {
+  const sheetTabs = (contentEl: HTMLElement) =>
+    Array.from(contentEl.querySelectorAll(".dm-explore-tabs button")).map((b) => b.textContent);
+
+  it("gives a phone-width stage the tabbed sheet instead of three floating windows", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = withStageWidth(390, () => openModal(panel));
+
+    expect(contentEl.querySelectorAll(".dm-floating-window")).toHaveLength(0);
+    expect(sheetTabs(contentEl)).toEqual(["AoEs", "Vision", "Combat"]);
+    // Closed, so the map keeps the whole stage.
+    expect(contentEl.querySelector(".dm-explore-sheet-host")!.classList.contains("dm-explore-sheet-open")).toBe(false);
+
+    modal.onClose();
+  });
+
+  it("opens one panel at a time and closes it again", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = withStageWidth(390, () => openModal(panel));
+    const host = contentEl.querySelector(".dm-explore-sheet-host") as HTMLElement;
+    const [aoesTab, visionTab] = Array.from(contentEl.querySelectorAll(".dm-explore-tabs button")) as HTMLButtonElement[];
+    const click = (el: HTMLElement) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const openTitle = () => contentEl.querySelector(".dm-explore-sheet-title")!.textContent;
+
+    click(aoesTab);
+    expect(host.classList.contains("dm-explore-sheet-open")).toBe(true);
+    expect(openTitle()).toBe("AoEs");
+
+    click(visionTab);
+    expect(openTitle()).toBe("Vision");
+    const open = contentEl.querySelectorAll(".dm-explore-sheet-body-open");
+    expect(open).toHaveLength(1);
+
+    // The open tab is also the close button.
+    click(visionTab);
+    expect(host.classList.contains("dm-explore-sheet-open")).toBe(false);
+
+    modal.onClose();
+  });
+
+  it("mirrors COMBAT into the sheet's own Combat body", () => {
+    const panel = makePanelStub();
+    const { modal, contentEl } = withStageWidth(390, () => openModal(panel));
+    const mirror = panel.registerCombatMirror.mock.calls.at(-1)![0];
+    const bodies = Array.from(contentEl.querySelectorAll(".dm-explore-sheet-body"));
+
+    expect(bodies).toContain(mirror.body);
+    // The panel writes the round into the header; it has somewhere to go.
+    const extra = document.createElement("span");
+    extra.textContent = "Round 3";
+    mirror.setTitleExtra(extra);
+    expect(contentEl.querySelector(".dm-explore-sheet-extra")!.textContent).toBe("");
+
+    const combatTab = Array.from(contentEl.querySelectorAll(".dm-explore-tabs button")).at(-1) as HTMLButtonElement;
+    combatTab.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(contentEl.querySelector(".dm-explore-sheet-extra")!.textContent).toBe("Round 3");
+
+    modal.onClose();
+  });
+
+  // A window saved on a desktop stage, or a default measured against one, can
+  // land outside a narrower stage — and a window off the stage cannot be
+  // dragged back, which is how two of them ended up stacked on a phone.
+  it("pulls a floating window saved off-stage back inside", () => {
+    const panel = makePanelStub();
+    const modal = new MapExploreModal(
+      appStub as never,
+      {
+        app: appStub,
+        transport: transportStub,
+        canEditSession: () => true,
+        exploreModals: new Set(),
+        sessionIsLocal: () => true,
+        sourceLabels: () => ({}),
+        settings: { mapFogTvOpacity: 0.9, exploreWindows: { aoes: { x: -0.5, y: 0.9, minimized: false } } },
+        saveSettings: vi.fn(),
+      } as never,
+      panel as never,
+      mapStub
+    );
+    const stage = () => modal.contentEl.querySelector(".dm-explore-stage") as HTMLElement;
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 260 });
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 32 });
+    const rect = { left: 0, top: 0, width: 900, height: 600, right: 900, bottom: 600, x: 0, y: 0, toJSON: () => ({}) };
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = () => rect as DOMRect;
+    try {
+      modal.onOpen();
+      const aoes = Array.from(stage().querySelectorAll(".dm-floating-window")).find(
+        (w) => w.querySelector(".dm-floating-window-title")?.textContent === "AoEs"
+      ) as HTMLElement;
+      expect(parseFloat(aoes.style.left)).toBeGreaterThanOrEqual(0);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetWidth;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetHeight;
+      modal.onClose();
+    }
   });
 });

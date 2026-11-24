@@ -27,6 +27,10 @@ vi.mock("obsidian", async () => {
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
+    sessionIsLocal: () => true,
+    sourceLabels() {
+      return ((this as any).settings.lastSourceLabels ??= {});
+    },
     settings: {
       mapConfigs: {},
       mapDefaultPxPerSquare: 140,
