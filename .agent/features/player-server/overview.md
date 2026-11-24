@@ -66,17 +66,15 @@ The server is the transport for every DM → player and player → DM message. T
 ## Tests covering this
 
 - `src/__tests__/server.test.ts` — basic start / stop / port binding
-- `src/__tests__/server-bootstrap.integration.test.ts` — real `PlayerScreenServer` + real `ws` client connection
 - `src/__tests__/server-broadcast.test.ts` — `broadcast()` filters by `readyState`, populates late-joiner cache, and `maxClients` defaults to ten
 - `src/__tests__/server-vault-path.test.ts` — `/vault/` path-traversal guard (see `vault-routing.md`)
 - `src/__tests__/auth.test.ts` — token shape and uniqueness, length-independent compare (prefix, extension, empty secret and candidate), join-URL construction and percent-encoding
-- `src/__tests__/server-auth.integration.test.ts` — real `ws` handshakes: no token and wrong token close `1008`, right token opens, cookie-supplied token opens, cross-origin `Origin` closes `1008`, matching `Origin` opens, `/map?k=` still routes to the map channel, a 40-message burst closes `1008`, `disconnectAllClients()` drops every socket
-- `src/__tests__/server-vault-allowlist.integration.test.ts` — `401` before the allowlist and before any disk read, `401` on a wrong token, `401` on the player page, `/health` open, and the `dmScreenKey` cookie set on `/`
+- `src/__tests__/server-vault-allowlist.integration.test.ts` — the two things a black-box suite cannot see: a denied path answers `404` without a single call reaching the vault adapter, and the player page sets the `dmScreenKey` cookie so a reload without `?k=` still renders
 - `src/__tests__/main.test.ts` — `loadSettings` mints and persists a token when none is stored and keeps an existing one
 - `src/__tests__/smoke.test.ts` — module loads, exports present
-- `src/__tests__/server-stop-keepalive.integration.test.ts` — `stop()` destroys idle keep-alive sockets so the port rebinds immediately (req 15)
+- `src/__tests__/server-stop-keepalive.integration.test.ts` — `stop()` destroys idle keep-alive sockets so the port rebinds immediately (req 15); `disconnectAllClients()` closes every viewer socket with `1008`
 - `src/__tests__/dm-control-render-guard.test.ts` — a background re-render is deferred while a panel input is focused, kept deferred when focus moves to another control in the panel, and flushed once focus leaves it (req 17)
-- `test/conformance/*.conformance.ts` — the black-box viewer contract shared with the remote server (`make test-conformance`): routes and content types, `/health` shape, token and cookie, `Origin`, client limit, channel routing, cache rules and replay order, frame and rate limits, display allowlist
+- `test/conformance/*.conformance.ts` — the black-box viewer contract shared with the remote server (`make test-conformance`), and the merge gate for it on both targets: routes and content types, `/health` shape, token and cookie, `Origin`, client limit, channel routing, cache rules and replay order, frame and rate limits, display allowlist
 - `src/__tests__/bundle-smoke.integration.test.ts` — production `main.js` builds and contains the server class
 - `test/visual/*.spec.ts` — Playwright visual regression suite. Boots a real `PlayerScreenServer` against the production player bundle (via `scripts/build-player.mjs` + a CJS-bundled `server-entry.ts` built in `test/visual/harness/build-host.mjs`) and asserts pixel-stable screenshots of waiting screen, background image, image-layers-sync, fog overlays (full / circle / rect / freehand), and the initiative tracker. Baselines must be generated inside the official Microsoft Playwright container so local and CI render identically.
 - `test/e2e/specs/smoke.e2e.ts` — real Obsidian: plugin loads and enables, both commands registered, ribbon icon present, DM Control Panel opens with its sections

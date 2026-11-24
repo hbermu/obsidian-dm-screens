@@ -41,12 +41,12 @@ Many of these rules are enforced locally: `.claude/hooks/bash-precheck.sh` (wire
 - Create a branch named `<type>/<slug>` where `<type>` is one of `feature`, `fix`, `hotfix`, `chore`, `refactor`, `docs`, `test`, `ci`. Slugs are lowercase a–z, 0–9, hyphens only — no underscores, no leading hyphen, no consecutive hyphens.
 - Open the PR via `gh pr create` against `main`. The PR title must follow Conventional Commits: `<type>(<scope>): <subject>` where `<scope>` is the feature's short slug (`hydrus`, `dndbeyond`, `fog-of-war`, `dm-preview`, `webhooks`) or `deps`, `release`, `repo`, `changelog`. The lint enforces only the shape (lowercase slug, scope optional) — choosing a meaningful scope is the author's responsibility. The subject is at least 10 characters in imperative mood with no trailing period. Exception: `release:` titles may carry just the version (e.g. `release: v0.9.0`).
 - Apply a bump label on the PR (see `Release process` below). Patch is the default and needs no label; minor / major / skip need `release:minor`, `release:major`, or `release:skip`.
-- Six status checks must pass before merge: `typecheck`, `test`, `build`, `branch-name-lint`, `pr-title-lint`, `spec-update-check`.
+- Eight status checks must pass before merge: `typecheck`, `test`, `build`, `branch-name-lint`, `pr-title-lint`, `spec-update-check`, `conformance (embedded)` and `conformance (remote)`. The conformance suite is the only place the two servers' shared viewer contract is checked against both implementations, so it gates the merge rather than reporting next to it.
 - The PR title type and the bump label must align with intent. `feat:` PRs are typically `release:minor`; `fix:` and `chore:` PRs are typically `release:patch` (default).
 - When a PR changes `src/` files, the matching `.agent/features/` spec MUST be updated in the same PR. The `spec-update-check` CI gate enforces this. Apply `spec:not-needed` only when the change is truly behaviour-free (e.g. a comment-only edit, a CI tweak).
 - Merges are squash-only; the PR title becomes the squash-commit subject on `main` (make it grep-worthy — future `git log --grep` runs depend on it). Merged branches are auto-deleted.
 - No approving reviews are required (solo project); admin bypass exists for break-glass emergencies. Do not request reviews from anyone.
-- Dependabot PRs are exempt from `branch-name-lint` and `pr-title-lint` (Dependabot owns the `dependabot/...` branch name and is configured in `.github/dependabot.yml` to emit `chore(deps): …` titles). Every other required check (`typecheck`, `test`, `build`, `spec-update-check`) still applies.
+- Dependabot PRs are exempt from `branch-name-lint` and `pr-title-lint` (Dependabot owns the `dependabot/...` branch name and is configured in `.github/dependabot.yml` to emit `chore(deps): …` titles). Every other required check (`typecheck`, `test`, `build`, `spec-update-check`, both `conformance` legs) still applies.
 
 Examples of compliant PR titles:
 
@@ -238,7 +238,7 @@ Use `release:skip` for purely-internal PRs that ship no observable change (CI re
 ### Stable flow
 
 1. Open a PR. Apply the right bump label (or none for patch).
-2. CI runs the six required checks. Squash-merge to `main`.
+2. CI runs the eight required checks. Squash-merge to `main`.
 3. The release workflow reads the labels, computes the next version from the latest stable tag (not `manifest.json` — see below), bumps the three version files + `versions.json` in a detached commit, tags `X.Y.Z` (no `v` prefix — required by Obsidian community plugin guidelines), builds `main.js`, publishes a GitHub release with tier-shaped notes (see below), and appends a matching section to `CHANGELOG.md` on `main`.
 
 ### Release notes by tier

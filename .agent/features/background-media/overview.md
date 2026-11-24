@@ -61,7 +61,6 @@
 ## Tests covering this
 
 - `src/__tests__/server-broadcast.test.ts` — `show-background-media` is cached and replayed; requirement 23: payload has no label keys
-- `src/__tests__/server-bootstrap.integration.test.ts` — wires the DM → player flow
 - `src/__tests__/dm-preview-bg.test.ts` — `resolveBackgroundPreviewUrl` and `isVideoBackgroundUrl` helpers used by the DM-side preview overlay
 - `src/__tests__/dm-control-restore.test.ts` — unit tests for requirement 17: missing non-Hydrus file → Notice + state cleared + `show-background-media` forgotten from the `ReplayCache` (other entries kept); Notice uses the label
 - `src/__tests__/source-label.test.ts` — requirement 20: label resolution from name tags, Hydrus hash, note basename and filename; Hydrus-aware URL fallback via cache lookup
