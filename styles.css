@@ -2266,6 +2266,16 @@
   opacity: 0.75;
 }
 
+/* Above the inert ones. Two markers on the same spot are common — two visions
+   dropped on one token, a cone over its own anchor — and the one that cannot
+   be moved used to swallow the press meant for the one that can, purely
+   because it was drawn later. The live marker and its handle win every
+   overlap. */
+.dm-map-marker-selected,
+.dm-map-aoe-rot-handle {
+  z-index: 6;
+}
+
 .dm-map-marker-selected {
   opacity: 1;
   box-shadow:

@@ -54,9 +54,10 @@ describe("aoe shapes, rotation, clear, and the spell catalog", function () {
     const sync = await rec.waitFor("map-aoe-sync", { skip: seen, where: (m) => aoes(m).length === 1 });
     expect(aoes(sync)[0].shape).toBe("cone");
 
+    // The rotation handle belongs to the live AoE, so open its card first.
+    await cardHeader().click();
     await expect(browser.$(".dm-control-panel .dm-map-aoe-rot-handle")).toExist();
     // Cone has no width/thickness field — neither label is rendered even when expanded.
-    await cardHeader().click();
     await expect(cardBody().$("span*=Width")).not.toExist();
     await expect(cardBody().$("span*=Thickness")).not.toExist();
   });
