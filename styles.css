@@ -1820,15 +1820,19 @@
 /* A panel this narrow is a phone-shaped column: every row is laid out to be
    reachable with a thumb and nothing is reached by scrolling sideways. */
 @container dm-panel (max-width: 460px) {
-  /* The section's buttons take a full row under the title and share it
-     evenly, instead of trailing off the right edge. */
+  /* The section's buttons take a full row under the title, instead of
+     trailing off the right edge. */
   .dm-section-actions {
     flex-basis: 100%;
     margin-left: 0;
   }
+  /* They share the row, but they grow from their own label rather than from
+     zero: a panel narrow enough to give three buttons less than a label each
+     would otherwise spill the text out over its neighbour. Below that width
+     the row wraps instead. */
   .dm-section-actions button {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 1 1 auto;
+    min-width: max-content;
   }
 
   /* A join URL is longer than the panel; it gets its own row above the

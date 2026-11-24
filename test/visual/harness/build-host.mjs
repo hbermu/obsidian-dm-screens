@@ -114,7 +114,7 @@ button:not(.clickable-icon) { background: #3a3a3a; color: #dadada; }
       </div>
       <div class="dm-layer-mid-col">
         <div class="dm-layer-name-row"><div class="dm-layer-swatch"></div><span class="dm-layer-label">Betty Borracha</span><button class="dm-layer-expand">\u203A</button></div>
-        <div class="dm-layer-slider-row"><span class="dm-layer-scale-label">83%</span><input type="range" min="0" max="100" value="83"></div>
+        <div class="dm-layer-slider-row"><span class="dm-layer-scale-label">83%</span><input class="dm-layer-scale-slider" type="range" min="0" max="100" value="83"></div>
       </div>
       <div class="dm-layer-right-col">
         <div class="dm-layer-controls"><button class="dm-layer-btn">1</button><button class="dm-layer-btn">2</button><button class="dm-layer-btn">3</button><button class="dm-layer-btn">4</button><button class="dm-layer-btn">5</button></div>
@@ -128,7 +128,7 @@ button:not(.clickable-icon) { background: #3a3a3a; color: #dadada; }
       </div>
       <div class="dm-layer-mid-col">
         <div class="dm-layer-name-row"><div class="dm-layer-swatch"></div><span class="dm-layer-label">Victor</span><button class="dm-layer-expand">\u2304</button></div>
-        <div class="dm-layer-slider-row"><span class="dm-layer-scale-label">38%</span><input type="range" min="0" max="100" value="38"></div>
+        <div class="dm-layer-slider-row"><span class="dm-layer-scale-label">38%</span><input class="dm-layer-scale-slider" type="range" min="0" max="100" value="38"></div>
       </div>
       <div class="dm-layer-right-col">
         <div class="dm-layer-controls"><button class="dm-layer-btn">1</button><button class="dm-layer-btn">2</button><button class="dm-layer-btn">3</button><button class="dm-layer-btn">4</button><button class="dm-layer-btn">5</button></div>

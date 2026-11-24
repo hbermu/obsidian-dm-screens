@@ -170,6 +170,38 @@ test("a narrow panel lays its sections out down the column, never sideways", asy
   expect(layout.addWidth).toBeCloseTo(layout.rowWidth, 0);
 });
 
+// A box that stays inside the panel can still hold a label that does not, which
+// is what a share-the-row-evenly rule does once the share is narrower than the
+// word on the button.
+test("a panel too narrow for three buttons on one row wraps them instead of crushing them", async ({ page }) => {
+  const row = await page.evaluate(() => {
+    const panel = document.querySelector(".dm-control-panel") as HTMLElement;
+    panel.style.width = "200px";
+    const actions = panel.querySelector(".dm-section-actions") as HTMLElement;
+    const buttons = Array.from(actions.querySelectorAll("button")) as HTMLElement[];
+    const measured = {
+      overflow: panel.scrollWidth - panel.clientWidth,
+      actionsHeight: actions.getBoundingClientRect().height,
+      buttons: buttons.map((b) => ({
+        content: b.scrollWidth,
+        box: b.clientWidth,
+        h: b.getBoundingClientRect().height,
+      })),
+    };
+    panel.style.width = "";
+    return measured;
+  });
+
+  expect(row.overflow).toBeLessThanOrEqual(0);
+  expect(row.buttons).toHaveLength(3);
+  for (const button of row.buttons) {
+    // The label fits the button it is written on.
+    expect(button.content).toBeLessThanOrEqual(button.box + 0.5);
+  }
+  // Which it can only do by taking more than one row.
+  expect(row.actionsHeight).toBeGreaterThan(Math.max(...row.buttons.map((b) => b.h)) + 1);
+});
+
 test("the section bar stays put while the panel scrolls, with finger-sized chips", async ({ page }) => {
   const nav = await page.evaluate(() => {
     const panel = document.querySelector(".dm-control-panel") as HTMLElement;
