@@ -33,20 +33,12 @@ async fn download(
     state: &AppState,
     hash: &str,
 ) -> Result<(std::path::PathBuf, &'static str), Failure> {
-    let hydrus = state.config.hydrus.as_ref().expect("checked by the caller");
-    let url = format!("{}/get_files/file?hash={hash}", hydrus.url);
-    let res = http()
-        .get(&url)
-        .header(KEY_HEADER, &hydrus.key)
-        .send()
+    let res = get(state, &format!("/get_files/file?hash={hash}"), None)
         .await
-        .map_err(|e| Failure::Upstream(e.without_url().to_string()))?;
-    if !res.status().is_success() {
-        return Err(Failure::Upstream(format!(
-            "status {}",
-            res.status().as_u16()
-        )));
-    }
+        .map_err(|e| match e {
+            GetError::NotConfigured => Failure::Upstream("not configured".into()),
+            GetError::Failed(reason) => Failure::Upstream(reason),
+        })?;
     let mime = res
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -115,16 +107,20 @@ pub async fn fetch(State(state): State<Arc<AppState>>, Json(req): Json<HydrusReq
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()
             }
         },
-        Err(Failure::TooLarge) => StatusCode::PAYLOAD_TOO_LARGE.into_response(),
         Err(f) => {
-            let reason = match f {
-                Failure::Upstream(e) => e,
-                Failure::Mismatch => "hash mismatch".into(),
-                Failure::Unsupported => "unsupported content type".into(),
-                Failure::TooLarge => unreachable!(),
+            let (status, reason) = match f {
+                Failure::TooLarge => (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "over the asset limit".to_string(),
+                ),
+                Failure::Upstream(e) => (StatusCode::BAD_GATEWAY, e),
+                Failure::Mismatch => (StatusCode::BAD_GATEWAY, "hash mismatch".into()),
+                Failure::Unsupported => {
+                    (StatusCode::BAD_GATEWAY, "unsupported content type".into())
+                }
             };
             tracing::warn!(hash = &hash[..12], reason, "Hydrus fetch failed");
-            StatusCode::BAD_GATEWAY.into_response()
+            status.into_response()
         }
     }
 }
@@ -152,24 +148,59 @@ fn upstream(state: &AppState) -> Option<Upstream> {
     })
 }
 
+// Every route here is the same authenticated GET against the configured
+// Hydrus, and the credential is attached in this one place; what each route
+// does with a successful answer is the only part that differs. A failure is
+// already the response to send: the upstream's own body never travels back,
+// because it echoes the request, and the request carried the key.
+enum GetError {
+    NotConfigured,
+    Failed(String),
+}
+
+async fn get(
+    state: &AppState,
+    path: &str,
+    range: Option<&str>,
+) -> Result<reqwest::Response, GetError> {
+    let Some(up) = upstream(state) else {
+        return Err(GetError::NotConfigured);
+    };
+    let mut req = http()
+        .get(format!("{}{path}", up.url))
+        .header(KEY_HEADER, &up.key);
+    if let Some(range) = range {
+        req = req.header(reqwest::header::RANGE, range);
+    }
+    let res = req
+        .send()
+        .await
+        .map_err(|e| GetError::Failed(e.without_url().to_string()))?;
+    if !res.status().is_success() {
+        return Err(GetError::Failed(format!(
+            "status {}",
+            res.status().as_u16()
+        )));
+    }
+    Ok(res)
+}
+
+// A route reports an absent integration as not-implemented and anything else
+// as a bad gateway, naming the operation and never the upstream's own body.
+fn report(op: &'static str, e: GetError) -> Response {
+    match e {
+        GetError::NotConfigured => not_configured(op),
+        GetError::Failed(reason) => upstream_failed(op, reason),
+    }
+}
+
 // Passes the upstream's JSON through: these routes carry no credential in
 // their answer, and the plugin already knows how to read Hydrus's shapes.
 async fn get_json(state: &AppState, op: &'static str, path: &str) -> Response {
-    let Some(up) = upstream(state) else {
-        return not_configured(op);
-    };
-    let res = match http()
-        .get(format!("{}{path}", up.url))
-        .header(KEY_HEADER, &up.key)
-        .send()
-        .await
-    {
+    let res = match get(state, path, None).await {
         Ok(r) => r,
-        Err(e) => return upstream_failed(op, e.without_url()),
+        Err(e) => return report(op, e),
     };
-    if !res.status().is_success() {
-        return upstream_failed(op, format!("status {}", res.status().as_u16()));
-    }
     match res.bytes().await {
         Ok(body) => ([(header::CONTENT_TYPE, "application/json")], body).into_response(),
         Err(e) => upstream_failed(op, e.without_url()),
@@ -267,22 +298,10 @@ async fn fetch_json(
     op: &'static str,
     path: &str,
 ) -> Result<Value, Box<Response>> {
-    let Some(up) = upstream(state) else {
-        return Err(Box::new(not_configured(op)));
-    };
-    let res = http()
-        .get(format!("{}{path}", up.url))
-        .header(KEY_HEADER, &up.key)
-        .send()
+    get(state, path, None)
         .await
-        .map_err(|e| Box::new(upstream_failed(op, e.without_url())))?;
-    if !res.status().is_success() {
-        return Err(Box::new(upstream_failed(
-            op,
-            format!("status {}", res.status().as_u16()),
-        )));
-    }
-    res.json()
+        .map_err(|e| Box::new(report(op, e)))?
+        .json()
         .await
         .map_err(|e| Box::new(upstream_failed(op, e.without_url())))
 }
@@ -352,24 +371,10 @@ pub async fn thumbnail(State(state): State<Arc<AppState>>, Path(hash): Path<Stri
     if let Some((body, mime)) = state.thumbnails.get(&hash) {
         return serve(body, mime);
     }
-    let Some(up) = upstream(&state) else {
-        return not_configured("hydrus thumbnail");
-    };
-    let res = match http()
-        .get(format!("{}/get_files/thumbnail?hash={hash}", up.url))
-        .header(KEY_HEADER, &up.key)
-        .send()
-        .await
-    {
+    let res = match get(&state, &format!("/get_files/thumbnail?hash={hash}"), None).await {
         Ok(r) => r,
-        Err(e) => return upstream_failed("hydrus thumbnail", e.without_url()),
+        Err(e) => return report("hydrus thumbnail", e),
     };
-    if !res.status().is_success() {
-        return upstream_failed(
-            "hydrus thumbnail",
-            format!("status {}", res.status().as_u16()),
-        );
-    }
     let mime = res
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -395,22 +400,16 @@ pub async fn file(
     if !is_sha256(&hash) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let Some(up) = upstream(&state) else {
-        return not_configured("hydrus file");
-    };
-    let mut req = http()
-        .get(format!("{}/get_files/file?hash={hash}", up.url))
-        .header(KEY_HEADER, &up.key);
-    if let Some(range) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
-        req = req.header(reqwest::header::RANGE, range);
-    }
-    let res = match req.send().await {
+    let res = match get(
+        &state,
+        &format!("/get_files/file?hash={hash}"),
+        headers.get(header::RANGE).and_then(|v| v.to_str().ok()),
+    )
+    .await
+    {
         Ok(r) => r,
-        Err(e) => return upstream_failed("hydrus file", e.without_url()),
+        Err(e) => return report("hydrus file", e),
     };
-    if !res.status().is_success() {
-        return upstream_failed("hydrus file", format!("status {}", res.status().as_u16()));
-    }
     let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::OK);
     let mut out_headers = axum::http::HeaderMap::new();
     for name in [

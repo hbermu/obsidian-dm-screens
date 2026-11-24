@@ -4,7 +4,7 @@
 
 ## Source files
 
-- `server/src/integrations/hydrus.rs` — the named operations, the key attached per request, thumbnail caching
+- `server/src/integrations/hydrus.rs` — the named operations over one shared authenticated GET, thumbnail caching
 - `src/integrations/remote.ts` — `RemoteGateway.hydrus()`: the same method names as `HydrusClient`, over the routes below
 - `src/integrations/local.ts` — `LocalGateway.hydrus()`: a `HydrusClient` against the configured URL
 - `src/hydrus/client.ts` — unchanged; the local gateway's implementation
@@ -19,12 +19,13 @@
 ## Requirements
 
 1. The server shall expose exactly these operations, each requiring the control token: `GET /api/hydrus/verify`, `GET /api/hydrus/services`, `POST /api/hydrus/search` (`{tags, limit}`), `POST /api/hydrus/metadata` (`{hashes}`), `GET /api/hydrus/tags?search=&service=`, `GET /api/hydrus/thumbnail/<hash>`, `GET /api/hydrus/file/<hash>` (honouring `Range`), and the existing `POST /api/assets/hydrus` (`{hash}`) which stores the file and answers with its asset.
-2. Each shall call the matching Hydrus Client API route with the key in `Hydrus-Client-API-Access-Key`, and shall pass through the upstream's JSON body for the read operations, which carry no credential.
+2. Each shall call the matching Hydrus Client API route with the key in `Hydrus-Client-API-Access-Key`, and shall pass through the upstream's JSON body for the read operations, which carry no credential. One helper issues every one of these requests, so the credential is attached, and an unsuccessful status turned into requirement 5's or 6's answer, in a single place.
 3. `<hash>` shall be 64 lowercase hex characters; anything else shall answer `400` without a request upstream.
 4. `POST /api/hydrus/search` shall accept at most 64 tags, each at most 256 characters, and an optional positive `limit`; `POST /api/hydrus/metadata` at most 1024 hashes, which covers a full explorer page.
 4b. Hydrus takes the hash list in the query string, so the server shall ask it for metadata in batches of at most 64 hashes and join the answers into one `metadata` array. A page of hashes in a single query is tens of kilobytes, past what an HTTP server accepts in a request line.
 5. If Hydrus is not configured, then every route of requirement 1 shall answer `501`.
 6. An upstream error shall answer `502` and log the operation and the upstream status, never the body or the URL (`overview.md` requirement 16).
+6b. `POST /api/assets/hydrus` shall stop reading a file that grows past `DM_SCREEN_MAX_ASSET_MB`, delete the partial download and answer `413`; a hash that does not match the bytes received shall answer `502`. Both shall log their reason, so a fetch that fails on size is as diagnosable as one that fails upstream.
 7. `GET /api/hydrus/thumbnail/<hash>` shall answer the thumbnail bytes with their content type and `Cache-Control: private, max-age=3600`, and shall keep them in a bounded in-memory cache so a grid of tiles costs one upstream request per file.
 8. `GET /api/hydrus/file/<hash>` shall forward a single `Range` header and return `206` with `Content-Range` when the upstream does, so the Foundry module reader keeps reading a few entries out of a large archive.
 
