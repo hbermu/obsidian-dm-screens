@@ -165,3 +165,58 @@ export function trackWheelZoom(el: HTMLElement, opts: Omit<PinchOptions, "onStar
   el.addEventListener("wheel", wheel, { passive: false });
   return () => el.removeEventListener("wheel", wheel);
 }
+
+export interface StageZoomOptions {
+  stage: HTMLElement;
+  // Reports the zoom and resets it to fit when pressed.
+  zoomBtn: HTMLElement;
+  size: () => { width: number; height: number };
+  view: () => StageView;
+  store: (view: StageView) => void;
+  // Writes the view onto the stage's own transform. The two stages compose it
+  // differently — the exploration stage is centred and rotated — and that is
+  // the only part of this wiring that differs between them.
+  render: (view: StageView) => void;
+  // A second finger took the gesture over, so whatever the first one had
+  // started is abandoned rather than committed.
+  onGestureStart?: () => void;
+}
+
+// The zoom both map stages carry: the two gesture trackers, the button, and
+// the one place a new view is written. Stated once so the chrome cannot drift
+// between the fog editor and Exploration Mode.
+export function attachStageZoom(opts: StageZoomOptions): { apply: () => void; cancel: () => void } {
+  const apply = () => {
+    const view = opts.view();
+    opts.render(view);
+    opts.zoomBtn.textContent = `Zoom: ${Math.round(view.zoom * 100)}%`;
+    opts.zoomBtn.title =
+      view.zoom > 1 ? "Click to fit the map to the stage" : "Pinch, or ctrl+wheel, to zoom in";
+    opts.zoomBtn.toggleClass("dm-fog-active", view.zoom > 1);
+  };
+  const set = (view: StageView) => {
+    opts.store(view);
+    apply();
+  };
+  const toFit = () => {
+    if (opts.view().zoom === 1) return;
+    set({ ...IDENTITY_VIEW });
+  };
+  opts.zoomBtn.addEventListener("click", toFit);
+  const cancels = [
+    trackPinch(opts.stage, {
+      view: opts.view,
+      apply: set,
+      size: opts.size,
+      onStart: opts.onGestureStart,
+    }),
+    trackWheelZoom(opts.stage, { view: opts.view, apply: set, size: opts.size }),
+  ];
+  return {
+    apply,
+    cancel: () => {
+      opts.zoomBtn.removeEventListener("click", toFit);
+      for (const c of cancels) c();
+    },
+  };
+}

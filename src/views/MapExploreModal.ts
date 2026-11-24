@@ -14,7 +14,7 @@ import { createRepaintScheduler } from "../map/canvas";
 import { FloatingWindow, type WindowState } from "./FloatingWindow";
 import { ExploreSheet, type SheetPanel } from "./ExploreSheet";
 import { blockWebkitGestures, onLongPress, trackPointerDrag, trackTapOrDrag } from "./pointerDrag";
-import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pinchZoom";
+import { attachStageZoom, IDENTITY_VIEW, type StageView } from "./pinchZoom";
 
 // Table-play surface. Left-click alternates the two exploration gestures —
 // toggle a door, reveal/cover a room — while the DM's view keeps the map's
@@ -189,25 +189,21 @@ export class MapExploreModal extends Modal {
     // the dots and the viewport rect (pointer-events: auto) capture drags.
     const markers = inner.createDiv("dm-explore-markers");
 
-    const layout = () => {
-      const rotW = sideways ? nh : nw;
-      const rotH = sideways ? nw : nh;
-      applyStageView();
-      const s = fitScale(stage.clientWidth, stage.clientHeight, rotW, rotH);
-      if (s === null) return;
-      inner.style.width = `${nw * s}px`;
-      inner.style.height = `${nh * s}px`;
-    };
-    const applyStageView = () => {
-      const { zoom, offsetX, offsetY } = this.stageView;
+    const renderStageView = ({ zoom, offsetX, offsetY }: StageView) => {
       inner.style.transform =
         `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${zoom}) rotate(${rotation}deg)`;
       // The marker dots counter-scale off this, so a finger target stays the
       // same size however far the map is zoomed in.
       inner.style.setProperty("--dm-map-zoom", String(zoom));
-      zoomBtn.textContent = `Zoom: ${Math.round(zoom * 100)}%`;
-      zoomBtn.title = zoom > 1 ? "Click to fit the map to the stage" : "Pinch, or ctrl+wheel, to zoom in";
-      zoomBtn.toggleClass("dm-fog-active", zoom > 1);
+    };
+    const layout = () => {
+      const rotW = sideways ? nh : nw;
+      const rotH = sideways ? nw : nh;
+      renderStageView(this.stageView);
+      const s = fitScale(stage.clientWidth, stage.clientHeight, rotW, rotH);
+      if (s === null) return;
+      inner.style.width = `${nw * s}px`;
+      inner.style.height = `${nh * s}px`;
     };
     layout();
     requestAnimationFrame(layout);
@@ -499,24 +495,19 @@ export class MapExploreModal extends Modal {
       cancel?.();
     };
 
-    const stageSize = () => ({ width: inner.clientWidth, height: inner.clientHeight });
-    const setStageView = (view: StageView) => {
-      this.stageView = view;
-      applyStageView();
-    };
-    this.cancelStageZoom.push(
-      trackPinch(stage, {
-        view: () => this.stageView,
-        apply: setStageView,
-        size: stageSize,
-        onStart: () => abortTap(),
-      }),
-      trackWheelZoom(stage, { view: () => this.stageView, apply: setStageView, size: stageSize })
-    );
-    zoomBtn.addEventListener("click", () => {
-      if (this.stageView.zoom === 1) return;
-      setStageView({ ...IDENTITY_VIEW });
+    const zoom = attachStageZoom({
+      stage,
+      zoomBtn,
+      size: () => ({ width: inner.clientWidth, height: inner.clientHeight }),
+      view: () => this.stageView,
+      store: (view) => {
+        this.stageView = view;
+      },
+      render: renderStageView,
+      onGestureStart: () => abortTap(),
     });
+    zoom.apply();
+    this.cancelStageZoom.push(zoom.cancel);
     scaleBtn.addEventListener("click", () => {
       this.panel.toggleScaleMode();
       syncToggleLabels();

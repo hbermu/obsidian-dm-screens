@@ -10,7 +10,7 @@ import { parseUvttWalls } from "../map/uvtt";
 import { collectFoundryScenes, sceneImportResult, type FoundryScene } from "../map/foundry";
 import { debug } from "../debug";
 import { blockWebkitGestures, onLongPress, trackTapOrDrag } from "./pointerDrag";
-import { IDENTITY_VIEW, type StageView, trackPinch, trackWheelZoom } from "./pinchZoom";
+import { attachStageZoom, IDENTITY_VIEW, type StageView } from "./pinchZoom";
 
 type FogTool = "brush" | "rect" | "cell" | "gridrect" | "room";
 type FogMode = "reveal" | "cover";
@@ -123,37 +123,26 @@ export class MapFogModal extends Modal {
 
     const fogScale = this.fogCanvas.width / this.map.naturalWidth;
 
-    const applyStageView = () => {
-      const { zoom, offsetX, offsetY } = this.stageView;
-      inner.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${zoom})`;
-      zoomBtn.textContent = `Zoom: ${Math.round(zoom * 100)}%`;
-      zoomBtn.title = zoom > 1 ? "Click to fit the map to the stage" : "Pinch, or ctrl+wheel, to zoom in";
-      zoomBtn.toggleClass("dm-fog-active", zoom > 1);
-    };
-    const stageSize = () => ({ width: stage.clientWidth, height: stage.clientHeight });
-    const setStageView = (view: StageView) => {
-      this.stageView = view;
-      applyStageView();
-    };
-    applyStageView();
-    this.cancelStageZoom.push(
-      trackPinch(stage, {
-        view: () => this.stageView,
-        apply: setStageView,
-        size: stageSize,
-        // The finger that started painting is the first finger of a pinch, so
-        // the stroke is abandoned rather than committed.
-        onStart: () => {
-          this.cleanupDrag?.();
-          this.cleanupDrag = null;
-        },
-      }),
-      trackWheelZoom(stage, { view: () => this.stageView, apply: setStageView, size: stageSize })
-    );
-    zoomBtn.addEventListener("click", () => {
-      if (this.stageView.zoom === 1) return;
-      setStageView({ ...IDENTITY_VIEW });
+    const zoom = attachStageZoom({
+      stage,
+      zoomBtn,
+      size: () => ({ width: stage.clientWidth, height: stage.clientHeight }),
+      view: () => this.stageView,
+      store: (view) => {
+        this.stageView = view;
+      },
+      render: ({ zoom, offsetX, offsetY }) => {
+        inner.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${zoom})`;
+      },
+      // The finger that started painting is the first finger of a pinch, so
+      // the stroke is abandoned rather than committed.
+      onGestureStart: () => {
+        this.cleanupDrag?.();
+        this.cleanupDrag = null;
+      },
     });
+    zoom.apply();
+    this.cancelStageZoom.push(zoom.cancel);
     // Safari would pinch-zoom the whole app on top of the stage's own gesture.
     this.cancelWebkitGestures = blockWebkitGestures(this.modalEl);
 
