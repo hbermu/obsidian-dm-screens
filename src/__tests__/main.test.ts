@@ -59,6 +59,25 @@ function makeFakeServer() {
   };
 }
 
+// A DM panel as the plugin sees it. `panels()` only hands out a view that
+// carries the panel's methods, because a leaf in a background tab holds a
+// deferred placeholder instead, so a double answers the whole surface and a
+// test replaces just the member it asserts on.
+function panelDouble(overrides: Record<string, unknown> = {}) {
+  return {
+    saveState: vi.fn(),
+    debouncedRender: vi.fn(),
+    republishToServer: vi.fn(),
+    reloadFromLocal: vi.fn(async () => {}),
+    reloadFromSession: vi.fn(async () => {}),
+    onPlayerConnected: vi.fn(),
+    syncFromInitiativeTracker: vi.fn(),
+    disconnectFromTracker: vi.fn(),
+    stopAllCombatBroadcast: vi.fn(),
+    ...overrides,
+  };
+}
+
 function makePlugin(settingsOverrides: Record<string, unknown> = {}): DmScreenPlugin {
   const plugin = Object.create(DmScreenPlugin.prototype) as DmScreenPlugin;
   plugin.transport = new EmbeddedTransport(plugin);
@@ -315,7 +334,7 @@ describe("DmScreenPlugin", () => {
       const fakeServer = makeFakeServer();
       plugin.server = fakeServer as any;
       const stopBroadcast = vi.fn();
-      const fakeLeaf = { view: { stopAllCombatBroadcast: stopBroadcast } };
+      const fakeLeaf = { view: panelDouble({ stopAllCombatBroadcast: stopBroadcast }) };
       ((plugin as any).app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
 
       plugin.stopServer();
@@ -656,7 +675,7 @@ describe("DmScreenPlugin", () => {
     it("forwards state to open DmControlPanel views", () => {
       const plugin = makePlugin();
       const syncFn = vi.fn();
-      const mockView = { syncFromInitiativeTracker: syncFn };
+      const mockView = panelDouble({ syncFromInitiativeTracker: syncFn });
       (plugin as any).app.workspace.getLeavesOfType = vi.fn(() => [{ view: mockView }]);
 
       const state: InitiativeViewState = {
@@ -679,13 +698,27 @@ describe("DmScreenPlugin", () => {
   // ─── onInitiativeStop (private) ──────────────────────────────
 
   describe("onInitiativeStop", () => {
+    // Obsidian defers the view of a panel in a background tab: the leaf is
+    // there, its view carries none of the panel's methods, and reaching into
+    // one used to be a TypeError on the first viewer that connected.
+    it("skips a leaf whose view is still a deferred placeholder", () => {
+      const plugin = makePlugin();
+      const disconnectFn = vi.fn();
+      (plugin as any).app.workspace.getLeavesOfType = vi.fn(() => [
+        { view: { getViewType: () => "dm-control-panel" } },
+        { view: panelDouble({ disconnectFromTracker: disconnectFn }) },
+      ]);
+
+      expect(() => (plugin as any).onInitiativeStop()).not.toThrow();
+      expect(disconnectFn).toHaveBeenCalledTimes(1);
+    });
+
     it("calls disconnectFromTracker on all open DM panels", () => {
       const plugin = makePlugin();
       const disconnectFn = vi.fn();
-      const mockView = { disconnectFromTracker: disconnectFn };
       (plugin as any).app.workspace.getLeavesOfType = vi.fn(() => [
-        { view: mockView },
-        { view: { disconnectFromTracker: disconnectFn } },
+        { view: panelDouble({ disconnectFromTracker: disconnectFn }) },
+        { view: panelDouble({ disconnectFromTracker: disconnectFn }) },
       ]);
 
       (plugin as any).onInitiativeStop();
@@ -811,7 +844,7 @@ describe("DmScreenPlugin", () => {
 
     it("returns the first open DM Control Panel view", async () => {
       const plugin = makePlugin();
-      const mockView = { type: "dm-control-panel" };
+      const mockView = panelDouble();
       (plugin as any).app.workspace.getLeavesOfType = vi.fn(() => [{ view: mockView }]);
       expect(await plugin.findOpenDmControlPanel()).toBe(mockView);
     });

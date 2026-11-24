@@ -53,9 +53,7 @@ export default class DmScreenPlugin extends Plugin {
 
   /** Returns the first DM Control Panel view that is currently open. */
   async findOpenDmControlPanel(): Promise<DmControlPanel | null> {
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    if (leaves.length === 0) return null;
-    return leaves[0].view as DmControlPanel;
+    return this.panels()[0] ?? null;
   }
 
   // The Hydrus surface of the active gateway: the local client in embedded
@@ -173,13 +171,7 @@ export default class DmScreenPlugin extends Plugin {
 
   async onunload() {
     debug("Plugin unloading");
-    const dmPanels = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of dmPanels) {
-      const view = leaf.view;
-      if (view && "saveState" in view && typeof (view as any).saveState === "function") {
-        (view as any).saveState();
-      }
-    }
+    for (const panel of this.panels()) panel.saveState();
     if (this.replayCacheSaveTimer !== null) {
       window.clearTimeout(this.replayCacheSaveTimer);
       this.replayCacheSaveTimer = null;
@@ -248,7 +240,7 @@ export default class DmScreenPlugin extends Plugin {
 
   async reloadLocalSession(): Promise<void> {
     this.replayCache.replace(this.settings.lastBroadcastCache);
-    for (const panel of this.panels()) await panel.reloadFromLocal?.();
+    for (const panel of this.panels()) await panel.reloadFromLocal();
   }
 
   startSession(): void {
@@ -256,15 +248,22 @@ export default class DmScreenPlugin extends Plugin {
     else this.startServer();
   }
 
+  // Obsidian hands back a leaf of this type whose view is still a deferred
+  // placeholder while the panel sits in a background tab, and that placeholder
+  // carries none of the panel's methods. Checking it once here is what lets
+  // every caller below call what it needs without a guard of its own.
   private panels(): DmControlPanel[] {
-    return this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE).map((leaf) => leaf.view as DmControlPanel);
+    return this.app.workspace
+      .getLeavesOfType(DM_CONTROL_VIEW_TYPE)
+      .map((leaf) => leaf.view as DmControlPanel)
+      .filter((view) => typeof view?.saveState === "function");
   }
 
   // The server's cache is the session: adopt it, rebuild the panels from it,
   // and, holding the lease, re-send the live-only seeds a server start sends.
   private async onRemoteSession(cache: Record<string, string>, active: boolean): Promise<void> {
     this.replayCache.replace(cache);
-    for (const panel of this.panels()) await panel.reloadFromSession?.();
+    for (const panel of this.panels()) await panel.reloadFromSession();
     if (active) this.sendSeeds();
     this.refreshOpenDmPanels();
   }
@@ -283,7 +282,7 @@ export default class DmScreenPlugin extends Plugin {
     if (this.mirrorTimer !== null) window.clearTimeout(this.mirrorTimer);
     this.mirrorTimer = window.setTimeout(() => {
       this.mirrorTimer = null;
-      for (const panel of this.panels()) void panel.reloadFromSession?.();
+      for (const panel of this.panels()) void panel.reloadFromSession();
     }, 100);
   }
 
@@ -298,7 +297,7 @@ export default class DmScreenPlugin extends Plugin {
       view.connectedClients = clients.filter((c) => c.channel !== "map");
       view.mapPanel.mapClients = clients.filter((c) => c.channel === "map");
       view.playerConnected = view.connectedClients.length > 0;
-      view.debouncedRender?.();
+      view.debouncedRender();
     }
   }
 
@@ -394,11 +393,7 @@ export default class DmScreenPlugin extends Plugin {
     this.server.onClientCountChanged = () => this.applyScreens(this.server?.getConnectedClients() ?? []);
     this.server.start(this.settings.serverPort);
     this.sendSeeds();
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as DmControlPanel;
-      void view.republishToServer?.();
-    }
+    for (const panel of this.panels()) void panel.republishToServer();
     new Notice(`Player Screen server started on port ${this.settings.serverPort}`);
   }
 
@@ -434,21 +429,13 @@ export default class DmScreenPlugin extends Plugin {
   }
 
   refreshOpenDmPanels(): void {
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as DmControlPanel;
-      view.debouncedRender?.();
-    }
+    for (const panel of this.panels()) panel.debouncedRender();
     for (const modal of this.exploreModals) modal.applyEditable();
   }
 
   private onPlayerClientInfo(_info: { width: number; height: number; devicePixelRatio: number; channel?: "player" | "map" }) {
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as DmControlPanel;
-      if (view.onPlayerConnected) {
-        view.onPlayerConnected(this.server?.getConnectedClients() ?? []);
-      }
+    for (const panel of this.panels()) {
+      panel.onPlayerConnected(this.server?.getConnectedClients() ?? []);
     }
   }
 
@@ -463,13 +450,7 @@ export default class DmScreenPlugin extends Plugin {
   }
 
   private stopCombatBroadcastsInOpenPanels(): void {
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as DmControlPanel;
-      if (typeof view.stopAllCombatBroadcast === "function") {
-        view.stopAllCombatBroadcast();
-      }
-    }
+    for (const panel of this.panels()) panel.stopAllCombatBroadcast();
   }
 
   toggleServer() {
@@ -635,12 +616,8 @@ export default class DmScreenPlugin extends Plugin {
     });
 
     // Forward to DmControlPanel
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as DmControlPanel;
-      if (view.syncFromInitiativeTracker) {
-        view.syncFromInitiativeTracker(combatants, state.round, state.name);
-      }
+    for (const panel of this.panels()) {
+      panel.syncFromInitiativeTracker(combatants, state.round, state.name);
     }
 
     // Broadcast to player screen.
@@ -663,13 +640,7 @@ export default class DmScreenPlugin extends Plugin {
 
   private onInitiativeStop() {
     debug("onInitiativeStop: disconnecting from tracker");
-    const leaves = this.app.workspace.getLeavesOfType(DM_CONTROL_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as DmControlPanel;
-      if (view.disconnectFromTracker) {
-        view.disconnectFromTracker();
-      }
-    }
+    for (const panel of this.panels()) panel.disconnectFromTracker();
   }
 
   private statblockCache = new Map<string, import("./types").StatblockCreature | null>();

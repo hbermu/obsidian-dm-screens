@@ -5,7 +5,7 @@
 ## Source files
 
 - `src/server.ts` — `clientInfoMap`, `getConnectedClients`, `onClientInfo` callback
-- `src/main.ts` — `onPlayerClientInfo` forwards new info to the DM Control Panel
+- `src/main.ts` — `panels()` resolves the open DM Control Panels; `onPlayerClientInfo` and `applyScreens` forward new info to them
 - `src/views/DmControlPanel.ts` — `connectedClients`, `playerConnected`, `selectedResolution`, `getEffectiveResolution`, the resolution badges row in `renderPlayerScreenSection` (below the player URL, mirroring the Map Screen section), `onPlayerConnected`
 - `src/player/player.ts` — `sendClientInfo` emits the player's window dimensions on connect and on resize
 
@@ -18,6 +18,7 @@
 1. The player shall emit a `client-info` WebSocket message on connect and on every window resize, carrying `{ width: window.innerWidth, height: window.innerHeight, devicePixelRatio }` (the map page additionally sends `channel: "map"`).
 2. The server shall store the latest `client-info` per WebSocket in `clientInfoMap`, stamped with the connection's channel, and invoke `onClientInfo` whenever it is updated.
 3. The DM panel shall receive the full connected-client list via `onPlayerConnected` and via the `onClientCountChanged` re-render hook, splitting it by channel: `player`-channel clients populate `connectedClients`, `map`-channel clients populate the Map Screen section (see `../map-screen/overview.md`).
+3b. Every push from the plugin to an open DM panel shall go through `panels()`, which skips a leaf whose view is still a deferred placeholder — Obsidian defers the view of a panel sitting in a background tab, and that placeholder carries none of the panel's methods. One check there is why no caller guards the member it is about to use, and why `applyScreens` can reach into `view.mapPanel` without a crash when the DM has a panel open in a tab they have not visited this session.
 4. The DM panel shall render one badge per distinct `player`-channel resolution, displayed as `<W>×<H>` (or `<W>×<H> ×<count>` if multiple clients share that resolution), in a `dm-client-info` row inside the Player Screen section directly below the player URL (mirroring the Map Screen section's layout). Map clients never appear in this row.
 5. The effective-resolution badge (the one currently driving the preview) shall carry the `dm-client-resolution-active` CSS class.
 6. When the user clicks a resolution badge, the DM panel shall set `selectedResolution` to that `{ width, height }` and re-render.
@@ -36,6 +37,7 @@
 ## Tests covering this
 
 - `src/__tests__/effective-resolution.test.ts` — the selection / fallback chain in `getEffectiveResolution`
+- `src/__tests__/main.test.ts` — a deferred placeholder view is skipped while the constructed panel beside it is still served (requirement 3b)
 - `test/visual/tablet.spec.ts` — Playwright visual regression at a 1280×800 tablet viewport (separate Playwright project), exercising the `client-info` round-trip and verifying that layer geometry renders correctly at a non-desktop resolution.
 - `test/e2e/specs/dm-preview.e2e.ts` — real Obsidian: a `client-info` message over a real WebSocket renders one `dm-client-resolution` badge per distinct player resolution (`<W>×<H>`, deduped to `<W>×<H> ×<count>`), marks the effective one `dm-client-resolution-active`, sets `selectedResolution` on click, and keeps `map`-channel clients out of the player row
 
