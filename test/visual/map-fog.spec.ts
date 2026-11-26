@@ -116,7 +116,7 @@ test("map-fog — physical mode with pan and hole", async ({ page }) => {
 
   started.server.broadcast({
     type: "map-view",
-    payload: { mode: "physical", panX: MAP_W / 2, panY: MAP_H / 2, rotation: 0 },
+    payload: { mode: "physical", panX: MAP_W / 2, panY: MAP_H / 2 },
   });
   // The uncalibrated hint turns visible synchronously with the physical-mode
   // layout — a DOM-observable signal that the transform has been applied.

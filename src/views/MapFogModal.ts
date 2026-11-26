@@ -3,9 +3,9 @@ import { unzipSync } from "fflate/browser";
 import type DmScreenPlugin from "../main";
 import type { MapScreenPanel, ActiveMap } from "./MapScreenPanel";
 import { fogCanvasSize, gridCellRectAt } from "../map/fog";
-import { buildBlockedMask, floodRegion, regionToCanvas } from "../map/walls";
+import { buildBlockedMask, floodRegion, regionToCanvas, rotateWalls, segmentCrossesBox, type WallImportResult } from "../map/walls";
 import { blocksSight } from "../map/los";
-import type { MapWall } from "../map/types";
+import type { MapRotation, MapWall } from "../map/types";
 import { parseUvttWalls } from "../map/uvtt";
 import { collectFoundryScenes, sceneImportResult, type FoundryScene } from "../map/foundry";
 import { debug } from "../debug";
@@ -15,7 +15,9 @@ import { attachStageZoom, IDENTITY_VIEW, type StageView } from "./pinchZoom";
 type FogTool = "brush" | "rect" | "cell" | "gridrect" | "room";
 type FogMode = "reveal" | "cover";
 type EditorMode = "fog" | "walls";
-type WallsTool = "wall" | "door" | "erase" | "toggle" | "rect";
+type WallsTool = "select" | "wall" | "door" | "erase" | "toggle" | "rect";
+
+const SELECTION_COLOR = "#9ad4ff";
 
 export class MapFogModal extends Modal {
   private tool: FogTool = "brush";
@@ -41,6 +43,19 @@ export class MapFogModal extends Modal {
   private cursorNatural: { x: number; y: number } | null = null;
   // rect wall tool: natural-coord corner of in-progress drag
   private rectAnchor: { x: number; y: number } | null = null;
+  // select tool: the walls under the DM's hand, by identity, so an edit that
+  // rebuilds them re-registers the replacements. Not `selection`: Obsidian's
+  // own Modal keeps the document selection it restores on close under that
+  // name, and the field would be a Selection by the time anything read it.
+  private wallSelection = new Set<MapWall>();
+  // select tool: natural-coord corner of the marquee, and the live move offset
+  private marqueeAnchor: { x: number; y: number } | null = null;
+  private wallSelectionDrag: { dx: number; dy: number } | null = null;
+  private syncSelectionUi: (() => void) | null = null;
+  // The raw parse of the last import, kept so its orientation can be changed
+  // without picking the file again.
+  private lastImport: { result: WallImportResult; label: string; rotation: MapRotation } | null = null;
+  private cancelWallKeys: (() => void) | null = null;
 
   constructor(
     app: App,
@@ -119,7 +134,6 @@ export class MapFogModal extends Modal {
     const overlay = inner.createEl("canvas", { cls: "dm-fog-overlay" });
     overlay.width = this.fogCanvas.width;
     overlay.height = this.fogCanvas.height;
-    const octx = overlay.getContext("2d")!;
 
     const fogScale = this.fogCanvas.width / this.map.naturalWidth;
 
@@ -147,58 +161,7 @@ export class MapFogModal extends Modal {
     this.cancelWebkitGestures = blockWebkitGestures(this.modalEl);
 
 
-    const redraw = () => {
-      octx.clearRect(0, 0, overlay.width, overlay.height);
-      octx.globalAlpha = this.editorMode === "fog" ? 0.55 : 0.25;
-      octx.drawImage(this.fogCanvas, 0, 0);
-      octx.globalAlpha = 1;
-
-      // Draw walls
-      for (const w of this.walls) {
-        octx.save();
-        octx.lineWidth = 3;
-        if (w.door) {
-          octx.strokeStyle = "#44aaff";
-          if (w.open) octx.setLineDash([8, 6]);
-        } else {
-          octx.strokeStyle = "#f5d90a";
-        }
-        octx.beginPath();
-        octx.moveTo(w.x1 * fogScale, w.y1 * fogScale);
-        octx.lineTo(w.x2 * fogScale, w.y2 * fogScale);
-        octx.stroke();
-        octx.setLineDash([]);
-        octx.restore();
-      }
-
-      // Draw chain preview segment in walls mode
-      if (this.editorMode === "walls" && this.chainAnchor && this.cursorNatural) {
-        octx.save();
-        octx.strokeStyle = this.wallsTool === "door" ? "#44aaff" : "#f5d90a";
-        octx.lineWidth = 2;
-        octx.setLineDash([6, 4]);
-        octx.beginPath();
-        octx.moveTo(this.chainAnchor.x * fogScale, this.chainAnchor.y * fogScale);
-        octx.lineTo(this.cursorNatural.x * fogScale, this.cursorNatural.y * fogScale);
-        octx.stroke();
-        octx.setLineDash([]);
-        octx.restore();
-      }
-      // Draw rect wall tool preview
-      if (this.editorMode === "walls" && this.wallsTool === "rect" && this.rectAnchor && this.cursorNatural) {
-        octx.save();
-        octx.strokeStyle = "#f5d90a";
-        octx.lineWidth = 2;
-        octx.setLineDash([6, 4]);
-        const ax = this.rectAnchor.x * fogScale;
-        const ay = this.rectAnchor.y * fogScale;
-        const bx = this.cursorNatural.x * fogScale;
-        const by = this.cursorNatural.y * fogScale;
-        octx.strokeRect(ax, ay, bx - ax, by - ay);
-        octx.setLineDash([]);
-        octx.restore();
-      }
-    };
+    const redraw = () => this.paintOverlay(overlay, fogScale);
     this.redrawOverlay = redraw;
     redraw();
 
@@ -254,12 +217,13 @@ export class MapFogModal extends Modal {
       const syncActive = () => {
         for (const [t, b] of Object.entries(wallToolBtns)) b.classList.toggle("dm-fog-active", this.wallsTool === (t as WallsTool));
       };
-      for (const [t, label] of [["wall", "Wall"], ["door", "Door"], ["erase", "Erase"], ["toggle", "Toggle door"], ["rect", "Rect"]] as [WallsTool, string][]) {
+      for (const [t, label] of [["select", "Select"], ["wall", "Wall"], ["door", "Door"], ["erase", "Erase"], ["toggle", "Toggle door"], ["rect", "Rect"]] as [WallsTool, string][]) {
         wallToolBtns[t] = barEl.createEl("button", { text: label });
         wallToolBtns[t].addEventListener("click", () => {
           this.wallsTool = t;
           // end any chain when switching tool
           this.chainAnchor = null;
+          this.clearSelection();
           syncActive();
           redraw();
         });
@@ -309,6 +273,53 @@ export class MapFogModal extends Modal {
         input.click();
       });
 
+      const selRow = barEl.createDiv("dm-fog-selection-row");
+      selRow.createSpan({ text: "Selection", cls: "dm-status-detail" });
+      const selBtns: Array<{ el: HTMLButtonElement; needsSelection: boolean }> = [];
+      const selAction = (label: string, title: string, run: () => void, needsSelection = true) => {
+        const btn = selRow.createEl("button", { text: label });
+        btn.title = title;
+        btn.addEventListener("click", run);
+        selBtns.push({ el: btn, needsSelection });
+      };
+      selAction("\u27f2", "Rotate the selection 90\u00b0 counter-clockwise", () => this.rotateSelection(270));
+      selAction("\u27f3", "Rotate the selection 90\u00b0 clockwise", () => this.rotateSelection(90));
+      selAction("To door", "Make every selected segment a closed door", () =>
+        this.editSelection((w) => ({ ...w, door: true, open: false }))
+      );
+      selAction("To wall", "Make every selected segment a plain wall", () =>
+        this.editSelection((w) => {
+          const { door: _door, open: _open, ...plain } = w;
+          return plain;
+        })
+      );
+      selAction("Copy", "Copy the selection (Ctrl/Cmd+C)", () => this.copySelection());
+      selAction("Paste", "Paste the copied walls (Ctrl/Cmd+V)", () => this.pasteWalls(), false);
+      selAction("Delete", "Delete the selection (Delete)", () => this.deleteSelection());
+
+      const rotateImportBtn = barEl.createEl("button");
+      rotateImportBtn.title = "Turn the imported walls to match the map, in 90\u00b0 steps";
+      rotateImportBtn.addEventListener("click", () => {
+        const imported = this.lastImport;
+        if (!imported) return;
+        imported.rotation = ((imported.rotation + 90) % 360) as MapRotation;
+        this.clearSelection();
+        this.walls = this.panel.importWalls(imported.result, imported.label, imported.rotation);
+        this.syncSelectionUi?.();
+        this.redrawOverlay?.();
+      });
+
+      this.syncSelectionUi = () => {
+        const count = this.wallSelection.size;
+        selRow.toggleClass("dm-fog-has-selection", count > 0);
+        for (const { el, needsSelection } of selBtns) {
+          el.disabled = needsSelection ? count === 0 : this.panel.wallClipboard.length === 0;
+        }
+        rotateImportBtn.style.display = this.lastImport ? "" : "none";
+        rotateImportBtn.textContent = `Rotate import: ${this.lastImport?.rotation ?? 0}\u00b0`;
+      };
+      this.syncSelectionUi();
+
       this.setupWallsDrawing(overlay, redraw, fogScale);
     };
 
@@ -318,69 +329,19 @@ export class MapFogModal extends Modal {
       this.chainAnchor = null;
       this.cursorNatural = null;
       this.rectAnchor = null;
-      // Remove existing drawing listeners by cloning the overlay
+      this.clearSelection();
+      // Cloning the overlay is how the previous mode's listeners are dropped.
       const newOverlay = overlay.cloneNode(false) as HTMLCanvasElement;
       overlay.replaceWith(newOverlay);
-      // Reassign overlay reference to the new node — we need to re-set octx too
-      // Since we can't reassign const, rebuild bar content
       bar.empty();
+      this.syncSelectionUi = null;
       if (mode === "fog") {
         renderFogToolbar(bar);
       } else {
         renderWallsToolbar(bar);
       }
       syncTabActive();
-      // redraw still works via closure referencing `octx` from the original overlay
-      // but overlay is now replaced; we need to use the new node
-      // Rebuild the redraw for the new overlay
-      const newOctx = (newOverlay as HTMLCanvasElement).getContext("2d")!;
-      const newRedraw = () => {
-        newOctx.clearRect(0, 0, newOverlay.width, newOverlay.height);
-        newOctx.globalAlpha = this.editorMode === "fog" ? 0.55 : 0.25;
-        newOctx.drawImage(this.fogCanvas, 0, 0);
-        newOctx.globalAlpha = 1;
-        for (const w of this.walls) {
-          newOctx.save();
-          newOctx.lineWidth = 3;
-          if (w.door) {
-            newOctx.strokeStyle = "#44aaff";
-            if (w.open) newOctx.setLineDash([8, 6]);
-          } else {
-            newOctx.strokeStyle = "#f5d90a";
-          }
-          newOctx.beginPath();
-          newOctx.moveTo(w.x1 * fogScale, w.y1 * fogScale);
-          newOctx.lineTo(w.x2 * fogScale, w.y2 * fogScale);
-          newOctx.stroke();
-          newOctx.setLineDash([]);
-          newOctx.restore();
-        }
-        if (this.editorMode === "walls" && this.chainAnchor && this.cursorNatural) {
-          newOctx.save();
-          newOctx.strokeStyle = this.wallsTool === "door" ? "#44aaff" : "#f5d90a";
-          newOctx.lineWidth = 2;
-          newOctx.setLineDash([6, 4]);
-          newOctx.beginPath();
-          newOctx.moveTo(this.chainAnchor.x * fogScale, this.chainAnchor.y * fogScale);
-          newOctx.lineTo(this.cursorNatural.x * fogScale, this.cursorNatural.y * fogScale);
-          newOctx.stroke();
-          newOctx.setLineDash([]);
-          newOctx.restore();
-        }
-        if (this.editorMode === "walls" && this.wallsTool === "rect" && this.rectAnchor && this.cursorNatural) {
-          newOctx.save();
-          newOctx.strokeStyle = "#f5d90a";
-          newOctx.lineWidth = 2;
-          newOctx.setLineDash([6, 4]);
-          const ax = this.rectAnchor.x * fogScale;
-          const ay = this.rectAnchor.y * fogScale;
-          const bx = this.cursorNatural.x * fogScale;
-          const by = this.cursorNatural.y * fogScale;
-          newOctx.strokeRect(ax, ay, bx - ax, by - ay);
-          newOctx.setLineDash([]);
-          newOctx.restore();
-        }
-      };
+      const newRedraw = () => this.paintOverlay(newOverlay, fogScale);
       this.redrawOverlay = newRedraw;
       newRedraw();
       if (mode === "fog") {
@@ -390,11 +351,197 @@ export class MapFogModal extends Modal {
       }
     };
 
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (this.editorMode !== "walls") return;
+      const target = ev.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (ev.key === "Delete" || ev.key === "Backspace") {
+        ev.preventDefault();
+        this.deleteSelection();
+        return;
+      }
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      if (ev.key === "c" || ev.key === "C") {
+        ev.preventDefault();
+        this.copySelection();
+      } else if (ev.key === "v" || ev.key === "V") {
+        ev.preventDefault();
+        this.pasteWalls();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    this.cancelWallKeys = () => document.removeEventListener("keydown", onKeyDown);
+
     fogTabBtn.addEventListener("click", () => switchTab("fog"));
     wallsTabBtn.addEventListener("click", () => switchTab("walls"));
 
     // Start in fog mode
     renderFogToolbar(bar);
+  }
+
+  private paintOverlay(canvas: HTMLCanvasElement, fogScale: number) {
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = this.editorMode === "fog" ? 0.55 : 0.25;
+    ctx.drawImage(this.fogCanvas, 0, 0);
+    ctx.globalAlpha = 1;
+
+    const drag = this.wallSelectionDrag;
+    for (const w of this.walls) {
+      const selected = this.wallSelection.has(w);
+      const off = selected && drag ? drag : { dx: 0, dy: 0 };
+      ctx.save();
+      ctx.lineWidth = selected ? 5 : 3;
+      if (selected) {
+        ctx.strokeStyle = SELECTION_COLOR;
+      } else if (w.door) {
+        ctx.strokeStyle = "#44aaff";
+        if (w.open) ctx.setLineDash([8, 6]);
+      } else {
+        ctx.strokeStyle = "#f5d90a";
+      }
+      ctx.beginPath();
+      ctx.moveTo((w.x1 + off.dx) * fogScale, (w.y1 + off.dy) * fogScale);
+      ctx.lineTo((w.x2 + off.dx) * fogScale, (w.y2 + off.dy) * fogScale);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    if (this.editorMode !== "walls") return;
+
+    if (this.chainAnchor && this.cursorNatural) {
+      ctx.save();
+      ctx.strokeStyle = this.wallsTool === "door" ? "#44aaff" : "#f5d90a";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(this.chainAnchor.x * fogScale, this.chainAnchor.y * fogScale);
+      ctx.lineTo(this.cursorNatural.x * fogScale, this.cursorNatural.y * fogScale);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    const box = this.wallsTool === "rect" ? this.rectAnchor : this.marqueeAnchor;
+    if (box && this.cursorNatural) {
+      ctx.save();
+      ctx.strokeStyle = this.wallsTool === "rect" ? "#f5d90a" : SELECTION_COLOR;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      const ax = box.x * fogScale;
+      const ay = box.y * fogScale;
+      ctx.strokeRect(ax, ay, this.cursorNatural.x * fogScale - ax, this.cursorNatural.y * fogScale - ay);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  private clearSelection() {
+    this.wallSelection.clear();
+    this.marqueeAnchor = null;
+    this.wallSelectionDrag = null;
+    this.syncSelectionUi?.();
+  }
+
+  // Every group edit rebuilds the wall objects, so the selection is rebuilt
+  // from the replacements the mapper returns.
+  private editSelection(edit: (w: MapWall) => MapWall) {
+    if (this.wallSelection.size === 0) return;
+    const next = new Set<MapWall>();
+    this.walls = this.walls.map((w) => {
+      if (!this.wallSelection.has(w)) return w;
+      const replacement = edit(w);
+      next.add(replacement);
+      return replacement;
+    });
+    this.wallSelection = next;
+    void this.panel.commitWalls([...this.walls]);
+    this.syncSelectionUi?.();
+    this.redrawOverlay?.();
+  }
+
+  private wallSelectionBox(): { x: number; y: number; w: number; h: number } | null {
+    if (this.wallSelection.size === 0) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const w of this.wallSelection) {
+      minX = Math.min(minX, w.x1, w.x2);
+      minY = Math.min(minY, w.y1, w.y2);
+      maxX = Math.max(maxX, w.x1, w.x2);
+      maxY = Math.max(maxY, w.y1, w.y2);
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  // 90° steps around the selection's own centre: the box swaps sides, so the
+  // rotated set is re-placed from the centre rather than from the old corner.
+  private rotateSelection(rotation: MapRotation) {
+    const box = this.wallSelectionBox();
+    if (!box) return;
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    const sideways = rotation % 180 !== 0;
+    const originX = cx - (sideways ? box.h : box.w) / 2;
+    const originY = cy - (sideways ? box.w : box.h) / 2;
+    const rotated = new Map<MapWall, MapWall>();
+    const source = [...this.wallSelection];
+    const local = source.map((w) => ({
+      ...w,
+      x1: w.x1 - box.x,
+      y1: w.y1 - box.y,
+      x2: w.x2 - box.x,
+      y2: w.y2 - box.y,
+    }));
+    const turned = rotateWalls(local, rotation, box.w, box.h);
+    turned.forEach((w, i) => {
+      rotated.set(source[i], {
+        ...w,
+        x1: w.x1 + originX,
+        y1: w.y1 + originY,
+        x2: w.x2 + originX,
+        y2: w.y2 + originY,
+      });
+    });
+    this.editSelection((w) => rotated.get(w)!);
+  }
+
+  private deleteSelection() {
+    if (this.wallSelection.size === 0) return;
+    this.walls = this.walls.filter((w) => !this.wallSelection.has(w));
+    void this.panel.commitWalls([...this.walls]);
+    this.clearSelection();
+    this.redrawOverlay?.();
+  }
+
+  private copySelection() {
+    if (this.wallSelection.size === 0) return;
+    this.panel.wallClipboard = [...this.wallSelection].map((w) => ({ ...w }));
+    new Notice(`Copied ${this.panel.wallClipboard.length} walls`);
+    this.syncSelectionUi?.();
+  }
+
+  // The pasted copy lands half a square off its source so it is visible and
+  // grabbable where the original sits.
+  private pasteWalls() {
+    const clipboard = this.panel.wallClipboard;
+    if (clipboard.length === 0) return;
+    const offset = this.panel.state.pxPerSquare / 2;
+    const pasted = clipboard.map((w) => ({
+      ...w,
+      x1: w.x1 + offset,
+      y1: w.y1 + offset,
+      x2: w.x2 + offset,
+      y2: w.y2 + offset,
+    }));
+    this.walls = [...this.walls, ...pasted];
+    void this.panel.commitWalls([...this.walls]);
+    this.wallSelection = new Set(pasted);
+    this.panel.wallClipboard = pasted.map((w) => ({ ...w }));
+    this.syncSelectionUi?.();
+    this.redrawOverlay?.();
   }
 
   private ctx(): CanvasRenderingContext2D {
@@ -611,6 +758,11 @@ export class MapFogModal extends Modal {
       e.preventDefault();
       this.cleanupDrag?.();
 
+      if (this.wallsTool === "select") {
+        this.startSelectGesture(e, overlay, distToSegment, redraw, fogScale);
+        return;
+      }
+
       // The Rect tool is a drag; every other walls tool places or removes one
       // thing, so a finger commits it on the lift (`pointerDrag.ts`).
       if (this.wallsTool !== "rect") {
@@ -658,6 +810,116 @@ export class MapFogModal extends Modal {
         this.rectAnchor = null;
       };
     });
+  }
+
+  // Select: a press on a wall takes it (shift toggles it in or out), a press on
+  // a selected wall drags the whole group, and a press on empty space pulls a
+  // marquee — a tap there puts the selection down.
+  private startSelectGesture(
+    e: PointerEvent,
+    overlay: HTMLCanvasElement,
+    distToSegment: (px: number, py: number, w: MapWall) => number,
+    redraw: () => void,
+    fogScale: number
+  ) {
+    const start = this.toNatural(overlay, e.clientX, e.clientY);
+    const hitRadius = 12 / fogScale;
+    let hit: MapWall | null = null;
+    let hitDist = Infinity;
+    for (const w of this.walls) {
+      const d = distToSegment(start.x, start.y, w);
+      if (d < hitRadius && d < hitDist) {
+        hitDist = d;
+        hit = w;
+      }
+    }
+
+    if (hit && e.shiftKey) {
+      if (this.wallSelection.has(hit)) this.wallSelection.delete(hit);
+      else this.wallSelection.add(hit);
+      this.syncSelectionUi?.();
+      redraw();
+      return;
+    }
+
+    if (hit) {
+      if (!this.wallSelection.has(hit)) {
+        this.wallSelection = new Set([hit]);
+        this.syncSelectionUi?.();
+      }
+      const stop = trackTapOrDrag(e, {
+        onMove: (m) => {
+          const now = this.toNatural(overlay, m.clientX, m.clientY);
+          this.wallSelectionDrag = this.snapDelta(now.x - start.x, now.y - start.y);
+          redraw();
+        },
+        onEnd: () => {
+          this.cleanupDrag = null;
+          const drag = this.wallSelectionDrag;
+          this.wallSelectionDrag = null;
+          if (!drag || (drag.dx === 0 && drag.dy === 0)) {
+            redraw();
+            return;
+          }
+          this.editSelection((w) => ({
+            ...w,
+            x1: w.x1 + drag.dx,
+            y1: w.y1 + drag.dy,
+            x2: w.x2 + drag.dx,
+            y2: w.y2 + drag.dy,
+          }));
+        },
+        intent: "stroke",
+      });
+      this.cleanupDrag = () => {
+        stop();
+        this.wallSelectionDrag = null;
+      };
+      return;
+    }
+
+    this.marqueeAnchor = start;
+    const stop = trackTapOrDrag(e, {
+      onMove: (m) => {
+        this.cursorNatural = this.toNatural(overlay, m.clientX, m.clientY);
+        redraw();
+      },
+      onEnd: (m) => {
+        this.cleanupDrag = null;
+        const anchor = this.marqueeAnchor;
+        this.marqueeAnchor = null;
+        if (!anchor) return;
+        const end = this.toNatural(overlay, m.clientX, m.clientY);
+        const box = {
+          minX: Math.min(anchor.x, end.x),
+          minY: Math.min(anchor.y, end.y),
+          maxX: Math.max(anchor.x, end.x),
+          maxY: Math.max(anchor.y, end.y),
+        };
+        if (box.maxX - box.minX < 0.5 || box.maxY - box.minY < 0.5) {
+          this.clearSelection();
+          redraw();
+          return;
+        }
+        if (!e.shiftKey) this.wallSelection.clear();
+        for (const w of this.walls) {
+          if (segmentCrossesBox(w, box)) this.wallSelection.add(w);
+        }
+        this.syncSelectionUi?.();
+        redraw();
+      },
+      intent: "stroke",
+    });
+    this.cleanupDrag = () => {
+      stop();
+      this.marqueeAnchor = null;
+    };
+  }
+
+  private snapDelta(dx: number, dy: number): { dx: number; dy: number } {
+    if (!this.wallsSnap) return { dx, dy };
+    const pps = this.panel.state.pxPerSquare;
+    return { dx: Math.round(dx / pps) * pps, dy: Math.round(dy / pps) * pps };
   }
 
   private natAt(overlay: HTMLCanvasElement, e: PointerEvent): { x: number; y: number } {
@@ -735,7 +997,10 @@ export class MapFogModal extends Modal {
       new Notice(`UVTT import failed: ${(err as Error).message}`, 6000);
       return;
     }
+    this.lastImport = { result: parsed, label: "UVTT file", rotation: 0 };
+    this.clearSelection();
     this.walls = this.panel.importWalls(parsed, "UVTT file");
+    this.syncSelectionUi?.();
     this.redrawOverlay?.();
   }
 
@@ -753,7 +1018,11 @@ export class MapFogModal extends Modal {
     }
     const scene = await this.panel.pickFoundryScene(scenes);
     if (!scene) return;
-    this.walls = this.panel.importWalls(sceneImportResult(scene), `Foundry file "${scene.name}"`);
+    const label = `Foundry file "${scene.name}"`;
+    this.lastImport = { result: sceneImportResult(scene), label, rotation: 0 };
+    this.clearSelection();
+    this.walls = this.panel.importWalls(this.lastImport.result, label);
+    this.syncSelectionUi?.();
     this.redrawOverlay?.();
   }
 
@@ -771,6 +1040,13 @@ export class MapFogModal extends Modal {
     this.cancelWebkitGestures = null;
     this.cancelChainLongPress?.();
     this.cancelChainLongPress = null;
+    this.cancelWallKeys?.();
+    this.cancelWallKeys = null;
+    this.wallSelection.clear();
+    this.marqueeAnchor = null;
+    this.wallSelectionDrag = null;
+    this.syncSelectionUi = null;
+    this.lastImport = null;
     this.stageView = { ...IDENTITY_VIEW };
     this.contentEl.empty();
   }

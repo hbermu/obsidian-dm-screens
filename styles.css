@@ -2388,6 +2388,23 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+/* Group actions on the selected walls: a full-width row under the tools, so
+   the tool buttons keep their place as the actions come and go. */
+.dm-fog-selection-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+}
+.dm-fog-selection-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.dm-fog-selection-row.dm-fog-has-selection {
+  border-left: 2px solid var(--interactive-accent);
+  padding-left: 6px;
+}
 .dm-fog-stage {
   position: relative;
   width: 100%;

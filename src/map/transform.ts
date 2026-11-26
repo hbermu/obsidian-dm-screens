@@ -54,16 +54,6 @@ export function rotatePoint(
   }
 }
 
-export function rotatedSize(
-  naturalWidth: number,
-  naturalHeight: number,
-  rotation: MapRotation
-): { width: number; height: number } {
-  return rotation % 180 === 0
-    ? { width: naturalWidth, height: naturalHeight }
-    : { width: naturalHeight, height: naturalWidth };
-}
-
 export function profileKey(width: number, height: number, devicePixelRatio: number): string {
   return `${width}x${height}@${devicePixelRatio}`;
 }
@@ -95,8 +85,7 @@ export function mapScale(
     const vw = finiteOr(viewportWidth, 0);
     const vh = finiteOr(viewportHeight, 0);
     if (!(vw > 0) || !(vh > 0)) return 1;
-    const rotated = rotatedSize(naturalWidth, naturalHeight, view.rotation ?? 0);
-    return Math.min(vw / rotated.width, vh / rotated.height);
+    return Math.min(vw / naturalWidth, vh / naturalHeight);
   }
   const square = finiteOr(pxPerSquare, DEFAULT_PX_PER_SQUARE);
   return (
@@ -104,9 +93,8 @@ export function mapScale(
   );
 }
 
-// Translation for `translate(tx,ty) rotate(θ) scale(s)` (screen = T + s·R·p):
-// the pan point lands at the viewport center. Fit mode pans to the map
-// center, which also centers the rotated bounding box.
+// Translation for `translate(tx,ty) scale(s)` (screen = T + s·p): the pan
+// point lands at the viewport center. Fit mode pans to the map center.
 export function mapTranslation(
   view: MapView,
   scale: number,
@@ -115,33 +103,15 @@ export function mapTranslation(
   viewportWidth: number,
   viewportHeight: number
 ): { tx: number; ty: number } {
-  const rotation = view.rotation ?? 0;
   const pan =
     view.mode === "fit"
       ? { x: finiteOr(naturalWidth, 0) / 2, y: finiteOr(naturalHeight, 0) / 2 }
       : { x: finiteOr(view.panX, 0), y: finiteOr(view.panY, 0) };
-  const r = rotatePoint(pan.x, pan.y, rotation);
   const s = finiteOr(scale, 1);
   return {
-    tx: finiteOr(viewportWidth, 0) / 2 - r.x * s,
-    ty: finiteOr(viewportHeight, 0) / 2 - r.y * s,
+    tx: finiteOr(viewportWidth, 0) / 2 - pan.x * s,
+    ty: finiteOr(viewportHeight, 0) / 2 - pan.y * s,
   };
-}
-
-// Which map-axis lattice feeds each screen axis under rotation, as signed
-// map-pixel offsets for gridLinePositions (vertical = screen-x lines,
-// horizontal = screen-y lines).
-export function gridAxisOffsets(
-  rotation: MapRotation,
-  gridOffsetX: number,
-  gridOffsetY: number
-): { vertical: number; horizontal: number } {
-  switch (rotation) {
-    case 90: return { vertical: -gridOffsetY, horizontal: gridOffsetX };
-    case 180: return { vertical: -gridOffsetX, horizontal: -gridOffsetY };
-    case 270: return { vertical: gridOffsetY, horizontal: -gridOffsetX };
-    default: return { vertical: gridOffsetX, horizontal: gridOffsetY };
-  }
 }
 
 // Keeps the physical-mode window inside the map: no black edge is ever
@@ -154,15 +124,13 @@ export function clampPan(
   naturalHeight: number,
   viewportWidth: number,
   viewportHeight: number,
-  scale: number,
-  rotation: MapRotation
+  scale: number
 ): { panX: number; panY: number } {
   const nw = finiteOr(naturalWidth, 0);
   const nh = finiteOr(naturalHeight, 0);
-  const window = rotatedSize(finiteOr(viewportWidth, 0), finiteOr(viewportHeight, 0), rotation);
   const s = finiteOr(scale, 1);
-  const halfVisW = window.width / (2 * s);
-  const halfVisH = window.height / (2 * s);
+  const halfVisW = finiteOr(viewportWidth, 0) / (2 * s);
+  const halfVisH = finiteOr(viewportHeight, 0) / (2 * s);
   const minX = Math.min(halfVisW, nw / 2);
   const maxX = Math.max(nw - halfVisW, nw / 2);
   const minY = Math.min(halfVisH, nh / 2);

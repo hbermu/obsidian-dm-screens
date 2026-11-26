@@ -29,7 +29,7 @@
 2. Every scene shall carry `version` (`SCENE_FORMAT_VERSION`, currently `1`), `kind` (`player` or `map`) and `name`.
 3. A media source shall be written as `vault:<vault path>` for a vault file or `hydrus:<sha256>` for a Hydrus file (including one cached in the vault), never as a `/vault/` or `/assets/` URL, so one scene loads in either server mode and on any device.
 4. A player scene shall hold `background` (`null`, or `{source, mediaType, loop, muted}`) and `layers`, each `{source, label, x, y, width, height, zIndex, rotation, visible, bordered, fog}`, where `fog` is `null` or a path relative to the scene's fog folder.
-5. A map scene shall hold `map` (`{source, mediaType}`), `view` (`mode`, `panX`, `panY`, `rotation`), `grid` (`pxPerSquare`, `gridOffsetX`, `gridOffsetY`, `showGrid`, `gridColor`, `gridOpacity`), `fog` (`null` or a relative path), `walls`, `aoes` and `visions` in the shapes of their `map-walls`, `map-aoe-sync` and `map-vision` payloads.
+5. A map scene shall hold `map` (`{source, mediaType}`), `view` (`mode`, `panX`, `panY`, `rotation` — the DM's own view rotation, which no screen sees), `grid` (`pxPerSquare`, `gridOffsetX`, `gridOffsetY`, `showGrid`, `gridColor`, `gridOpacity`), `fog` (`null` or a relative path), `walls`, `aoes` and `visions` in the shapes of their `map-walls`, `map-aoe-sync` and `map-vision` payloads.
 6. Fog masks shall be stored as PNG files in a folder named `<note basename>.fog` next to the note: `map.png` for a map scene and `<layer id>.png` for each fogged layer.
 7. If a code block has an unknown `version`, an unknown `kind`, or a missing required field, then `parseScene` shall return an error naming the problem and nothing shall be applied.
 

@@ -233,7 +233,7 @@ describe("exploration mode", function () {
   it("opens from the header of a collapsed Map Screen section and drives scale, grid and combat", async function () {
     const sectionTitle = browser.$(".dm-control-panel").$("h3=Map Screen");
     await sectionTitle.click();
-    await expect(panelButton("Rotate: 0°")).not.toBeDisplayed();
+    await expect(panelButton("DM view: 0°")).not.toBeDisplayed();
     await expect(panelButton("Explore")).toBeDisplayed();
 
     await (await panelButton("Explore")).click();
@@ -262,6 +262,6 @@ describe("exploration mode", function () {
     await modal.$("button=Exit").click();
     await browser.waitUntil(async () => !(await modal.isExisting()));
     await sectionTitle.click();
-    await expect(panelButton("Rotate: 0°")).toBeDisplayed();
+    await expect(panelButton("DM view: 0°")).toBeDisplayed();
   });
 });

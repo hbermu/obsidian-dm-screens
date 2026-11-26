@@ -13,8 +13,6 @@ export interface MapView {
   mode: "physical" | "fit";
   panX: number;
   panY: number;
-  // Optional so cached pre-rotation payloads stay valid; absent means 0.
-  rotation?: MapRotation;
 }
 
 export interface MapGridConfig {
@@ -35,7 +33,11 @@ export interface ScreenProfile {
   quality?: MediaQuality;
 }
 
-export interface StoredMapState extends MapGridConfig, MapView {}
+export interface StoredMapState extends MapGridConfig, MapView {
+  // The DM's own view of the map, never sent to a screen. Optional so configs
+  // persisted by an earlier version stay valid; absent means 0.
+  rotation?: MapRotation;
+}
 
 export type AoeShape = "circle" | "square" | "cone" | "line" | "ring";
 

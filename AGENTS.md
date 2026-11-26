@@ -335,6 +335,7 @@ Spec drift is treated as a bug. A PR that ships code matching the spec is prefer
 - **Dynamic `import("obsidian")`**: fails in the CJS runtime. Always static.
 - **Dotfolder vault paths** (e.g. `.dm-screen/bg/...`): Obsidian's vault index skips them, so `getAbstractFileByPath` returns null. Fall back to `vault.adapter.exists` + `adapter.readBinary`. `server.ts` already does this in `readVaultBytes`.
 - **Image-layer fit-to-viewport `W` / `H` buttons** require a connected client. Without one, show a Notice — do not crash.
+- **A field named `selection` on a `Modal` subclass**: Obsidian's own `Modal` keeps the document selection it restores on close under that name, so the field is a `Selection` by the time anything reads it — and only where the code path needs it, so the unit tests under happy-dom (which stub `Modal`) stay green while the real plugin throws. Prefix such fields (`wallSelection`).
 
 ## The update rule (repeated for emphasis)
 

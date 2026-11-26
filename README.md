@@ -181,10 +181,10 @@ The `/map` page shows one battle map on a TV laid flat on the table, for playing
 
 - **Scale**: *fit screen* shows the whole map; *physical 1″* draws every grid square as one real inch, so miniatures sit at true scale.
 - **Pan**: in physical mode, drag the green rectangle on the panel's preview, or click in the preview, to choose what the TV shows. The wheel zooms your preview only, middle-drag looks around, and the 🔒 lock stops you moving the players' view by accident.
-- **Rotate**: 90° steps. In fit mode, a portrait map turned sideways uses the whole landscape TV.
+- **DM view**: turns your own preview in 90° steps, so the map lies in front of you the way the TV lies on the table. The TV itself is never rotated.
 - **Grid overlay**: a grid drawn over gridless maps. `px/square` is how many map pixels one square spans (the default is a setting), `offset X/Y` shifts the grid when it does not start at the image corner, and colour and opacity are adjustable.
 
-Scale mode, pan, rotation and grid are remembered per map and restored when you show the same map again.
+Scale mode, pan, DM view and grid are remembered per map and restored when you show the same map again.
 
 If the TV is not calibrated, physical mode assumes 96 px per inch and both the TV and the panel show a warning.
 
@@ -204,12 +204,15 @@ While a map is showing, the Map Screen section has a **Fog** button (it reads `F
 
 **Walls tab.** Draw line-of-sight **Walls** and **Doors** with chained clicks (right-click ends the chain) or a **Rect** drag. **Toggle door** opens and closes a door, **Erase** removes segments, and **Snap** aligns to the grid. Walls are saved per map too, and drive dynamic vision and the Room tool.
 
+**Working on several walls at once.** The **Select** tool drags a box over the map and takes every wall it crosses; shift-click a wall to add it or take it out, and tap the map to put the selection down. Drag the selection to move it, then use the row of actions under the tools: ⟲ and ⟳ turn it 90°, **To door** and **To wall** change what the segments are, **Copy** and **Paste** duplicate them (the copy lands half a square off, and the clipboard survives the editor, so you can paste a room into another map), and **Delete** removes them. Delete, Ctrl/Cmd+C and Ctrl/Cmd+V do the same from the keyboard.
+
 **Import walls.** You do not have to draw walls by hand. On the Walls tab:
 
 ![Importing a Foundry module zip fills in every wall and door](docs/screenshots/walls-import.gif)
 
 - **Import UVTT** loads a `.dd2vtt`, `.uvtt`, `.df2vtt` or `.json` export (Dungeondraft and most VTT map packs). Walls, objects and portals become walls and doors, and the map's grid size is set for you.
 - **Import Foundry** loads a Foundry VTT module `.zip` (old NeDB or new LevelDB layout), the format Czepeku and other creators ship. Walls and doors are scaled to your map. With several scenes, the one matching your map's shape is picked, and a picker asks when more than one fits.
+- **Rotate import** appears after an import. Some packs store their walls turned 90° or 180° against the map image, and nothing in the file says so. Press it until the walls line up: each press re-reads the file you imported at the next angle and sets the grid again.
 - **From Hydrus**: when you set a Hydrus image as the map and your library has a Foundry module zip tagged `type:foundry module` with the same `name:` tag, the plugin asks "Import its walls and grid?". It reads only the few MB of scene data from the zip, not the artwork around it.
 
 **Dynamic vision.** Click **Add Vision** and pick **Circle 30 ft**, **Square 30 ft** or **Lights…**. Open its card in the list and drag its dot onto a token, and the fog opens for what it can see — as with AoE templates, only the vision you have open can be moved. Each vision has a **bright** radius and an optional **dim** ring that stays half-shrouded. **Lights…** fills both from the 5e list (torch 20 ft plus 20 ft dim, lanterns, *light*, *daylight*, darkvision 60 or 120 ft, and more). Name and colour visions to tell them apart; the 🔗 group toggle drags them all together. Walls stop the light; an open door lets it through and a closed one blocks it. **Bake into fog** burns the current vision into the fog for good (for areas already explored) and clears the live layer. **Clear All** removes every vision.
@@ -404,6 +407,8 @@ Calibration (diagonal, fine-tune, media quality) is per screen, in the window th
 | Map preview | Open an AoE's card, then drag its dot or diamond | Move or aim the template |
 | Map preview | Open a vision's card, then drag its dot | Move the vision (or the group, with 🔗) |
 | Walls tab | Click, click… then right-click | Chain wall or door segments, then end the chain |
+| Walls tab, Select | Drag a box, or shift-click a wall | Take a group of walls, or add one to it |
+| Walls tab, Select | Drag the selection; Delete; Ctrl/Cmd+C, Ctrl/Cmd+V | Move it; remove it; copy and paste it |
 | Exploration Mode | Click a door or a room | Open or close the door, reveal or cover the room |
 | Exploration Mode | Hold Shift | Click through markers and the viewport rectangle |
 | Exploration Mode | Right-click an open AoE's dot | Remove the template |

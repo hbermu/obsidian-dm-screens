@@ -12,6 +12,7 @@ import { MapExploreModal } from "./MapExploreModal";
 import { FoundryImportConfirmModal, FoundrySceneModal } from "./FoundryImportModals";
 import { chooseScene, sceneImportResult, type FoundryImportResult, type FoundryScene } from "../map/foundry";
 import type { UvttParseResult } from "../map/uvtt";
+import { rotateImportResult } from "../map/walls";
 import { findFoundryModules, loadModuleScenes } from "../hydrus/foundryModules";
 import {
   clampPan,
@@ -68,6 +69,9 @@ export class MapScreenPanel {
   visions: MapVision[] = [];
   visionGroup = false;
   walls: MapWall[] = [];
+  // Walls copied in the fog editor. It outlives the modal and the active map,
+  // so a room copied on one map can be pasted into another.
+  wallClipboard: MapWall[] = [];
   // Hydrus tags of the active map (empty for note images); scene matching reads them.
   private activeMapTags: string[] = [];
   fogDataUrl: string | null = null;
@@ -247,8 +251,8 @@ export class MapScreenPanel {
 
   private broadcastView(immediate = false) {
     const send = () => {
-      const { mode, panX, panY, rotation } = this.state;
-      this.plugin.broadcast({ type: "map-view", payload: { mode, panX, panY, rotation: rotation ?? 0 } });
+      const { mode, panX, panY } = this.state;
+      this.plugin.broadcast({ type: "map-view", payload: { mode, panX, panY } });
     };
     if (immediate) {
       if (this.viewBroadcastTimer) {
@@ -340,8 +344,7 @@ export class MapScreenPanel {
       this.activeMap.naturalHeight,
       client.width,
       client.height,
-      ppi / this.state.pxPerSquare,
-      this.state.rotation ?? 0
+      ppi / this.state.pxPerSquare
     );
     this.state.panX = clamped.panX;
     this.state.panY = clamped.panY;
@@ -493,8 +496,13 @@ export class MapScreenPanel {
 
   // Scale imported walls (UVTT or Foundry, in their own pixel space) onto the
   // displayed map and derive the grid from the source's square count.
-  importWalls(result: UvttParseResult | FoundryImportResult, sourceLabel: string): MapWall[] {
+  importWalls(
+    rawResult: UvttParseResult | FoundryImportResult,
+    sourceLabel: string,
+    rotation: MapRotation = 0
+  ): MapWall[] {
     const map = this.activeMap!;
+    const result = rotateImportResult(rawResult, rotation);
     const scale = map.naturalWidth / (result.gridSquares.x * result.pixelsPerGrid);
     const scaledWalls: MapWall[] = result.walls.map((w) => ({
       x1: w.x1 * scale,
@@ -746,12 +754,10 @@ export class MapScreenPanel {
     });
     gridBtn.addEventListener("click", () => this.toggleGrid());
 
-    const rotateBtn = btnRow.createEl("button", { text: `Rotate: ${this.state.rotation ?? 0}°` });
-    rotateBtn.title = "Rotate the map on the screen in 90° steps";
+    const rotateBtn = btnRow.createEl("button", { text: `DM view: ${this.state.rotation ?? 0}°` });
+    rotateBtn.title = "Rotate the DM's own preview in 90° steps to match how the screen sits on the table";
     rotateBtn.addEventListener("click", () => {
-      this.state.rotation = ((((this.state.rotation ?? 0) + 90) % 360) as 0 | 90 | 180 | 270);
-      this.clampStateToViewport();
-      this.broadcastView(true);
+      this.state.rotation = ((((this.state.rotation ?? 0) + 90) % 360) as MapRotation);
       this.persistState();
       this.host.render();
     });
@@ -962,7 +968,7 @@ export class MapScreenPanel {
       ctx.clearRect(0, 0, aoeCanvas.width, aoeCanvas.height);
       const s = (w * z) / nw;
       for (const aoe of this.aoes) {
-        renderAoe(ctx, aoe, s, 0, 0, this.state.pxPerSquare, 0);
+        renderAoe(ctx, aoe, s, 0, 0, this.state.pxPerSquare);
       }
       ctx.lineWidth = 2;
       const ftToPxScaled = (this.state.pxPerSquare / 5) * s;
@@ -1005,10 +1011,10 @@ export class MapScreenPanel {
     const client = this.effectiveMapClient();
     const { ppi, calibrated } = this.clientPpi(client);
     const scale = ppi / this.state.pxPerSquare;
-    // The rect lives in map coordinates; under a 90°/270° rotation the
-    // screen's long side runs along the map's Y axis, so the window swaps.
-    const visW = (sideways ? client.height : client.width) / scale;
-    const visH = (sideways ? client.width : client.height) / scale;
+    // The screen is never rotated, so the window keeps the screen's own sides;
+    // only the preview stage around it turns to the DM's point of view.
+    const visW = client.width / scale;
+    const visH = client.height / scale;
     // Zoom bounds: 1× shows the whole map, the max zoom fills the preview
     // with exactly the player's visible window.
     const zoomMax =
@@ -1318,7 +1324,7 @@ export class MapScreenPanel {
     positionRect();
 
     const applyPan = (panX: number, panY: number) => {
-      const clamped = clampPan(panX, panY, nw, nh, client.width, client.height, scale, this.state.rotation ?? 0);
+      const clamped = clampPan(panX, panY, nw, nh, client.width, client.height, scale);
       this.state.panX = clamped.panX;
       this.state.panY = clamped.panY;
       positionRect();
@@ -1608,17 +1614,13 @@ export class MapScreenPanel {
 
   // Player-viewport window in map pixels for the current physical scale, or null
   // when not in physical mode (fit mode shows the whole map — no window to move).
-  // Mirrors renderPanPreview's visW/visH, honoring the rotated screen dimensions.
+  // Mirrors renderPanPreview's visW/visH.
   playerViewportMapSize(): { w: number; h: number } | null {
     if (!this.activeMap || this.state.mode !== "physical") return null;
     const client = this.effectiveMapClient();
     const { ppi } = this.clientPpi(client);
     const scale = ppi / this.state.pxPerSquare;
-    const sideways = (this.state.rotation ?? 0) % 180 !== 0;
-    return {
-      w: (sideways ? client.height : client.width) / scale,
-      h: (sideways ? client.width : client.height) / scale,
-    };
+    return { w: client.width / scale, h: client.height / scale };
   }
 
   // Move the players' viewport centre to (panX, panY) in map pixels, clamped so
@@ -1632,7 +1634,7 @@ export class MapScreenPanel {
     const clamped = clampPan(
       panX, panY,
       this.activeMap.naturalWidth, this.activeMap.naturalHeight,
-      client.width, client.height, scale, this.state.rotation ?? 0
+      client.width, client.height, scale
     );
     this.state.panX = clamped.panX;
     this.state.panY = clamped.panY;

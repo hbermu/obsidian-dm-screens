@@ -56,7 +56,7 @@ describe("Server: map-clear preserves map-calibration", () => {
 
   it("map-clear purges map-* entries but keeps map-calibration", () => {
     server.broadcast({ type: "map-show", payload: { url: "/vault/map.png" } });
-    server.broadcast({ type: "map-view", payload: { mode: "fit", panX: 0, panY: 0, rotation: 0 } });
+    server.broadcast({ type: "map-view", payload: { mode: "fit", panX: 0, panY: 0 } });
     server.broadcast({ type: "map-config", payload: { pxPerSquare: 50 } });
     server.broadcast({ type: "map-calibration", payload: { profiles: {} } });
     server.broadcast({ type: "map-aoe-sync", payload: { aoes: [] } });
